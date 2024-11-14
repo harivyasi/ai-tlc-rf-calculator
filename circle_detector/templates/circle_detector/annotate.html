@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annotate Image</title>
+    
+    <!-- Import Google Icon Font for Material Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <!-- Import Materialize CSS framework for styling -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    
+    <!-- Custom Styles -->
+    <style>
+        /* Container for the canvas and image */
+        #canvas-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        /* Styling for the image canvas */
+        #image-canvas {
+            border: 1px solid #ddd;
+            max-width: 100%;
+        }
+
+        /* Styling for the annotated image */
+        #annotated-image {
+            border: 1px solid #ddd;
+            max-width: 100%;
+        }
+
+        /* Popup styles for displaying additional information */
+        .popup {
+            position: absolute;
+            display: none; /* Initially hidden */
+            background-color: white;
+            border: 1px solid black;
+            padding: 10px;
+            z-index: 1000; /* Ensures popup appears above other elements */
+        }
+
+        /* Styling for delete icon */
+        .delete-icon {
+            cursor: pointer;
+            color: red;
+            font-size: 20px;
+            position: absolute;
+            z-index: 10;
+            background-color: white;
+            border-radius: 50%;
+            padding: 5px;
+            box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s; /* Smooth scaling effect */
+        }
+
+        /* Hover effect for delete icon */
+        .delete-icon:hover {
+            transform: scale(1.2);
+            color: darkred;
+        }
+
+        /* Flex container for images */
+        .img-container {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        /* Responsive image styling */
+        .img-container img {
+            max-height: 100%;
+            width: 100%;
+            object-fit: contain; /* Maintain aspect ratio */
+        }
+
+        /* Table styling for RF values */
+        .rf-table {
+            margin-top: 20px;
+        }
+
+        /* Styles for fluorescent spots on the image */
+        .spot {
+            background-color: orange;
+            border-radius: 50%;
+            position: absolute;
+            z-index: 2000; /* Ensures spots are above other elements */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h3 class="center-align">TLC Image Annotation</h3>
+        
+        <!-- Main Card for a modern look -->
+        <div class="card">
+            <div class="card-content">
+                <div class="img-container">
+                    <!-- Original Image and Annotated Image displayed side by side -->
+                    <div style="width: 48%;">
+                        <h5 class="center-align">Original Image</h5>
+                        <div id="canvas-container">
+                            <canvas id="image-canvas"></canvas>
+                        </div>
+                    </div>
+                    <div style="width: 48%;">
+                        <h5 class="center-align">Annotated Image</h5>
+                        <img id="annotated-image" src="" alt="Annotated Image">
+                    </div>
+                </div>
+
+                <!-- RF Values Table Section -->
+                <div class="row rf-table">
+                    <div class="col s12">
+                        <h5 class="center-align">RF Values</h5>
+                        <table id="values-table" class="striped">
+                            <thead>
+                                <tr>
+                                    <th>Solvent (X value)</th>
+                                    <th>Compound (Y value)</th>
+                                    <th>RF value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- RF Values will be populated dynamically here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Annotation Buttons Section -->
+                <div class="center-align">
+                    <button class="btn waves-effect waves-light" onclick="addSpots()">Add Spots</button>
+                    <button class="btn waves-effect waves-light" onclick="addMinLine()">Add Min Line</button>
+                    <button class="btn waves-effect waves-light" onclick="addMaxLine()">Add Max Line</button>
+                    <button class="btn waves-effect waves-light" onclick="addHorizontalLine()">Add Horizontal Line</button>
+                    <button class="btn waves-effect waves-light" onclick="addVerticalLine()">Add Vertical Line</button>
+                    <button class="btn waves-effect waves-light" onclick="calculateRF()">Calculate RF Values</button>
+                    <button class="btn waves-effect waves-light" onclick="saveCSV()">Save as CSV</button>
+                    <button class="btn waves-effect waves-light" id="saveButton" onclick="saveImageToServer()">Save Image To Server</button>
+                    <button class="btn waves-effect waves-light" id="saveButton" onclick="saveCSVToServer()">Save CSV To Server</button>
+				</div>
+
+                <!-- Popup for Line Annotations -->
+                <div id="line-popup" class="popup card-panel">
+                    <div class="input-field">
+                        <input type="text" id="line-text">
+                        <label for="line-text">Annotation</label>
+                    </div>
+                    <button class="btn waves-effect waves-light" onclick="submitAnnotation()">Submit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Materialize JS for component functionality -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+
+    <!-- Custom Scripts for application functionality -->
+    <script>
+			
+		// Get references to HTML elements
+		var imageElement = document.getElementById('imageElement');
+		let image = new Image();
+		var imageContainer = document.getElementById('imageContainer');
+		var fullUrl = window.location.href;
+		
+		// Extract query parameters from URL
+		var url = new URL(fullUrl);
+		var encodedImageUrl = url.searchParams.get("url");
+		var encodedPostUrl = url.searchParams.get("url");
+		var decodedImageUrl = decodeURIComponent(encodedImageUrl);
+		var decodedPostUrl = decodeURIComponent(encodedPostUrl);
+		
+		// Log the decoded post URL for debugging
+		console.log(decodedImageUrl);
+		
+		// Fetch image data from the server
+		fetch(`/fetch-image/?url=${encodeURIComponent(decodedImageUrl)}`)
+			.then(response => response.json())
+			.then(data => {
+				if (data.imagePath) {
+					console.log(data.imagePath)
+					// Serve the fetched image if the imagePath is present
+					fetch(`/serve-image/?file_path=${encodeURIComponent(data.imagePath)}`)
+						.then(response => {
+							if (response.ok) {
+								// Set the image source for the image element
+								image.src = `/serve-image/?file_path=${encodeURIComponent(data.imagePath)}`;
+							} else {
+								console.error('Failed to serve image');
+							}
+						});
+				} else {
+					console.error('Failed to fetch and save image:', data.error);
+				}
+			})
+			.catch(error => {
+				console.error('Error:', error);
+			});
+		
+		// Initialize canvas and image rendering
+		let canvas = document.getElementById('image-canvas');
+		let ctx = canvas.getContext('2d');
+		
+		// Initialize variables for annotations
+		let lines = [];
+		let spots = [];
+		let currentLine = null;
+		let isHorizontal = true; // Flag for line orientation
+		let lineType = ''; // Type of line to be drawn
+		let addingSpots = false; // Flag to indicate spot addition mode
+		
+		// Handle image loading and drawing on the canvas
+		image.onload = function () {
+			let maxHeight = 500; // Maximum height for the image on the canvas
+			let originalHeight = image.height;
+			let originalWidth = image.width;
+		
+			// Maintain aspect ratio if the image exceeds maxHeight
+			if (image.height > maxHeight) {
+				let aspectRatio = image.width / image.height;
+				image.height = maxHeight;
+				image.width = maxHeight * aspectRatio;
+			}
+		
+			// Set canvas dimensions and draw the image
+			canvas.width = image.width;
+			canvas.height = image.height;
+			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+			// Calculate scale factor for annotations
+			window.scaleFactor = originalHeight / canvas.height;
+		
+			// Ensure the annotated image matches the original canvas size
+			document.getElementById('annotated-image').style.width = canvas.width + 'px';
+			document.getElementById('annotated-image').style.height = canvas.height + 'px';
+		};
+		
+		
+		// Function to disable other annotation actions
+		function disableOtherActions() {
+			addingSpots = false; // Ensure we are not adding spots
+			canvas.removeEventListener('click', drawSpot); // Remove spot drawing event listener
+			canvas.removeEventListener('click', drawLine); // Remove line drawing event listener
+		}
+		
+		// Function to add a minimum line
+		function addMinLine() {
+			disableOtherActions(); // Disable other actions
+			lineType = 'min'; // Set the line type to 'min'
+			isHorizontal = true; // Set line orientation to horizontal
+			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+		}
+		
+		// Function to add a maximum line
+		function addMaxLine() {
+			disableOtherActions(); // Disable other actions
+			lineType = 'max'; // Set the line type to 'max'
+			isHorizontal = true; // Set line orientation to horizontal
+			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+		}
+		
+		// Function to add a horizontal line
+		function addHorizontalLine() {
+			disableOtherActions(); // Disable other actions
+			lineType = 'horizontal'; // Set the line type to 'horizontal'
+			isHorizontal = true; // Set line orientation to horizontal
+			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+		}
+		
+		// Function to add a vertical line
+		function addVerticalLine() {
+			disableOtherActions(); // Disable other actions
+			lineType = 'vertical'; // Set the line type to 'vertical'
+			isHorizontal = false; // Set line orientation to vertical
+			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+		}
+		
+		// Function to draw a line on the canvas
+		function drawLine(event) {
+			let x = event.offsetX; // Get the x-coordinate of the click
+			let y = event.offsetY; // Get the y-coordinate of the click
+			ctx.font = '16px Arial'; // Set font for text
+			ctx.fillStyle = 'red'; // Set color for the text
+		
+			// Check if the line is horizontal
+			if (isHorizontal) {
+				ctx.beginPath(); // Start drawing a new path
+				ctx.moveTo(0, y); // Move to the start point of the line
+				ctx.lineTo(canvas.width, y); // Draw the line to the end point
+				ctx.stroke(); // Render the line
+		
+				// Create a current line object with properties
+				currentLine = {
+					id: Date.now(), // Unique ID based on current timestamp
+					type: lineType, // The type of the line (min, max, horizontal)
+					y: y * window.scaleFactor, // Scale the y-coordinate
+					text: lineType === 'min' ? 'min' : lineType === 'max' ? 'max' : ''
+				};
+		
+				ctx.fillText(currentLine.text, 10, y - 5); // Display the line type label
+				addDeleteIcon(currentLine, 10, y); // Add a delete icon to the line
+				if (lineType !== 'min' && lineType !== 'max') {
+					showPopup(event.pageX, event.pageY); // Show annotation popup for other lines
+				}
+		
+				lines.push(currentLine); // Add the line to the lines array
+				canvas.removeEventListener('click', drawLine); // Remove the event listener after drawing
+			} else {
+				// Handle vertical line drawing
+				ctx.beginPath(); // Start drawing a new path
+				ctx.moveTo(x, 0); // Move to the start point of the line
+				ctx.lineTo(x, canvas.height); // Draw the line to the end point
+				ctx.stroke(); // Render the line
+		
+				// Create a current line object with properties
+				currentLine = {
+					id: Date.now(), // Unique ID based on current timestamp
+					type: lineType, // The type of the line (vertical)
+					x: x * window.scaleFactor, // Scale the x-coordinate
+					text: '' // No text for vertical lines
+				};
+		
+				addDeleteIcon(currentLine, x, 10); // Add a delete icon to the line
+				showPopup(event.pageX, event.pageY); // Show the annotation popup
+				lines.push(currentLine); // Add the line to the lines array
+				canvas.removeEventListener('click', drawLine); // Remove the event listener after drawing
+			}
+		}
+		
+		// Function to show a popup for line annotations
+		function showPopup(x, y) {
+			let popup = document.getElementById('line-popup'); // Get the popup element
+			popup.style.left = x + 'px'; // Set the popup's x position
+			popup.style.top = y + 'px'; // Set the popup's y position
+			popup.style.display = 'block'; // Display the popup
+		}
+		
+
+		// Function to submit an annotation for the current line
+		function submitAnnotation() {
+			let text = document.getElementById('line-text').value; // Get the text input from the popup
+			if (text.trim() === '') return; // Return if the input is empty
+		
+			currentLine.text = text; // Assign the text to the current line's object
+			ctx.font = '16px Arial'; // Set the font for the text
+			ctx.fillStyle = 'red'; // Set the text color
+		
+			// Check the type of line to determine where to place the text
+			if (currentLine.type === 'horizontal' || currentLine.type === 'min' || currentLine.type === 'max') {
+				ctx.fillText(text, 10, currentLine.y / window.scaleFactor - 5); // Place text above the line
+			} else {
+				ctx.fillText(text, currentLine.x / window.scaleFactor + 5, 10); // Place text to the right of the line
+			}
+		
+			// Clear the input field and hide the popup
+			document.getElementById('line-text').value = '';
+			document.getElementById('line-popup').style.display = 'none';
+		}
+		
+		// Function to add a delete icon to a line
+		function addDeleteIcon(line, x, y) {
+			let icon = document.createElement('i'); // Create a new icon element
+			icon.innerHTML = 'delete'; // Set the inner HTML to the delete icon
+			icon.className = 'material-icons delete-icon'; // Assign classes for styling
+			icon.style.left = x + 'px'; // Set the x position
+			icon.style.top = y + 'px'; // Set the y position
+		
+			// Set the onclick event to delete the line when the icon is clicked
+			icon.onclick = function() {
+				deleteLine(line.id); // Call deleteLine with the line's ID
+			};
+		
+			document.getElementById('canvas-container').appendChild(icon); // Append the icon to the canvas container
+			line.deleteIcon = icon; // Store a reference to the icon in the line object
+		}
+		
+		// Function to delete a line by its ID
+		function deleteLine(id) {
+			let lineToDelete = lines.find(line => line.id === id); // Find the line to delete
+		
+			if (lineToDelete && lineToDelete.deleteIcon) {
+				lineToDelete.deleteIcon.remove(); // Remove the delete icon from the DOM
+			}
+		
+			// Filter out the line from the lines array
+			lines = lines.filter(line => line.id !== id);
+		
+			// Clear the canvas and redraw remaining lines and the image
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+			lines.forEach(line => {
+				ctx.font = '16px Arial'; // Set font for the remaining lines
+				ctx.fillStyle = 'red'; // Set color for the remaining lines
+		
+				// Redraw each line based on its type
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					ctx.beginPath();
+					ctx.moveTo(0, line.y / window.scaleFactor); // Start line from left
+					ctx.lineTo(canvas.width, line.y / window.scaleFactor); // End line to right
+					ctx.stroke(); // Render the line
+					ctx.fillText(line.text, 10, line.y / window.scaleFactor - 5); // Render text above the line
+					line.deleteIcon.style.top = line.y / window.scaleFactor + 'px'; // Adjust icon position
+				} else {
+					ctx.beginPath();
+					ctx.moveTo(line.x / window.scaleFactor, 0); // Start line from top
+					ctx.lineTo(line.x / window.scaleFactor, canvas.height); // End line to bottom
+					ctx.stroke(); // Render the line
+					ctx.fillText(line.text, line.x / window.scaleFactor + 5, 10); // Render text to the right
+					line.deleteIcon.style.left = line.x / window.scaleFactor + 'px'; // Adjust icon position
+				}
+			});
+		}
+		
+		// Function to enable adding spots on the canvas
+		function addSpots() {
+			disableOtherActions(); // Disable other actions
+			addingSpots = true; // Enable adding spots
+			canvas.addEventListener('click', drawSpot); // Add click event to draw spots
+		}
+		
+		// Function to draw a spot on the canvas
+		function drawSpot(event) {
+			if (!addingSpots) return; // Return if not in adding spots mode
+		
+			let x = event.offsetX; // Get the x-coordinate of the click
+			let y = event.offsetY; // Get the y-coordinate of the click
+		
+			// Create a spot object with unique ID and scaled coordinates
+			let spot = {
+				id: Date.now(), // Unique ID based on current timestamp
+				x: x * window.scaleFactor, // Scale x-coordinate
+				y: y * window.scaleFactor // Scale y-coordinate
+			};
+		
+			// Draw an unfilled circle (outline only)
+			ctx.beginPath();
+			ctx.arc(x, y, 10, 0, 2 * Math.PI, false); // Create a circle path
+		
+			// Set stroke style and line width for the outline
+			ctx.strokeStyle = 'orange'; // Set stroke color
+			ctx.lineWidth = 2; // Set line width
+			ctx.stroke(); // Draw the outline
+		
+			// Optionally, clear the fill style if needed
+			ctx.fillStyle = 'transparent'; // Ensures fill is transparent
+			ctx.fill(); // This line is optional and can be removed if you only want an outline
+		
+			spots.push(spot); // Add the spot to the spots array
+		}
+		
+		// Function to calculate RF (retention factor)
+		function calculateRF() {
+			// Find min and max lines from the lines array
+			let minLine = lines.find(line => line.type === 'min');
+			let maxLine = lines.find(line => line.type === 'max');
+		
+			// Alert user if min and max lines are not present
+			if (!minLine || !maxLine) {
+				M.toast({html: 'Please add "min" and "max" lines.'});
+				return; // Exit the function
+			}
+			console.log(image.src)
+			
+			const parsedUrl = new URL(image.src);
+			
+			// Get the file path from the query parameter
+			const filePath = parsedUrl.searchParams.get("file_path");
+			
+			// Decode the file path and extract the file name
+			const fileName = decodeURIComponent(filePath).split('/').pop();
+			
+			console.log(fileName);			
+			
+			
+			// Prepare data to send to the server
+			let data = {
+				lines: lines,
+				spots: spots,
+				imageSrc: fileName
+			};
+		
+			console.log('Data to send:', data); // Log the data being sent
+		
+			// Send data to the server
+			fetch('{% url "calculate_rf" %}', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRFToken': '{{ csrf_token }}'
+				},
+				body: JSON.stringify(data) // Convert data to JSON format
+			})
+			.then(response => response.json()) // Parse the JSON response
+			.then(result => {
+				console.log('Backend Response:', result); // Log the response from the server
+				populateTable(result.rf_values); // Populate the table with RF values
+		
+				// Update the annotated image and ensure it matches the canvas size
+				let annotatedImage = document.getElementById('annotated-image');
+				annotatedImage.src = result.annotated_image_url;
+				annotatedImage.style.width = canvas.width + 'px';
+				annotatedImage.style.height = canvas.height + 'px';
+			})
+			.catch(error => console.error('Error:', error)); // Log any errors
+		}
+		
+		// Function to populate the RF values table
+		function populateTable(rfValues) {
+			let tbody = document.getElementById('values-table').getElementsByTagName('tbody')[0];
+			tbody.innerHTML = ''; // Clear existing rows in the table
+		
+			// Iterate over RF values and create table rows
+			rfValues.forEach(value => {
+				let row = tbody.insertRow();
+				let cell1 = row.insertCell(0);
+				let cell2 = row.insertCell(1);
+				let cell3 = row.insertCell(2);
+				cell1.innerHTML = value.solvent; // Fill solvent cell
+				cell2.innerHTML = value.compound; // Fill compound cell
+				cell3.innerHTML = value.rf; // Fill RF value cell
+			});
+		}
+		
+		// Function to save RF values to a CSV file
+		function saveCSV() {
+			let table = document.getElementById('values-table'); // Get the values table
+			let rows = Array.from(table.rows); // Convert table rows to an array
+			let csvContent = 'data:text/csv;charset=utf-8,'; // Initialize CSV content
+		
+			// Iterate over rows and convert to CSV format
+			rows.forEach(row => {
+				let cols = Array.from(row.cells).map(cell => cell.textContent); // Get cell text
+				csvContent += cols.join(',') + '\n'; // Join cell texts with commas
+			});
+		
+			let encodedUri = encodeURI(csvContent); // Encode the CSV content
+			let link = document.createElement('a'); // Create a temporary link element
+			link.setAttribute('href', encodedUri); // Set href to the encoded URI
+			link.setAttribute('download', 'rf_values.csv'); // Set the download filename
+			document.body.appendChild(link); // Append the link to the document body
+			link.click(); // Trigger the download
+		}
+		
+		// Event listener for save button click to save annotated image and CSV to the server
+		function saveImageToServer() {
+			const inputText = 'TLC';
+			const dateTime = new Date().toLocaleString('en-GB', {
+				year: '2-digit',
+				month: '2-digit',
+				day: '2-digit',
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit',
+				hour12: false
+			}).replace(/\//g, '').replace(/, /g, '').replace(/:/g, '');
+		
+			const filename = `${inputText}_${dateTime}.png`;
+			const annotatedImage = document.getElementById("annotated-image");
+		
+			if (annotatedImage) {
+				const originalImage = new Image();
+				originalImage.src = annotatedImage.src;
+		
+				originalImage.onload = function() {
+					const canvas = document.createElement("canvas");
+					const context = canvas.getContext("2d");
+					canvas.width = originalImage.naturalWidth;
+					canvas.height = originalImage.naturalHeight;
+					context.drawImage(originalImage, 0, 0);
+		
+					canvas.toBlob(function(blob) {
+						const formData = new FormData();
+						formData.append('file', blob, filename);  // Use 'file' as key
+		
+						const externalApiUrl = decodedPostUrl;
+						const csrftoken = getCookie('csrftoken');
+		
+						fetch(externalApiUrl, {
+							method: 'POST',
+							body: formData,
+							headers: {
+								'X-CSRFToken': csrftoken
+							}
+						})
+						.then(response => response.json())
+						.then(data => {
+							console.log('Image saved to server successfully:', data);
+						})
+						.catch(error => {
+							console.error('Error saving image to server:', error);
+						});
+					}, 'image/png');
+				};
+			} else {
+				console.error('Annotated image not found.');
+			}
+		}
+		
+				
+		function saveCSVToServer() {
+			const inputText = 'TLC';
+			const dateTime = new Date().toLocaleString('en-GB', {
+				year: '2-digit',
+				month: '2-digit',
+				day: '2-digit',
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit',
+				hour12: false
+			}).replace(/\//g, '').replace(/, /g, '').replace(/:/g, '');
+		
+			const csvFilename = `${inputText}_${dateTime}.csv`;
+			const csvData = getCSVData();
+		
+			if (csvData) {
+				const csvBlob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+				const formData = new FormData();
+				formData.append('file', csvBlob, csvFilename);  // Use 'file' as key
+		
+				const externalApiUrl = decodedPostUrl;
+				const csrftoken = getCookie('csrftoken');
+		
+				fetch(externalApiUrl, {
+					method: 'POST',
+					body: formData,
+					headers: {
+						'X-CSRFToken': csrftoken
+					}
+				})
+				.then(response => response.json())
+				.then(data => {
+					console.log('CSV saved to server successfully:', data);
+				})
+				.catch(error => {
+					console.error('Error saving CSV to server:', error);
+				});
+			} else {
+				console.error('No CSV data found.');
+			}
+		}		
+		// Function to retrieve CSV data from the values table
+		function getCSVData() {
+			let table = document.getElementById('values-table'); // Get the values table
+			let rows = Array.from(table.rows); // Convert rows to an array
+			let csvContent = '';
+		
+			// Iterate over rows and convert to CSV format
+			rows.forEach(row => {
+				let cols = Array.from(row.cells).map(cell => cell.textContent); // Get cell text
+				csvContent += cols.join(',') + '\n'; // Join cell texts with commas
+			});
+		
+			return csvContent; // Return the CSV content
+		}
+		
+		// Function to get CSRF token from cookie
+		function getCookie(name) {
+			let cookieValue = null; // Initialize cookie value
+			if (document.cookie && document.cookie !== '') {
+				const cookies = document.cookie.split(';'); // Split cookies into an array
+				for (let i = 0; i < cookies.length; i++) {
+					const cookie = cookies[i].trim(); // Trim whitespace
+					// Check if the cookie matches the desired name
+					if (cookie.substring(0, name.length + 1) === (name + '=')) {
+						cookieValue = decodeURIComponent(cookie.substring(name.length + 1)); // Decode cookie value
+						break; // Exit loop once found
+					}
+				}
+			}
+			return cookieValue; // Return the cookie value
+		}
+
+    </script>
+</body>
+</html>
