@@ -117,8 +117,8 @@
                         <table id="values-table" class="striped">
                             <thead>
                                 <tr>
-                                    <th>Solvent (X value)</th>
-                                    <th>Compound (Y value)</th>
+                                    <th>mixture_label (X axis)</th>
+                                    <th>substance_label (Y axis)</th>
                                     <th>RF value</th>
                                 </tr>
                             </thead>
@@ -448,7 +448,8 @@
 			// Optionally, clear the fill style if needed
 			ctx.fillStyle = 'transparent'; // Ensures fill is transparent
 			ctx.fill(); // This line is optional and can be removed if you only want an outline
-		
+			
+			
 			spots.push(spot); // Add the spot to the spots array
 		}
 		
@@ -529,8 +530,11 @@
 		function saveCSV() {
 			let table = document.getElementById('values-table'); // Get the values table
 			let rows = Array.from(table.rows); // Convert table rows to an array
-			let csvContent = 'data:text/csv;charset=utf-8,'; // Initialize CSV content
-		
+			
+			// Initialize CSV content with the new heading as the first row
+			let csvContent = 'data:text/csv;charset=utf-8,';
+			csvContent += 'Measurement type;thin layer chromatography (TLC);CHMO:0001007\n'; // Add the custom heading
+			
 			// Iterate over rows and convert to CSV format
 			rows.forEach(row => {
 				let cols = Array.from(row.cells).map(cell => cell.textContent); // Get cell text
@@ -545,9 +549,10 @@
 			link.click(); // Trigger the download
 		}
 		
+		
 		// Event listener for save button click to save annotated image and CSV to the server
 		function saveImageToServer() {
-			const inputText = 'TLC';
+			const inputText = '';
 			const dateTime = new Date().toLocaleString('en-GB', {
 				year: '2-digit',
 				month: '2-digit',
@@ -602,7 +607,7 @@
 		
 				
 		function saveCSVToServer() {
-			const inputText = 'TLC';
+			const inputText = '';
 			const dateTime = new Date().toLocaleString('en-GB', {
 				year: '2-digit',
 				month: '2-digit',
