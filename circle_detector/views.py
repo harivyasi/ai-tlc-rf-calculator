@@ -101,7 +101,6 @@ def calculate_rf(request):
             # Construct the image path and ensure the image exists
             #image_src = image_src.strip('/')  # Remove leading slashes
             image_path = os.path.join(settings.MEDIA_ROOT, image_src)  # Cross-platform path
-            print(image_path)
             if not os.path.exists(image_path):
                 logger.error(f'Image not found at path: {image_path}')
                 return JsonResponse({'error': f'Image not found: {image_path}'}, status=400)
@@ -212,7 +211,6 @@ def fetch_and_save_image(request):
     """
     # Extract the image URL from the request
     image_url = request.GET.get('url')
-    print(image_url)
     
     # Attempt to fetch the image from the remote URL
     response = requests.get(image_url)
