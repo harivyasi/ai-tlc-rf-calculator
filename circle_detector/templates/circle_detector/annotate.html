@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Annotate Image</title>
     
+	{% load static %}
+	
     <!-- Import Google Icon Font for Material Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     
@@ -87,76 +89,171 @@
             position: absolute;
             z-index: 2000; /* Ensures spots are above other elements */
         }
+				
+		.buttons-container {
+			display: grid; /* Use grid layout */
+			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* Flexible columns */
+			gap: 15px; /* Space between buttons */
+			justify-content: center; /* Center the grid */
+			margin-top: 20px;
+			padding: 20px; /* Add some padding */
+		}
+		
+		.buttons-container button {
+			display: flex; /* Enable Flexbox */
+			justify-content: center; /* Center horizontally */
+			align-items: center; /* Center vertically */
+			background-color: #07524b; /* Modern button color */
+			color: white; /* White text for contrast */
+			border: none; /* Remove default borders */
+			border-radius: 8px; /* Rounded corners for elevation */
+			padding: 12px 20px; /* Add padding */
+			font-size: 14px; /* Font size */
+			cursor: pointer; /* Pointer cursor on hover */
+			box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1); /* Add an elevated shadow */
+			text-align: center; /* Ensure text alignment */
+			transition: transform 0.2s ease, box-shadow 0.2s ease; /* Smooth hover effects */
+		}
+
+		
+		.buttons-container button:hover {
+			transform: translateY(-2px); /* Slight elevation on hover */
+			box-shadow: 0px 6px 10px rgba(0, 0, 0, 0.15); /* Enhanced shadow on hover */
+		}
+		
+		.buttons-container button:active {
+			transform: translateY(1px); /* Slight depression on click */
+			box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2); /* Dimmed shadow on click */
+		}
+				
+		/* Ensure the parent container (like .container or body) has a relative position */
+		.container {
+			position: relative;  /* This allows absolute positioning within it */
+			min-height: 100vh;  /* Ensure it covers all the content if not already set */
+		}
+				
+		.saving-buttons-container {
+			position: fixed;  /* Ensures that it stays in a specific position relative to the viewport */
+			top: 20px;  /* Positions the container 20px from the top */
+			right: 20px;  /* Positions the container 20px from the right side of the viewport */
+			display: grid;  /* Uses grid layout */
+			grid-template-rows: repeat(3, auto);  /* Creates three rows to accommodate three buttons */
+			gap: 10px;  /* Adds space between each button */
+			z-index: 1050;  /* Ensures the buttons are above most other elements */
+		}
+		
+		.saving-buttons-container .btn-floating {
+			width: 50px;  /* Fixed width for the buttons */
+			height: 50px;  /* Fixed height to maintain square shape */
+			display: flex;  /* Flexbox to center the icon within the button */
+			justify-content: center;  /* Centers content horizontally */
+			align-items: center;  /* Centers content vertically */
+			background-color: #07524b;  /* Background color */
+			color: white;  /* Icon color */
+			border-radius: 50%;  /* Rounded borders for circular shape */
+			padding: 0;  /* No padding needed */
+			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);  /* Shadow for depth */
+			cursor: pointer;  /* Cursor indicates button functionality */
+			transition: transform 0.2s, box-shadow 0.2s;  /* Smooth transitions for interactions */
+		}
+		
+		.saving-buttons-container .btn-floating:hover {
+			background-color: #066c54;  /* Darker color on hover */
+			transform: scale(1.1);  /* Enlarges the button slightly on hover */
+			box-shadow: 0 6px 10px rgba(0, 0, 0, 0.3);  /* Enhanced shadow on hover */
+		}
+		
+		.saving-buttons-container .btn-floating:active {
+			background-color: #055c48;  /* Even darker when active */
+			transform: scale(0.95);  /* Slightly reduces size when clicked */
+			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);  /* Reduces shadow intensity when clicked */
+		}
+		
+
+		
     </style>
 </head>
 <body>
     <div class="container">
         <h3 class="center-align">TLC Image Annotation</h3>
-        
+
         <!-- Main Card for a modern look -->
         <div class="card">
             <div class="card-content">
                 <div class="img-container">
-                    <!-- Original Image and Annotated Image displayed side by side -->
-                    <div style="width: 48%;">
-                        <h5 class="center-align">Original Image</h5>
-                        <div id="canvas-container">
-                            <canvas id="image-canvas"></canvas>
+                    <!-- Original Image Section -->
+                    <div style="width: 40%; text-align: center;">
+                        <h5 style="margin-bottom: 10px;">Original Image</h5>
+                        <div id="canvas-container" style="display: flex; justify-content: center;">
+                            <canvas id="image-canvas" style="border: 1px solid #ccc;"></canvas>
                         </div>
                     </div>
-                    <div style="width: 48%;">
-                        <h5 class="center-align">Annotated Image</h5>
-                        <img id="annotated-image" src="" alt="Annotated Image">
-                    </div>
-                </div>
 
-                <!-- RF Values Table Section -->
-                <div class="row rf-table">
-                    <div class="col s12">
-                        <h5 class="center-align">RF Values</h5>
-                        <table id="values-table" class="striped">
-                            <thead>
-                                <tr>
-                                    <th>mixture_label (X axis)</th>
-                                    <th>substance_label (Y axis)</th>
-                                    <th>RF value</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- RF Values will be populated dynamically here -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+		<!-- Annotation Buttons Section -->
+		<div class="buttons-container">
+			<button class="btn waves-effect waves-light" onclick="addSpots()">+ Spots</button>
+			<button class="btn waves-effect waves-light" onclick="addMinLine()">+ Min Line</button>
+			<button class="btn waves-effect waves-light" onclick="addMaxLine()">+ Max Line</button>
+			<button class="btn waves-effect waves-light" onclick="addHorizontalLine()">+ Horizontal Line</button>
+			<button class="btn waves-effect waves-light" onclick="addVerticalLine()">+ Vertical Line</button>
+			<button class="btn waves-effect waves-light" onclick="calculateRF()">Calculate</button>
+		</div>
+		
+		<!-- Saving Actions Buttons Section -->
+		<div class="saving-buttons-container right-align">
+			<button class="btn-floating btn-small waves-effect waves-light" onclick="saveCSV()">
+				<i class="material-icons">save_alt</i>
+			</button>
+			<button class="btn-floating btn-small waves-effect waves-light" id="saveImageButton" onclick="saveImageToServer()">
+				<i class="material-icons">image</i>
+			</button>
+			<button class="btn-floating btn-small waves-effect waves-light" id="saveCSVButton" onclick="saveCSVToServer()">
+				<i class="material-icons">cloud_upload</i>
+			</button>
+		</div>
 
-                <!-- Annotation Buttons Section -->
-                <div class="center-align">
-                    <button class="btn waves-effect waves-light" onclick="addSpots()">Add Spots</button>
-                    <button class="btn waves-effect waves-light" onclick="addMinLine()">Add Min Line</button>
-                    <button class="btn waves-effect waves-light" onclick="addMaxLine()">Add Max Line</button>
-                    <button class="btn waves-effect waves-light" onclick="addHorizontalLine()">Add Horizontal Line</button>
-                    <button class="btn waves-effect waves-light" onclick="addVerticalLine()">Add Vertical Line</button>
-                    <button class="btn waves-effect waves-light" onclick="calculateRF()">Calculate RF Values</button>
-                    <button class="btn waves-effect waves-light" onclick="saveCSV()">Save as CSV</button>
-                    <button class="btn waves-effect waves-light" id="saveButton" onclick="saveImageToServer()">Save Image To Server</button>
-                    <button class="btn waves-effect waves-light" id="saveButton" onclick="saveCSVToServer()">Save CSV To Server</button>
-				</div>
 
-                <!-- Popup for Line Annotations -->
-                <div id="line-popup" class="popup card-panel">
-                    <div class="input-field">
-                        <input type="text" id="line-text">
-                        <label for="line-text">Annotation</label>
-                    </div>
-                    <button class="btn waves-effect waves-light" onclick="submitAnnotation()">Submit</button>
+                    <!-- Annotated Image Section -->
+                    <div style="width: 40%; text-align: center;">
+                        <h5 style="margin-bottom: 10px;">Annotated Image</h5>
+                        <img id="annotated-image" src="{% static 'circle_detector/images/initial-quick-guide.png' %}" alt="Annotated Image" style="max-width: 100%; border: 1px solid #ccc;">
+					</div>
                 </div>
             </div>
+        </div>
+
+        <!-- RF Values Table Section -->
+        <div class="row rf-table">
+            <div class="col s12">
+                <h5 class="center-align">RF Values</h5>
+                <table id="values-table" class="striped">
+                    <thead>
+                        <tr>
+                            <th>mixture_label (X axis)</th>
+                            <th>substance_label (Y axis)</th>
+                            <th>RF value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- RF Values will be populated dynamically here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Popup for Line Annotations -->
+        <div id="line-popup" class="popup card-panel" style="display: none;">
+            <div class="input-field">
+                <input type="text" id="line-text">
+                <label for="line-text">Annotation</label>
+            </div>
+            <button class="btn waves-effect waves-light" onclick="submitAnnotation()">Submit</button>
         </div>
     </div>
 
     <!-- Import Materialize JS for component functionality -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
-
+	<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- Custom Scripts for application functionality -->
     <script>
 			
@@ -528,25 +625,33 @@
 		
 		// Function to save RF values to a CSV file
 		function saveCSV() {
-			let table = document.getElementById('values-table'); // Get the values table
-			let rows = Array.from(table.rows); // Convert table rows to an array
-			
-			// Initialize CSV content with the new heading as the first row
+			let table = document.getElementById('values-table');
+			let rows = Array.from(table.rows);
 			let csvContent = 'data:text/csv;charset=utf-8,';
-			csvContent += 'Measurement type;thin layer chromatography (TLC);CHMO:0001007\n'; // Add the custom heading
-			
-			// Iterate over rows and convert to CSV format
-			rows.forEach(row => {
-				let cols = Array.from(row.cells).map(cell => cell.textContent); // Get cell text
-				csvContent += cols.join(',') + '\n'; // Join cell texts with commas
+			csvContent += 'Measurement type;thin layer chromatography (TLC);CHMO:0001007\n';
+			csvContent += '\n';
+			csvContent += 'mixture_label (X axis),substance_label (Y axis),RF value\n';
+		
+			rows.forEach((row, index) => {
+				if (index === 0) return;
+				let cols = Array.from(row.cells).map(cell => cell.textContent);
+				csvContent += `${cols[0]},${cols[1]},${cols[2]}\n`;
 			});
 		
-			let encodedUri = encodeURI(csvContent); // Encode the CSV content
-			let link = document.createElement('a'); // Create a temporary link element
-			link.setAttribute('href', encodedUri); // Set href to the encoded URI
-			link.setAttribute('download', 'rf_values.csv'); // Set the download filename
-			document.body.appendChild(link); // Append the link to the document body
+			let encodedUri = encodeURI(csvContent);
+			let link = document.createElement('a');
+			link.setAttribute('href', encodedUri);
+			link.setAttribute('download', 'rf_values.csv');
+			document.body.appendChild(link);
 			link.click(); // Trigger the download
+		
+			// Show success message using SweetAlert
+			Swal.fire({
+				title: 'Success!',
+				text: 'CSV has been successfully saved.',
+				icon: 'success',
+				confirmButtonText: 'OK'
+			});
 		}
 		
 		
@@ -579,7 +684,7 @@
 		
 					canvas.toBlob(function(blob) {
 						const formData = new FormData();
-						formData.append('file', blob, filename);  // Use 'file' as key
+						formData.append('file', blob, filename);
 		
 						const externalApiUrl = decodedPostUrl;
 						const csrftoken = getCookie('csrftoken');
@@ -587,25 +692,38 @@
 						fetch(externalApiUrl, {
 							method: 'POST',
 							body: formData,
-							headers: {
-								'X-CSRFToken': csrftoken
-							}
+							headers: {'X-CSRFToken': csrftoken}
 						})
 						.then(response => response.json())
 						.then(data => {
-							console.log('Image saved to server successfully:', data);
+							Swal.fire({
+								title: 'Success!',
+								text: 'Image saved to ELN successfully.',
+								icon: 'success',
+								confirmButtonText: 'OK'
+							});
 						})
 						.catch(error => {
-							console.error('Error saving image to server:', error);
+							Swal.fire({
+								title: 'Error!',
+								text: 'Error saving image to ELN.',
+								icon: 'error',
+								confirmButtonText: 'OK'
+							});
 						});
 					}, 'image/png');
 				};
 			} else {
 				console.error('Annotated image not found.');
+				Swal.fire({
+					title: 'Error!',
+					text: 'Annotated image not found.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
 			}
 		}
-		
-				
+								
 		function saveCSVToServer() {
 			const inputText = '';
 			const dateTime = new Date().toLocaleString('en-GB', {
@@ -619,15 +737,15 @@
 			}).replace(/\//g, '').replace(/, /g, '').replace(/:/g, '');
 		
 			const csvFilename = `${inputText}_${dateTime}.csv`;
-			const csvData = getCSVData();
+			const csvData = getCSVData(); // Assumes getCSVData() is defined and returns data
 		
 			if (csvData) {
 				const csvBlob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
 				const formData = new FormData();
-				formData.append('file', csvBlob, csvFilename);  // Use 'file' as key
+				formData.append('file', csvBlob, csvFilename); // Use 'file' as key
 		
-				const externalApiUrl = decodedPostUrl;
-				const csrftoken = getCookie('csrftoken');
+				const externalApiUrl = decodedPostUrl; // Ensure this URL is correctly defined
+				const csrftoken = getCookie('csrftoken'); // Ensure csrf token is correctly fetched
 		
 				fetch(externalApiUrl, {
 					method: 'POST',
@@ -638,29 +756,66 @@
 				})
 				.then(response => response.json())
 				.then(data => {
-					console.log('CSV saved to server successfully:', data);
+					console.log('CSV saved to ELN successfully:', data);
+					Swal.fire({
+						title: 'Success!',
+						text: 'CSV file saved to ELN successfully.',
+						icon: 'success',
+						confirmButtonText: 'OK'
+					});
 				})
 				.catch(error => {
 					console.error('Error saving CSV to server:', error);
+					Swal.fire({
+						title: 'Error!',
+						text: 'Failed to save CSV to server.',
+						icon: 'error',
+						confirmButtonText: 'OK'
+					});
 				});
 			} else {
 				console.error('No CSV data found.');
+				Swal.fire({
+					title: 'Error!',
+					text: 'No CSV data found to save.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
 			}
-		}		
-		// Function to retrieve CSV data from the values table
+		}
+		
+		// Function to retrieve CSV data from the values table with correct inline notation
 		function getCSVData() {
 			let table = document.getElementById('values-table'); // Get the values table
-			let rows = Array.from(table.rows); // Convert rows to an array
-			let csvContent = '';
+			let rows = Array.from(table.rows); // Convert table rows to an array
 		
-			// Iterate over rows and convert to CSV format
-			rows.forEach(row => {
-				let cols = Array.from(row.cells).map(cell => cell.textContent); // Get cell text
-				csvContent += cols.join(',') + '\n'; // Join cell texts with commas
+			// Initialize CSV content with the required headers
+			let csvContent = "Measurement type;thin layer chromatography (TLC);CHMO:0001007\n\n";
+			csvContent += "mixture_label (X axis),substance_label (Y axis),RF value\n"; // Add column headers
+		
+			let rfValues = []; // Array to store RF values for inline notation
+		
+			// Iterate over rows and build the CSV content dynamically
+			rows.forEach(function(row, index) {
+				if (index === 0) return; // Skip the header row
+		
+				let cols = Array.from(row.cells).map(function(cell) {
+					return cell.textContent.trim();
+				}); // Get cell text content
+		
+				// Append row data to CSV dynamically (Using String Concatenation)
+				csvContent += cols[0] + "," + cols[1] + "," + cols[2] + "\n";
+		
+				// Append RF value for inline notation: "0.72 (zzz)[h1]"
+				rfValues.push(cols[2] + " (" + cols[1] + ")[h" + index + "]");
 			});
 		
-			return csvContent; // Return the CSV content
+			// Append inline notation at the end
+			csvContent += "\nDetails:\nTLC (solvents); Rf (UV-Vis in nm, staining) = " + rfValues.join(", ") + ".\n";
+		
+			return csvContent;
 		}
+		
 		
 		// Function to get CSRF token from cookie
 		function getCookie(name) {
