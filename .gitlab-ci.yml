@@ -2,11 +2,15 @@ docker-build:
   image: docker:latest
   stage: build
   services:
-    - docker:dind
+    - name: docker:dind
+      alias: docker
+      command: ["--tls=false"]
   variables:
     DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
     DOCKER_HOST: tcp://docker:2375/
     DOCKER_TLS_CERTDIR: ""
+  tags:
+    - quickchanging-cobra-0  # Tag of the GitLab Runner
   script:
     - docker info
     - docker build --pull -t "$DOCKER_IMAGE_NAME" .
@@ -17,6 +21,5 @@ docker-build:
         docker push "$CI_REGISTRY_IMAGE:latest"
       fi
   rules:
-    - if: $CI_COMMIT_BRANCH
-      exists:
+    - exists:
         - Dockerfile
