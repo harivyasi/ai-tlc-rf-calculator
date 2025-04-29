@@ -7,7 +7,7 @@ docker-build:
       command: ["--tls=false"]
   variables:
     DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
-    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_HOST: tcp://docker:2376/
     DOCKER_TLS_CERTDIR: ""
   tags:
     - quickchanging-cobra-0  # Tag of the GitLab Runner
