@@ -1,260 +1,832 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Annotate Image</title>
-    
-	{% load static %}
-	
-    <!-- Import Google Icon Font for Material Icons -->
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    
-    <!-- Import Materialize CSS framework for styling -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
-    
-    <!-- Custom Styles -->
-    <style>
-        /* Container for the canvas and image */
-        #canvas-container {
-            position: relative;
-            margin-bottom: 20px;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLC Image Annotation Tool</title>
 
-        /* Styling for the image canvas */
-        #image-canvas {
-            border: 1px solid #ddd;
-            max-width: 100%;
-        }
+<!-- Import Google Icon Font for Material Icons -->
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-        /* Styling for the annotated image */
-        #annotated-image {
-            border: 1px solid #ddd;
-            max-width: 100%;
-        }
+<!-- Import Materialize CSS framework for styling -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
 
-        /* Popup styles for displaying additional information */
-        .popup {
-            position: absolute;
-            display: none; /* Initially hidden */
-            background-color: white;
-            border: 1px solid black;
-            padding: 10px;
-            z-index: 1000; /* Ensures popup appears above other elements */
-        }
+<!-- Lab System Theme Styles -->
+<style>
+    :root {
+        /* Lab System Color Palette */
+        --primary-blue: #4A90E2;
+        --primary-blue-dark: #357ABD;
+        --primary-blue-light: #6BA3E8;
+        --secondary-teal: #5BC0DE;
+        --secondary-teal-dark: #46B8DA;
+        --accent-orange: #F0AD4E;
+        --accent-orange-dark: #EC971F;
+        --success-green: #5CB85C;
+        --success-green-dark: #449D44;
+        --danger-red: #D9534F;
+        --danger-red-dark: #C9302C;
+        --warning-yellow: #F0AD4E;
+        
+        /* Neutral Colors */
+        --lab-white: #FFFFFF;
+        --lab-light-gray: #F8F9FA;
+        --lab-gray: #E9ECEF;
+        --lab-medium-gray: #DEE2E6;
+        --lab-dark-gray: #6C757D;
+        --lab-darker-gray: #495057;
+        --lab-text: #212529;
+        --lab-text-muted: #6C757D;
+        
+        /* Shadows and Effects */
+        --lab-shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+        --lab-shadow-md: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+        --lab-shadow-lg: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23);
+        
+        /* Border Radius */
+        --lab-radius-sm: 4px;
+        --lab-radius-md: 6px;
+        --lab-radius-lg: 8px;
+    }
 
-        /* Styling for delete icon */
-        .delete-icon {
-            cursor: pointer;
-            color: red;
-            font-size: 20px;
-            position: absolute;
-            z-index: 10;
-            background-color: white;
-            border-radius: 50%;
-            padding: 5px;
-            box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2);
-            transition: transform 0.2s; /* Smooth scaling effect */
-        }
+    * {
+        box-sizing: border-box;
+    }
 
-        /* Hover effect for delete icon */
-        .delete-icon:hover {
-            transform: scale(1.2);
-            color: darkred;
-        }
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--lab-light-gray);
+        min-height: 100vh;
+        margin: 0;
+        padding: 15px;
+        color: var(--lab-text);
+    }
 
-        /* Flex container for images */
-        .img-container {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 20px;
-        }
+    .main-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-lg);
+        box-shadow: var(--lab-shadow-md);
+        overflow: hidden;
+        border: 1px solid var(--lab-medium-gray);
+    }
 
-        /* Responsive image styling */
-        .img-container img {
-            max-height: 100%;
+    /* Lab System Header */
+    .header {
+        background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-blue-dark) 100%);
+        color: white;
+        padding: 1.5rem 2rem;
+        border-bottom: 3px solid var(--primary-blue-dark);
+        position: relative;
+    }
+
+    .header h1 {
+        margin: 0;
+        font-size: 1.8rem;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+    }
+
+    .header p {
+        margin: 0.3rem 0 0 0;
+        opacity: 0.9;
+        font-size: 0.95rem;
+        font-weight: 400;
+    }
+
+    .content-wrapper {
+        padding: 1.5rem;
+        background: var(--lab-white);
+    }
+
+    /* Lab System Card Styling */
+    .lab-card {
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        box-shadow: var(--lab-shadow-sm);
+        border: 1px solid var(--lab-medium-gray);
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+    }
+
+    .card-header {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--lab-medium-gray);
+        background: var(--lab-light-gray);
+    }
+
+    .card-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--lab-text);
+        margin: 0;
+    }
+
+    .card-content {
+        padding: 1.5rem;
+    }
+
+    /* Images Grid Layout */
+    .images-grid {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 1.5rem;
+        align-items: start;
+        margin-bottom: 1.5rem;
+    }
+
+    .image-panel {
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        padding: 1rem;
+        box-shadow: var(--lab-shadow-sm);
+        border: 1px solid var(--lab-medium-gray);
+    }
+
+    .image-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--lab-text);
+        margin-bottom: 1rem;
+        text-align: center;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--lab-gray);
+    }
+
+    #canvas-container {
+        position: relative;
+        display: flex;
+        justify-content: center;
+        margin-bottom: 1rem;
+    }
+
+    #image-canvas {
+        border: 2px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-sm);
+        max-width: 100%;
+        box-shadow: var(--lab-shadow-sm);
+    }
+
+    #annotated-image {
+        border: 2px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-sm);
+        max-width: 100%;
+        display: block;
+        margin: 0 auto;
+        box-shadow: var(--lab-shadow-sm);
+    }
+
+    /* Lab System Controls Panel */
+    .controls-panel {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-width: 280px;
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        padding: 1.5rem;
+        box-shadow: var(--lab-shadow-md);
+        border: 2px solid var(--primary-blue);
+        position: relative;
+    }
+
+    .controls-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--primary-blue);
+        margin-bottom: 1.5rem;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .button-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        width: 100%;
+        margin-bottom: 1.5rem;
+    }
+
+    /* Lab System Button Styles */
+    .lab-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.25rem;
+        border: 1px solid transparent;
+        border-radius: var(--lab-radius-sm);
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        min-height: 40px;
+        text-transform: none;
+    }
+
+    .lab-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--lab-shadow-sm);
+    }
+
+    .lab-btn:active {
+        transform: translateY(0);
+    }
+
+    /* Primary Button (Blue) */
+    .btn-lab-primary {
+        background: var(--primary-blue);
+        color: white;
+        border-color: var(--primary-blue-dark);
+    }
+
+    .btn-lab-primary:hover {
+        background: var(--primary-blue-dark);
+        border-color: var(--primary-blue-dark);
+    }
+
+    /* Secondary Button (Teal) */
+    .btn-lab-secondary {
+        background: var(--secondary-teal);
+        color: white;
+        border-color: var(--secondary-teal-dark);
+    }
+
+    .btn-lab-secondary:hover {
+        background: var(--secondary-teal-dark);
+        border-color: var(--secondary-teal-dark);
+    }
+
+    /* Success Button (Green) */
+    .btn-lab-success {
+        background: var(--success-green);
+        color: white;
+        border-color: var(--success-green-dark);
+    }
+
+    .btn-lab-success:hover {
+        background: var(--success-green-dark);
+        border-color: var(--success-green-dark);
+    }
+
+    /* Warning Button (Orange) */
+    .btn-lab-warning {
+        background: var(--accent-orange);
+        color: white;
+        border-color: var(--accent-orange-dark);
+    }
+
+    .btn-lab-warning:hover {
+        background: var(--accent-orange-dark);
+        border-color: var(--accent-orange-dark);
+    }
+
+    /* Danger Button (Red) */
+    .btn-lab-danger {
+        background: var(--danger-red);
+        color: white;
+        border-color: var(--danger-red-dark);
+    }
+
+    .btn-lab-danger:hover {
+        background: var(--danger-red-dark);
+        border-color: var(--danger-red-dark);
+    }
+
+    /* Outline Buttons */
+    .btn-lab-outline {
+        background: transparent;
+        color: var(--primary-blue);
+        border-color: var(--primary-blue);
+    }
+
+    .btn-lab-outline:hover {
+        background: var(--primary-blue);
+        color: white;
+    }
+
+    /* Active Button State */
+    .lab-btn.active {
+        box-shadow: 0 0 0 2px var(--primary-blue-light);
+        transform: translateY(-1px);
+    }
+
+    /* Floating Action Buttons - Lab Style */
+    .fab-container {
+        position: fixed;
+        top: 2rem;
+        right: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        z-index: 1000;
+    }
+
+    .lab-fab {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        border: none;
+        cursor: pointer;
+        box-shadow: var(--lab-shadow-md);
+        transition: all 0.2s ease;
+        border: 2px solid rgba(255,255,255,0.2);
+    }
+
+    .lab-fab:hover {
+        transform: scale(1.1);
+        box-shadow: var(--lab-shadow-lg);
+    }
+
+    .fab-lab-primary {
+        background: var(--primary-blue);
+    }
+
+    .fab-lab-secondary {
+        background: var(--secondary-teal);
+    }
+
+    .fab-lab-warning {
+        background: var(--accent-orange);
+    }
+
+    /* Instructions Panel - Lab Style */
+    .instructions-panel {
+        background: var(--lab-light-gray);
+        border: 1px solid var(--lab-medium-gray);
+        border-left: 4px solid var(--primary-blue);
+        border-radius: var(--lab-radius-md);
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .instructions-title {
+        color: var(--primary-blue);
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .instructions-content {
+        color: var(--lab-text);
+        line-height: 1.5;
+    }
+
+    .instructions-content ol {
+        padding-left: 1.5rem;
+    }
+
+    .instructions-content li {
+        margin-bottom: 0.5rem;
+    }
+
+    .highlight {
+        background: rgba(74, 144, 226, 0.15);
+        color: var(--primary-blue-dark);
+        padding: 0.125rem 0.25rem;
+        border-radius: var(--lab-radius-sm);
+        font-weight: 500;
+    }
+
+    /* Delete Icons - Lab Style */
+    .delete-icon {
+        cursor: pointer;
+        color: var(--danger-red);
+        font-size: 16px;
+        position: absolute;
+        z-index: 20;
+        background: var(--lab-white);
+        border-radius: 50%;
+        padding: 3px;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        box-shadow: var(--lab-shadow-sm);
+        transition: all 0.2s ease;
+        border: 1px solid var(--lab-medium-gray);
+    }
+
+    .delete-icon:hover {
+        transform: scale(1.15);
+        color: var(--danger-red-dark);
+        box-shadow: var(--lab-shadow-md);
+        background: #fff5f5;
+    }
+
+    /* Popup Styling - Lab Style */
+    .popup {
+        position: absolute;
+        display: none;
+        background: var(--lab-white);
+        border: 1px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-md);
+        padding: 1.25rem;
+        z-index: 1000;
+        box-shadow: var(--lab-shadow-lg);
+        min-width: 280px;
+    }
+
+    .popup .input-field {
+        margin-bottom: 1rem;
+    }
+
+    .popup input {
+        border: 1px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-sm);
+        padding: 0.75rem;
+        width: 100%;
+        font-size: 0.875rem;
+        transition: border-color 0.2s ease;
+    }
+
+    .popup input:focus {
+        outline: none;
+        border-color: var(--primary-blue);
+        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+    }
+
+    /* Table Styling - Lab Style */
+    .table-container {
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        overflow: hidden;
+        box-shadow: var(--lab-shadow-sm);
+        border: 1px solid var(--lab-medium-gray);
+    }
+
+    .table-header {
+        background: var(--primary-blue);
+        color: white;
+        padding: 1rem 1.5rem;
+    }
+
+    .table-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    #values-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    #values-table th {
+        background: var(--lab-light-gray);
+        color: var(--lab-text);
+        font-weight: 600;
+        padding: 0.875rem;
+        text-align: left;
+        border-bottom: 1px solid var(--lab-medium-gray);
+        font-size: 0.875rem;
+    }
+
+    #values-table td {
+        padding: 0.875rem;
+        border-bottom: 1px solid var(--lab-gray);
+        color: var(--lab-text);
+        font-size: 0.875rem;
+    }
+
+    #values-table tbody tr:hover {
+        background: var(--lab-light-gray);
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+        .images-grid {
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+        }
+        
+        .controls-panel {
+            order: 2;
+            min-width: auto;
             width: 100%;
-            object-fit: contain; /* Maintain aspect ratio */
         }
-
-        /* Table styling for RF values */
-        .rf-table {
-            margin-top: 20px;
+        
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
         }
+    }
 
-        /* Styles for fluorescent spots on the image */
-        .spot {
-            background-color: orange;
-            border-radius: 50%;
-            position: absolute;
-            z-index: 2000; /* Ensures spots are above other elements */
+    @media (max-width: 768px) {
+        body {
+            padding: 10px;
         }
-				
-		.buttons-container {
-			display: grid; /* Use grid layout */
-			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* Flexible columns */
-			gap: 15px; /* Space between buttons */
-			justify-content: center; /* Center the grid */
-			margin-top: 20px;
-			padding: 20px; /* Add some padding */
-		}
-		
-		.buttons-container button {
-			display: flex; /* Enable Flexbox */
-			justify-content: center; /* Center horizontally */
-			align-items: center; /* Center vertically */
-			background-color: #07524b; /* Modern button color */
-			color: white; /* White text for contrast */
-			border: none; /* Remove default borders */
-			border-radius: 8px; /* Rounded corners for elevation */
-			padding: 12px 20px; /* Add padding */
-			font-size: 14px; /* Font size */
-			cursor: pointer; /* Pointer cursor on hover */
-			box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1); /* Add an elevated shadow */
-			text-align: center; /* Ensure text alignment */
-			transition: transform 0.2s ease, box-shadow 0.2s ease; /* Smooth hover effects */
-		}
+        
+        .content-wrapper {
+            padding: 1rem;
+        }
+        
+        .header {
+            padding: 1rem 1.5rem;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+        }
+        
+        .fab-container {
+            top: 1rem;
+            right: 1rem;
+        }
+        
+        .button-group {
+            grid-template-columns: 1fr;
+        }
+    }
 
-		
-		.buttons-container button:hover {
-			transform: translateY(-2px); /* Slight elevation on hover */
-			box-shadow: 0px 6px 10px rgba(0, 0, 0, 0.15); /* Enhanced shadow on hover */
-		}
-		
-		.buttons-container button:active {
-			transform: translateY(1px); /* Slight depression on click */
-			box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2); /* Dimmed shadow on click */
-		}
-				
-		/* Ensure the parent container (like .container or body) has a relative position */
-		.container {
-			position: relative;  /* This allows absolute positioning within it */
-			min-height: 100vh;  /* Ensure it covers all the content if not already set */
-		}
-				
-		.saving-buttons-container {
-			position: fixed;  /* Ensures that it stays in a specific position relative to the viewport */
-			top: 20px;  /* Positions the container 20px from the top */
-			right: 20px;  /* Positions the container 20px from the right side of the viewport */
-			display: grid;  /* Uses grid layout */
-			grid-template-rows: repeat(3, auto);  /* Creates three rows to accommodate three buttons */
-			gap: 10px;  /* Adds space between each button */
-			z-index: 1050;  /* Ensures the buttons are above most other elements */
-		}
-		
-		.saving-buttons-container .btn-floating {
-			width: 50px;  /* Fixed width for the buttons */
-			height: 50px;  /* Fixed height to maintain square shape */
-			display: flex;  /* Flexbox to center the icon within the button */
-			justify-content: center;  /* Centers content horizontally */
-			align-items: center;  /* Centers content vertically */
-			background-color: #07524b;  /* Background color */
-			color: white;  /* Icon color */
-			border-radius: 50%;  /* Rounded borders for circular shape */
-			padding: 0;  /* No padding needed */
-			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);  /* Shadow for depth */
-			cursor: pointer;  /* Cursor indicates button functionality */
-			transition: transform 0.2s, box-shadow 0.2s;  /* Smooth transitions for interactions */
-		}
-		
-		.saving-buttons-container .btn-floating:hover {
-			background-color: #066c54;  /* Darker color on hover */
-			transform: scale(1.1);  /* Enlarges the button slightly on hover */
-			box-shadow: 0 6px 10px rgba(0, 0, 0, 0.3);  /* Enhanced shadow on hover */
-		}
-		
-		.saving-buttons-container .btn-floating:active {
-			background-color: #055c48;  /* Even darker when active */
-			transform: scale(0.95);  /* Slightly reduces size when clicked */
-			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);  /* Reduces shadow intensity when clicked */
-		}
-		
+    /* Spots styling - Lab colors */
+    .spot {
+        background-color: var(--accent-orange);
+        border: 2px solid var(--accent-orange-dark);
+        border-radius: 50%;
+        position: absolute;
+        z-index: 2000;
+        box-shadow: var(--lab-shadow-sm);
+    }
 
-		
-    </style>
+    /* Status Badges */
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: var(--lab-radius-sm);
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .status-active {
+        background: rgba(92, 184, 92, 0.15);
+        color: var(--success-green-dark);
+    }
+
+    .status-pending {
+        background: rgba(240, 173, 78, 0.15);
+        color: var(--accent-orange-dark);
+    }
+</style>
 </head>
 <body>
-    <div class="container">
-        <h3 class="center-align">TLC Image Annotation</h3>
 
-        <!-- Main Card for a modern look -->
-        <div class="card">
+<div class="main-container">
+    <!-- Lab System Header -->
+    <div class="header">
+        <h1>TLC Image Annotation Tool</h1>
+        <p>Thin Layer Chromatography Analysis • Laboratory Management System</p>
+    </div>
+
+    <div class="content-wrapper">
+        <!-- Image Source Selection -->
+        <div class="lab-card">
+            <div class="card-header">
+                <h5 class="card-title">📁 Image Source</h5>
+            </div>
             <div class="card-content">
-                <div class="img-container">
-                    <!-- Original Image Section -->
-                    <div style="width: 40%; text-align: center;">
-                        <h5 style="margin-bottom: 10px;">Original Image</h5>
-                        <div id="canvas-container" style="display: flex; justify-content: center;">
-                            <canvas id="image-canvas" style="border: 1px solid #ccc;"></canvas>
+                <div class="source-selection">
+                    <div class="button-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <button id="eln-source-btn" class="lab-btn btn-lab-primary active" onclick="selectImageSource('eln')">
+                            <i class="material-icons">cloud</i>
+                            From ELN
+                        </button>
+                        <button id="local-source-btn" class="lab-btn btn-lab-outline" onclick="selectImageSource('local')">
+                            <i class="material-icons">upload_file</i>
+                            Upload Local
+                        </button>
+                    </div>
+                    
+                    <!-- Local Upload Section -->
+                    <div id="local-upload-section" style="display: none; margin-top: 1.5rem;">
+                        <div class="upload-area" style="border: 2px dashed var(--lab-medium-gray); border-radius: var(--lab-radius-md); padding: 2rem; text-align: center; background: var(--lab-light-gray);">
+                            <i class="material-icons" style="font-size: 3rem; color: var(--lab-dark-gray);">cloud_upload</i>
+                            <h6 style="margin: 1rem 0; color: var(--lab-text);">Upload TLC Image</h6>
+                            <p style="color: var(--lab-text-muted); margin-bottom: 1.5rem;">Drag & drop your image here or click to browse</p>
+                            <input type="file" id="local-image-input" accept="image/*" style="display: none;">
+                            <button class="lab-btn btn-lab-primary" onclick="document.getElementById('local-image-input').click()">
+                                <i class="material-icons">folder_open</i>
+                                Choose File
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content Card -->
+        <div class="lab-card">
+            <div class="card-content">
+                <!-- Images and Controls Grid -->
+                <div class="images-grid">
+                    <!-- Original Image Panel -->
+                    <div class="image-panel">
+                        <h5 class="image-title">📸 Original Image</h5>
+                        <div id="canvas-container">
+                            <canvas id="image-canvas"></canvas>
                         </div>
                     </div>
 
-		<!-- Annotation Buttons Section -->
-		<div class="buttons-container">
-			<button class="btn waves-effect waves-light" onclick="addSpots()">+ Spots</button>
-			<button class="btn waves-effect waves-light" onclick="addMinLine()">+ Min Line</button>
-			<button class="btn waves-effect waves-light" onclick="addMaxLine()">+ Max Line</button>
-			<button class="btn waves-effect waves-light" onclick="addHorizontalLine()">+ Horizontal Line</button>
-			<button class="btn waves-effect waves-light" onclick="addVerticalLine()">+ Vertical Line</button>
-			<button class="btn waves-effect waves-light" onclick="calculateRF()">Calculate</button>
-		</div>
-		
-		<!-- Saving Actions Buttons Section -->
-		<div class="saving-buttons-container right-align">
-			<button class="btn-floating btn-small waves-effect waves-light" onclick="saveCSV()">
-				<i class="material-icons">save_alt</i>
-			</button>
-			<button class="btn-floating btn-small waves-effect waves-light" id="saveImageButton" onclick="saveImageToServer()">
-				<i class="material-icons">image</i>
-			</button>
-			<button class="btn-floating btn-small waves-effect waves-light" id="saveCSVButton" onclick="saveCSVToServer()">
-				<i class="material-icons">cloud_upload</i>
-			</button>
-		</div>
+                    <!-- Controls Panel (Centered) -->
+                    <div class="controls-panel">
+                        <h6 class="controls-title">Annotation Tools</h6>
+                        
+                        <div class="button-group">
+                            <button class="lab-btn btn-lab-primary" onclick="addSpots(event)">
+                                <i class="material-icons">add_circle</i>
+                                Add Spots
+                            </button>
+                            <button class="lab-btn btn-lab-secondary" onclick="addMinLine(event)">
+                                <i class="material-icons">horizontal_rule</i>
+                                Min Line
+                            </button>
+                            <button class="lab-btn btn-lab-secondary" onclick="addMaxLine(event)">
+                                <i class="material-icons">horizontal_rule</i>
+                                Max Line
+                            </button>
+                            <button class="lab-btn btn-lab-primary" onclick="addHorizontalLine(event)">
+                                <i class="material-icons">remove</i>
+                                H-Line
+                            </button>
+                            <button class="lab-btn btn-lab-primary" onclick="addVerticalLine(event)">
+                                <i class="material-icons">more_vert</i>
+                                V-Line
+                            </button>
+                        </div>
 
+                        <div class="button-group">
+                            <button class="lab-btn btn-lab-success" onclick="calculateRF()">
+                                <i class="material-icons">calculate</i>
+                                Calculate RF
+                            </button>
+                            <button class="lab-btn btn-lab-danger" onclick="resetCanvas()">
+                                <i class="material-icons">refresh</i>
+                                Reset
+                            </button>
+                        </div>
+                    </div>
 
-                    <!-- Annotated Image Section -->
-                    <div style="width: 40%; text-align: center;">
-                        <h5 style="margin-bottom: 10px;">Annotated Image</h5>
-                        <img id="annotated-image" src="{% static 'circle_detector/images/initial-quick-guide.png' %}" alt="Annotated Image" style="max-width: 100%; border: 1px solid #ccc;">
+                    <!-- Result Panel -->
+                    <div class="image-panel">
+                        <h5 class="image-title" id="annotated-heading">📋 Instructions</h5>
+                        
+					<!-- Instructions Panel -->
+					<div id="instructions-box" class="instructions-panel">
+						<h6 class="instructions-title">
+							<i class="material-icons">info</i>
+							TLC Analysis Instructions
+						</h6>
+						<div class="instructions-content">
+							<p><strong>Follow these steps to analyze your TLC plate:</strong></p>
+							
+							<h6 style="color: var(--primary-blue); margin-top: 1.5rem; margin-bottom: 0.75rem;">📋 Step-by-Step Guide:</h6>
+							<ol style="line-height: 1.8;">
+								<li><strong>Image Ready:</strong> Your TLC plate image has been automatically loaded from the ELN system and appears in the left panel. You can now begin annotation.</li>
+								
+								<li><strong>Set Reference Lines First:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>Click <span class="highlight">Min Line</span> → Draw a horizontal line at the <strong>solvent front</strong> (bottom baseline)</li>
+										<li>Click <span class="highlight">Max Line</span> → Draw a horizontal line at the <strong>solvent front</strong> (top line where solvent reached)</li>
+									</ul>
+								</li>
+								
+								<li><strong>Mark Your Spots:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>Click <span class="highlight">Add Spots</span> button</li>
+										<li>Click directly on each spot in your TLC plate</li>
+										<li>Each spot will be marked with an orange circle</li>
+										<li>Add as many spots as needed for your analysis</li>
+									</ul>
+								</li>
+								
+								<li><strong>Add Lane Separators (Optional):</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li><span class="highlight">V-Line</span>: Vertical lines to separate different sample lanes</li>
+										<li><span class="highlight">H-Line</span>: Additional horizontal reference lines</li>
+										<li>Type labels when prompted (e.g., "Sample A", "Standard", etc.)</li>
+									</ul>
+								</li>
+								
+								<li><strong>Calculate RF Values:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>Click <span class="highlight">Calculate RF</span> button</li>
+										<li>RF values will be automatically calculated using the formula: <strong>RF = Distance traveled by spot / Distance traveled by solvent</strong></li>
+										<li>Results appear in the table below with spot coordinates and RF values</li>
+									</ul>
+								</li>
+								
+								<li><strong>Export Your Results:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>💾 <strong>Download CSV:</strong> Save RF data as spreadsheet</li>
+										<li>🖼️ <strong>Save Image:</strong> Download annotated TLC image</li>
+										<li>☁️ <strong>Upload to ELN:</strong> Send results to laboratory database</li>
+									</ul>
+								</li>
+							</ol>
+					
+							<div style="background: rgba(74, 144, 226, 0.1); padding: 1rem; border-radius: 6px; margin: 1.5rem 0;">
+								<h6 style="color: var(--primary-blue); margin: 0 0 0.5rem 0;">💡 Pro Tips:</h6>
+								<ul style="margin: 0; font-size: 0.9rem;">
+									<li><strong>Accuracy:</strong> Zoom in on your image for precise spot marking</li>
+									<li><strong>Order Matters:</strong> Always set Min/Max lines before adding spots</li>
+									<li><strong>Multiple Lanes:</strong> Use V-Lines to organize different samples</li>
+									<li><strong>Corrections:</strong> Click the red ❌ on any annotation to delete it</li>
+									<li><strong>Reset:</strong> Use the Reset button to start over if needed</li>
+								</ul>
+							</div>
+					
+							<div style="background: rgba(240, 173, 78, 0.1); padding: 1rem; border-radius: 6px; margin: 1.5rem 0;">
+								<h6 style="color: var(--accent-orange-dark); margin: 0 0 0.5rem 0;">⚠️ Important Notes:</h6>
+								<ul style="margin: 0; font-size: 0.9rem;">
+									<li><strong>Image Quality:</strong> Use clear, well-lit TLC plate photos</li>
+									<li><strong>Reference Lines:</strong> Min line = starting point, Max line = solvent front</li>
+									<li><strong>Spot Center:</strong> Click the center of each spot for accurate measurements</li>
+									<li><strong>Data Validation:</strong> Review RF values - they should be between 0 and 1</li>
+								</ul>
+							</div>
+					
+							<div style="text-align: center; margin-top: 2rem;">
+								<button class="lab-btn btn-lab-warning" onclick="updateAnnotatedHeading('editing')" style="font-size: 1rem; padding: 0.875rem 2rem;">
+									<i class="material-icons">play_arrow</i>
+									Start TLC Analysis
+								</button>
+							</div>
+						</div>
 					</div>
+                        
+                        <!-- Annotated Image (initially hidden) -->
+                        <img id="annotated-image" style="display: none;" />
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- RF Values Table Section -->
-        <div class="row rf-table">
-            <div class="col s12">
-                <h5 class="center-align">RF Values</h5>
-                <table id="values-table" class="striped">
-                    <thead>
-                        <tr>
-                            <th>mixture_label (X axis)</th>
-                            <th>substance_label (Y axis)</th>
-                            <th>RF value</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- RF Values will be populated dynamically here -->
-                    </tbody>
-                </table>
+        <!-- RF Values Table -->
+        <div class="table-container">
+            <div class="table-header">
+                <h5 class="table-title">📊 RF Values Analysis Results</h5>
             </div>
-        </div>
-
-        <!-- Popup for Line Annotations -->
-        <div id="line-popup" class="popup card-panel" style="display: none;">
-            <div class="input-field">
-                <input type="text" id="line-text">
-                <label for="line-text">Annotation</label>
-            </div>
-            <button class="btn waves-effect waves-light" onclick="submitAnnotation()">Submit</button>
+            <table id="values-table">
+                <thead>
+                    <tr>
+                        <th>Mixture Label (X axis)</th>
+                        <th>Substance Label (Y axis)</th>
+                        <th>RF Value</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- RF Values will be populated dynamically here -->
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <!-- Import Materialize JS for component functionality -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <!-- Custom Scripts for application functionality -->
+    <!-- Floating Action Buttons -->
+    <div class="fab-container">
+        <button class="lab-fab fab-lab-primary" onclick="saveCSV()" title="Download CSV">
+            <i class="material-icons">save_alt</i>
+        </button>
+        <button class="lab-fab fab-lab-secondary" onclick="saveImageToServer()" title="Save Image">
+            <i class="material-icons">image</i>
+        </button>
+        <button class="lab-fab fab-lab-warning" onclick="saveCSVToServer()" title="Upload to ELN">
+            <i class="material-icons">cloud_upload</i>
+        </button>
+    </div>
+
+    <!-- Popup for Line Annotations -->
+    <div id="line-popup" class="popup">
+        <div class="input-field">
+            <input type="text" id="line-text" placeholder="Enter annotation text">
+        </div>
+        <button class="lab-btn btn-lab-primary" onclick="submitAnnotation()">
+            <i class="material-icons">check</i>
+            Submit
+        </button>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <script>
 			
 		// Get references to HTML elements
@@ -274,17 +846,19 @@
 		console.log(decodedImageUrl);
 		
 		// Fetch image data from the server
-		fetch(`/fetch-image/?url=${encodeURIComponent(decodedImageUrl)}`)
+		fetch('/fetch-image/?url=' + encodeURIComponent(decodedImageUrl))
 			.then(response => response.json())
 			.then(data => {
 				if (data.imagePath) {
 					console.log(data.imagePath)
 					// Serve the fetched image if the imagePath is present
-					fetch(`/serve-image/?file_path=${encodeURIComponent(data.imagePath)}`)
+					fetch('/serve-image/?file_path=' + encodeURIComponent(data.imagePath))
 						.then(response => {
 							if (response.ok) {
 								// Set the image source for the image element
-								image.src = `/serve-image/?file_path=${encodeURIComponent(data.imagePath)}`;
+								
+								image.src = '/serve-image/?file_path=' + encodeURIComponent(data.imagePath);
+								console.log("Setting image.src to:", image.src);
 							} else {
 								console.error('Failed to serve image');
 							}
@@ -303,11 +877,34 @@
 		
 		// Initialize variables for annotations
 		let lines = [];
+		
+		let draggingSpot = null;
+		let isDragging = false;
+		let dragOffsetX = 0;
+		let dragOffsetY = 0;
+		let justDragged = false; // Prevent accidental spot creation after drag
+		let draggingLine = null;
+		let lineDragOffsetY = 0;
 		let spots = [];
 		let currentLine = null;
 		let isHorizontal = true; // Flag for line orientation
 		let lineType = ''; // Type of line to be drawn
 		let addingSpots = false; // Flag to indicate spot addition mode
+		let lineDragOffsetX = 0;
+		let imageSource = 'eln'; // Default to ELN
+		let isLocalImage = false;
+		
+		
+		
+		function setActiveButton(clickedButton) {
+			// Remove active class from all annotation buttons
+			document.querySelectorAll('.lab-btn').forEach(btn => btn.classList.remove('active'));
+			
+			// Add active class to clicked button
+			if (clickedButton) {
+				clickedButton.classList.add('active');
+			}
+		}
 		
 		// Handle image loading and drawing on the canvas
 		image.onload = function () {
@@ -333,8 +930,8 @@
 			// Ensure the annotated image matches the original canvas size
 			document.getElementById('annotated-image').style.width = canvas.width + 'px';
 			document.getElementById('annotated-image').style.height = canvas.height + 'px';
-		};
 		
+		};
 		
 		// Function to disable other annotation actions
 		function disableOtherActions() {
@@ -342,38 +939,44 @@
 			canvas.removeEventListener('click', drawSpot); // Remove spot drawing event listener
 			canvas.removeEventListener('click', drawLine); // Remove line drawing event listener
 		}
-		
-		// Function to add a minimum line
-		function addMinLine() {
-			disableOtherActions(); // Disable other actions
-			lineType = 'min'; // Set the line type to 'min'
-			isHorizontal = true; // Set line orientation to horizontal
-			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+				
+		function addMinLine(event) {
+			disableOtherActions();
+			lineType = 'min';
+			isHorizontal = true;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
 		}
 		
-		// Function to add a maximum line
-		function addMaxLine() {
-			disableOtherActions(); // Disable other actions
-			lineType = 'max'; // Set the line type to 'max'
-			isHorizontal = true; // Set line orientation to horizontal
-			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+		function addMaxLine(event) {
+			disableOtherActions();
+			lineType = 'max';
+			isHorizontal = true;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
 		}
 		
-		// Function to add a horizontal line
-		function addHorizontalLine() {
-			disableOtherActions(); // Disable other actions
-			lineType = 'horizontal'; // Set the line type to 'horizontal'
-			isHorizontal = true; // Set line orientation to horizontal
-			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+		function addHorizontalLine(event) {
+			disableOtherActions();
+			lineType = 'horizontal';
+			isHorizontal = true;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
 		}
 		
-		// Function to add a vertical line
-		function addVerticalLine() {
-			disableOtherActions(); // Disable other actions
-			lineType = 'vertical'; // Set the line type to 'vertical'
-			isHorizontal = false; // Set line orientation to vertical
-			canvas.addEventListener('click', drawLine); // Add click event listener to draw line
+		function addVerticalLine(event) {
+			disableOtherActions();
+			lineType = 'vertical';
+			isHorizontal = false;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
 		}
+		
+
 		
 		// Function to draw a line on the canvas
 		function drawLine(event) {
@@ -384,6 +987,15 @@
 		
 			// Check if the line is horizontal
 			if (isHorizontal) {
+				// ✅ Prevent duplicate 'min' or 'max' lines
+				if (lineType === 'min' || lineType === 'max') {
+					const existing = lines.find(line => line.type === lineType);
+					if (existing) {
+						M.toast({ html: `A "${lineType}" line already exists. `});
+						canvas.removeEventListener('click', drawLine);
+						return;
+					}
+				}
 				ctx.beginPath(); // Start drawing a new path
 				ctx.moveTo(0, y); // Move to the start point of the line
 				ctx.lineTo(canvas.width, y); // Draw the line to the end point
@@ -427,12 +1039,23 @@
 			}
 		}
 		
+
 		// Function to show a popup for line annotations
 		function showPopup(x, y) {
 			let popup = document.getElementById('line-popup'); // Get the popup element
+			let input = document.getElementById('line-text'); // Get the input field
+			
 			popup.style.left = x + 'px'; // Set the popup's x position
 			popup.style.top = y + 'px'; // Set the popup's y position
 			popup.style.display = 'block'; // Display the popup
+			
+			// ✅ Clear any previous text
+			input.value = '';
+			
+			// ✅ Auto-focus on the input field with a small delay
+			setTimeout(() => {
+				input.focus();
+			}, 100);
 		}
 		
 
@@ -474,81 +1097,256 @@
 			line.deleteIcon = icon; // Store a reference to the icon in the line object
 		}
 		
-		// Function to delete a line by its ID
-		function deleteLine(id) {
-			let lineToDelete = lines.find(line => line.id === id); // Find the line to delete
 		
-			if (lineToDelete && lineToDelete.deleteIcon) {
-				lineToDelete.deleteIcon.remove(); // Remove the delete icon from the DOM
+		function deleteSpot(id) {
+			let spotToDelete = spots.find(s => s.id === id);
+			if (spotToDelete && spotToDelete.deleteIcon) {
+				spotToDelete.deleteIcon.remove();
+			}
+			spots = spots.filter(s => s.id !== id);
+			redrawCanvas();
+		}		
+		
+		function deleteLine(id) {
+			const index = lines.findIndex(line => line.id === id);
+			if (index === -1) return; // No such line, skip
+		
+			const lineToDelete = lines[index];
+			if (lineToDelete.deleteIcon) {
+				lineToDelete.deleteIcon.remove();
 			}
 		
-			// Filter out the line from the lines array
-			lines = lines.filter(line => line.id !== id);
-		
-			// Clear the canvas and redraw remaining lines and the image
-			ctx.clearRect(0, 0, canvas.width, canvas.height);
-			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-		
-			lines.forEach(line => {
-				ctx.font = '16px Arial'; // Set font for the remaining lines
-				ctx.fillStyle = 'red'; // Set color for the remaining lines
-		
-				// Redraw each line based on its type
-				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
-					ctx.beginPath();
-					ctx.moveTo(0, line.y / window.scaleFactor); // Start line from left
-					ctx.lineTo(canvas.width, line.y / window.scaleFactor); // End line to right
-					ctx.stroke(); // Render the line
-					ctx.fillText(line.text, 10, line.y / window.scaleFactor - 5); // Render text above the line
-					line.deleteIcon.style.top = line.y / window.scaleFactor + 'px'; // Adjust icon position
-				} else {
-					ctx.beginPath();
-					ctx.moveTo(line.x / window.scaleFactor, 0); // Start line from top
-					ctx.lineTo(line.x / window.scaleFactor, canvas.height); // End line to bottom
-					ctx.stroke(); // Render the line
-					ctx.fillText(line.text, line.x / window.scaleFactor + 5, 10); // Render text to the right
-					line.deleteIcon.style.left = line.x / window.scaleFactor + 'px'; // Adjust icon position
-				}
-			});
+			lines.splice(index, 1); // Remove from array
+			redrawCanvas(); // Redraw everything
 		}
 		
-		// Function to enable adding spots on the canvas
-		function addSpots() {
-			disableOtherActions(); // Disable other actions
-			addingSpots = true; // Enable adding spots
-			canvas.addEventListener('click', drawSpot); // Add click event to draw spots
+		function addSpots(event) {
+			disableOtherActions();
+			addingSpots = true;
+			updateAnnotatedHeading('editing');
+			
+			canvas.removeEventListener('click', drawSpot);
+			canvas.addEventListener('click', drawSpot);
+			
+			if (event && event.target) {
+				setActiveButton(event.target);
+			}
 		}
 		
 		// Function to draw a spot on the canvas
 		function drawSpot(event) {
-			if (!addingSpots) return; // Return if not in adding spots mode
+			if (!addingSpots || isDragging || justDragged) return;
 		
-			let x = event.offsetX; // Get the x-coordinate of the click
-			let y = event.offsetY; // Get the y-coordinate of the click
+			let x = event.offsetX;
+			let y = event.offsetY;
 		
-			// Create a spot object with unique ID and scaled coordinates
+			// Prevent duplicate spots at same/similar location
+			let isDuplicate = spots.some(spot =>
+				Math.abs(spot.x / window.scaleFactor - x) < 12 &&
+				Math.abs(spot.y / window.scaleFactor - y) < 12
+			);
+			if (isDuplicate) {
+				M.toast({ html: 'Spot already exists here.' });
+				return;
+			}
+		
+			// Create and store new spot
 			let spot = {
-				id: Date.now(), // Unique ID based on current timestamp
-				x: x * window.scaleFactor, // Scale x-coordinate
-				y: y * window.scaleFactor // Scale y-coordinate
+				id: Date.now(),
+				x: x * window.scaleFactor,
+				y: y * window.scaleFactor
 			};
 		
-			// Draw an unfilled circle (outline only)
-			ctx.beginPath();
-			ctx.arc(x, y, 10, 0, 2 * Math.PI, false); // Create a circle path
+			spots.push(spot);
+			redrawCanvas();
+		}	
 		
-			// Set stroke style and line width for the outline
-			ctx.strokeStyle = 'orange'; // Set stroke color
-			ctx.lineWidth = 2; // Set line width
-			ctx.stroke(); // Draw the outline
+		function redrawCanvas() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 		
-			// Optionally, clear the fill style if needed
-			ctx.fillStyle = 'transparent'; // Ensures fill is transparent
-			ctx.fill(); // This line is optional and can be removed if you only want an outline
-			
-			
-			spots.push(spot); // Add the spot to the spots array
+			// Redraw lines
+			lines.forEach(line => {
+				ctx.font = '16px Arial';
+				ctx.fillStyle = 'red';
+		
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					ctx.beginPath();
+					ctx.moveTo(0, line.y / window.scaleFactor);
+					ctx.lineTo(canvas.width, line.y / window.scaleFactor);
+					ctx.stroke();
+					ctx.fillText(line.text, 10, line.y / window.scaleFactor - 5);
+				} else {
+					ctx.beginPath();
+					ctx.moveTo(line.x / window.scaleFactor, 0);
+					ctx.lineTo(line.x / window.scaleFactor, canvas.height);
+					ctx.stroke();
+					ctx.fillText(line.text, line.x / window.scaleFactor + 5, 10);
+				}
+			});
+		
+			// Redraw line delete icons
+			document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+			lines.forEach(line => {
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					addDeleteIcon(line, 10, line.y / window.scaleFactor); // accurate y
+				} else {
+					addDeleteIcon(line, line.x / window.scaleFactor, 10); // accurate x
+				}
+			});
+		
+			// Remove existing spot delete icons
+			spots.forEach(spot => {
+				if (spot.deleteIcon) {
+					spot.deleteIcon.remove();
+				}
+			});
+		
+			// Redraw spots and add delete icons
+			spots.forEach(spot => {
+				let x = spot.x / window.scaleFactor;
+				let y = spot.y / window.scaleFactor;
+		
+				ctx.beginPath();
+				ctx.arc(x, y, 10, 0, 2 * Math.PI);
+				ctx.strokeStyle = 'orange';
+				ctx.lineWidth = 2;
+				ctx.stroke();
+			});
 		}
+				
+		function handleMouseDown(e) {
+			const target = e.target;
+			if (target.classList.contains('delete-icon')) return;
+		
+			let x = e.offsetX;
+			let y = e.offsetY;
+		
+			// Check if clicking on a spot
+			for (let spot of spots) {
+				let spotX = spot.x / window.scaleFactor;
+				let spotY = spot.y / window.scaleFactor;
+		
+				let dx = x - spotX;
+				let dy = y - spotY;
+				if (Math.sqrt(dx * dx + dy * dy) < 12) {
+					draggingSpot = spot;
+					isDragging = true;
+					dragOffsetX = dx;
+					dragOffsetY = dy;
+					canvas.style.cursor = 'grabbing';
+					return;
+				}
+			}
+		
+			// Check if clicking near any line
+			for (let line of lines) {
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					let lineY = line.y / window.scaleFactor;
+					if (Math.abs(y - lineY) < 6) {
+						draggingLine = line;
+						isDragging = true;
+						lineDragOffsetY = y - lineY;
+						canvas.style.cursor = 'ns-resize';
+						return;
+					}
+				} else if (line.type === 'vertical') {
+					let lineX = line.x / window.scaleFactor;
+					if (Math.abs(x - lineX) < 6) {
+						draggingLine = line;
+						isDragging = true;
+						lineDragOffsetX = x - lineX;
+						canvas.style.cursor = 'ew-resize';
+						return;
+					}
+				}
+			}
+		}
+		
+		function handleMouseMove(e) {
+			let isOverSpot = false;
+		
+			// Check if hovering over a spot
+			for (let spot of spots) {
+				let spotX = spot.x / window.scaleFactor;
+				let spotY = spot.y / window.scaleFactor;
+		
+				let dx = e.offsetX - spotX;
+				let dy = e.offsetY - spotY;
+		
+				if (Math.sqrt(dx * dx + dy * dy) < 12) {
+					isOverSpot = true;
+					break;
+				}
+			}
+		
+			if (isDragging) {
+				if (draggingSpot) {
+					let newX = e.offsetX - dragOffsetX;
+					let newY = e.offsetY - dragOffsetY;
+		
+					draggingSpot.x = newX * window.scaleFactor;
+					draggingSpot.y = newY * window.scaleFactor;
+		
+					redrawCanvas();
+					canvas.style.cursor = 'grabbing';
+				} else if (draggingLine) {
+					if (draggingLine.type === 'horizontal' || draggingLine.type === 'min' || draggingLine.type === 'max') {
+						let newY = e.offsetY - lineDragOffsetY;
+						draggingLine.y = newY * window.scaleFactor;
+						redrawCanvas();
+						canvas.style.cursor = 'ns-resize';
+					} else if (draggingLine.type === 'vertical') {
+						let newX = e.offsetX - lineDragOffsetX;
+						draggingLine.x = newX * window.scaleFactor;
+						redrawCanvas();
+						canvas.style.cursor = 'ew-resize';
+					}
+				}
+			} else {
+				canvas.style.cursor = isOverSpot ? 'pointer' : 'default';
+			}
+		}
+
+		function handleMouseUp(e) {
+			if (isDragging) {
+				isDragging = false;
+				draggingSpot = null;
+				draggingLine = null;
+				canvas.style.cursor = 'default';
+				justDragged = true;
+		
+				setTimeout(() => {
+					justDragged = false;
+				}, 200);
+			}
+		}
+
+				
+		function handleDoubleClick(e) {
+			let x = e.offsetX;
+			let y = e.offsetY;
+		
+			// Check if double-clicking on a spot
+			for (let spot of spots) {
+				let spotX = spot.x / window.scaleFactor;
+				let spotY = spot.y / window.scaleFactor;
+		
+				let dx = x - spotX;
+				let dy = y - spotY;
+				
+				// If click is within spot radius (12px)
+				if (Math.sqrt(dx * dx + dy * dy) < 12) {
+					// Remove the spot
+					spots = spots.filter(s => s.id !== spot.id);
+					redrawCanvas();
+					
+					// Show confirmation toast
+					M.toast({ html: 'Spot deleted!' });
+					return; // Exit after deleting one spot
+				}
+			}
+		}		
 		
 		// Function to calculate RF (retention factor)
 		function calculateRF() {
@@ -558,68 +1356,148 @@
 		
 			// Alert user if min and max lines are not present
 			if (!minLine || !maxLine) {
-				M.toast({html: 'Please add "min" and "max" lines.'});
-				return; // Exit the function
+				M.toast({html: 'Please add "min" and "max" lines before calculating RF values.'});
+				return;
 			}
-			console.log(image.src)
+		
+			// Check if there are any spots to calculate
+			if (spots.length === 0) {
+				M.toast({html: 'Please add spots before calculating RF values.'});
+				return;
+			}
+		
+			console.log('Current image source:', image.src);
+		
+			// HANDLE DIFFERENT IMAGE SOURCES
+			let imageSrc;
+			let imageData = null;
+		
+			if (isLocalImage) {
+				// For local images, use the stored filename and image data
+				imageSrc = window.currentImageFileName || 'local_upload.png';
+				imageData = image.src; // This contains the base64 data URL
+				console.log('Using local image:', imageSrc);
+			} else {
+				// For ELN images, extract filename from URL
+				try {
+					const parsedUrl = new URL(image.src);
+					const filePath = parsedUrl.searchParams.get("file_path");
+					imageSrc = decodeURIComponent(filePath).split('/').pop();
+					console.log('Using ELN image:', imageSrc);
+				} catch (error) {
+					console.error('Error parsing image URL:', error);
+					imageSrc = 'unknown_image.png';
+				}
+			}
+		
+
+			let naturalWidth, naturalHeight;
 			
-			const parsedUrl = new URL(image.src);
+			if (isLocalImage) {
+				// Local image: use true natural size
+				naturalWidth = image.naturalWidth || canvas.width;
+				naturalHeight = image.naturalHeight || canvas.height;
+			} else {
+				// ELN image: assume canvas size matches what's drawn
+				naturalWidth = canvas.width;
+				naturalHeight = canvas.height;
+			}
 			
-			// Get the file path from the query parameter
-			const filePath = parsedUrl.searchParams.get("file_path");
-			
-			// Decode the file path and extract the file name
-			const fileName = decodeURIComponent(filePath).split('/').pop();
-			
-			console.log(fileName);			
-			
-			
-			// Prepare data to send to the server
 			let data = {
 				lines: lines,
 				spots: spots,
-				imageSrc: fileName
+				imageSrc: imageSrc,
+				isLocalImage: isLocalImage,
+				imageData: imageData, // Include base64 data for local images
+				canvasWidth: naturalWidth,
+				canvasHeight: naturalHeight,
+				scaleFactor: window.scaleFactor || 1
 			};
 		
-			console.log('Data to send:', data); // Log the data being sent
+			console.log('Data to send to server:', {
+				...data,
+				imageData: imageData ? 'base64 data present' : 'no image data'
+			});
+		
+			// Show loading indicator
+			Swal.fire({
+				title: 'Calculating RF Values...',
+				text: 'Please wait while we process your annotations.',
+				allowOutsideClick: false,
+				didOpen: () => {
+					Swal.showLoading();
+				}
+			});
 		
 			// Send data to the server
-			fetch('{% url "calculate_rf" %}', {
+			fetch('/calculate_rf/', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					'X-CSRFToken': '{{ csrf_token }}'
+					'X-CSRFToken': getCookie('csrftoken')
 				},
-				body: JSON.stringify(data) // Convert data to JSON format
+				body: JSON.stringify(data)
 			})
-			.then(response => response.json()) // Parse the JSON response
+			.then(response => {
+				console.log('Response status:', response.status);
+				if (!response.ok) {
+					return response.text().then(text => {
+						console.error('Server response:', text);
+						throw new Error(`HTTP error! status: ${response.status}`);
+					});
+				}
+				return response.json();
+			})
 			.then(result => {
-				console.log('Backend Response:', result); // Log the response from the server
-				populateTable(result.rf_values); // Populate the table with RF values
+				console.log('Backend Response:', result);
+				Swal.close();
 		
-				// Update the annotated image and ensure it matches the canvas size
-				let annotatedImage = document.getElementById('annotated-image');
-				annotatedImage.src = result.annotated_image_url;
-				annotatedImage.style.width = canvas.width + 'px';
-				annotatedImage.style.height = canvas.height + 'px';
+				if (result.rf_values && result.rf_values.length > 0) {
+					populateTable(result.rf_values);
+		
+					let annotatedImage = document.getElementById('annotated-image');
+					if (result.annotated_image_url) {
+						annotatedImage.src = result.annotated_image_url + '?t=' + new Date().getTime();
+						updateAnnotatedHeading('annotated');
+						annotatedImage.style.width = canvas.width + 'px';
+						annotatedImage.style.height = canvas.height + 'px';
+						M.toast({html: `RF calculation completed! Found ${result.rf_values.length} spots.`});
+					} else {
+						console.warn('No annotated image URL in response');
+						M.toast({html: 'RF values calculated, but annotated image not available.'});
+					}
+				} else {
+					M.toast({html: 'No RF values calculated. Please check your annotations.'});
+				}
 			})
-			.catch(error => console.error('Error:', error)); // Log any errors
+			.catch(error => {
+				console.error('Error calculating RF:', error);
+				Swal.close();
+				
+				Swal.fire({
+					title: 'Calculation Error!',
+					text: 'Failed to calculate RF values. Please check your annotations and try again.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
+			});
 		}
-		
-		// Function to populate the RF values table
 		function populateTable(rfValues) {
 			let tbody = document.getElementById('values-table').getElementsByTagName('tbody')[0];
-			tbody.innerHTML = ''; // Clear existing rows in the table
+			tbody.innerHTML = '';
 		
-			// Iterate over RF values and create table rows
-			rfValues.forEach(value => {
+			rfValues.forEach((value, index) => {
 				let row = tbody.insertRow();
 				let cell1 = row.insertCell(0);
 				let cell2 = row.insertCell(1);
 				let cell3 = row.insertCell(2);
-				cell1.innerHTML = value.solvent; // Fill solvent cell
-				cell2.innerHTML = value.compound; // Fill compound cell
-				cell3.innerHTML = value.rf; // Fill RF value cell
+				let cell4 = row.insertCell(3);
+				
+				// Use correct property names based on your backend response
+				cell1.innerHTML = value.mixture_label || value.solvent || `Lane ${index + 1}`;
+				cell2.innerHTML = value.substance_label || value.compound || `Spot ${index + 1}`;
+				cell3.innerHTML = typeof value.rf_value !== 'undefined' ? value.rf_value : value.rf;
+				cell4.innerHTML = '<span class="status-badge status-active">Calculated</span>';
 			});
 		}
 		
@@ -635,7 +1513,7 @@
 			rows.forEach((row, index) => {
 				if (index === 0) return;
 				let cols = Array.from(row.cells).map(cell => cell.textContent);
-				csvContent += `${cols[0]},${cols[1]},${cols[2]}\n`;
+				csvContent += cols[0] + "," + cols[1] + "," + cols[2] + "\n";
 			});
 		
 			let encodedUri = encodeURI(csvContent);
@@ -654,9 +1532,16 @@
 			});
 		}
 		
-		
+				
 		// Event listener for save button click to save annotated image and CSV to the server
 		function saveImageToServer() {
+			//  CHECK IF IT'S A LOCAL IMAGE FIRST
+			if (isLocalImage) {
+				downloadAnnotatedImage();
+				return;
+			}
+			
+			//  ELN IMAGE HANDLING (your existing code)
 			const inputText = '';
 			const dateTime = new Date().toLocaleString('en-GB', {
 				year: '2-digit',
@@ -668,10 +1553,10 @@
 				hour12: false
 			}).replace(/\//g, '').replace(/, /g, '').replace(/:/g, '');
 		
-			const filename = `${inputText}_${dateTime}.png`;
+			const filename = inputText + '_' + dateTime + '.png';
 			const annotatedImage = document.getElementById("annotated-image");
 		
-			if (annotatedImage) {
+			if (annotatedImage && annotatedImage.src) {
 				const originalImage = new Image();
 				originalImage.src = annotatedImage.src;
 		
@@ -704,6 +1589,7 @@
 							});
 						})
 						.catch(error => {
+							console.error('Error saving to ELN:', error);
 							Swal.fire({
 								title: 'Error!',
 								text: 'Error saving image to ELN.',
@@ -713,11 +1599,21 @@
 						});
 					}, 'image/png');
 				};
+		
+				originalImage.onerror = function() {
+					console.error('Failed to load annotated image for saving.');
+					Swal.fire({
+						title: 'Error!',
+						text: 'Failed to load annotated image.',
+						icon: 'error',
+						confirmButtonText: 'OK'
+					});
+				};
 			} else {
-				console.error('Annotated image not found.');
+				console.error('Annotated image not found or has no source.');
 				Swal.fire({
 					title: 'Error!',
-					text: 'Annotated image not found.',
+					text: 'Annotated image not found. Please calculate RF values first.',
 					icon: 'error',
 					confirmButtonText: 'OK'
 				});
@@ -736,7 +1632,7 @@
 				hour12: false
 			}).replace(/\//g, '').replace(/, /g, '').replace(/:/g, '');
 		
-			const csvFilename = `${inputText}_${dateTime}.csv`;
+			const csvFilename = inputText + '_' + dateTime + '.csv';
 			const csvData = getCSVData(); // Assumes getCSVData() is defined and returns data
 		
 			if (csvData) {
@@ -833,7 +1729,531 @@
 			}
 			return cookieValue; // Return the cookie value
 		}
-
+		
+		function updateAnnotatedHeading(state) {
+			const heading = document.getElementById('annotated-heading');
+			const annotatedImage = document.getElementById('annotated-image');
+			const instructionsBox = document.getElementById('instructions-box');
+		
+			if (!heading) return;
+		
+			if (state === 'instructions') {
+				heading.textContent = 'Instructions';
+				instructionsBox.style.display = 'block';
+				annotatedImage.style.display = 'none';
+			} else if (state === 'editing') {
+				heading.textContent = 'Prepare Annotations';
+				instructionsBox.style.display = 'none';
+				annotatedImage.style.display = 'none';
+			} else if (state === 'annotated') {
+				heading.textContent = 'Annotated Image';
+				instructionsBox.style.display = 'none';
+				annotatedImage.style.display = 'block';
+			}
+		}
+		
+		
+		function resetCanvas() {
+			// Clear all annotations
+			lines = [];
+			spots = [];
+			
+			// Remove all delete icons
+			document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+			
+			// Clear canvas and redraw image
+			if (image && image.complete) {
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+				ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+			}
+			
+			// Clear table
+			const tableBody = document.querySelector('#values-table tbody');
+			if (tableBody) {
+				tableBody.innerHTML = '';
+			}
+			
+			// Reset heading
+			updateAnnotatedHeading('editing');
+			
+			// Remove active state from all buttons
+			document.querySelectorAll('.lab-btn').forEach(btn => btn.classList.remove('active'));
+			
+			// Show success message
+			M.toast({ html: 'Canvas reset successfully!' });
+		}
+		
+		function redrawCanvas() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+			// ✅ Reset stroke style for lines
+			ctx.strokeStyle = 'red';
+			ctx.lineWidth = 2;
+		
+			// Redraw lines
+			lines.forEach(line => {
+				ctx.font = '16px Arial';
+				ctx.fillStyle = 'red';
+		
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					ctx.beginPath();
+					ctx.moveTo(0, line.y / window.scaleFactor);
+					ctx.lineTo(canvas.width, line.y / window.scaleFactor);
+					ctx.stroke();
+					ctx.fillText(line.text, 10, line.y / window.scaleFactor - 5);
+				} else {
+					ctx.beginPath();
+					ctx.moveTo(line.x / window.scaleFactor, 0);
+					ctx.lineTo(line.x / window.scaleFactor, canvas.height);
+					ctx.stroke();
+					ctx.fillText(line.text, line.x / window.scaleFactor + 5, 10);
+				}
+			});
+		
+			// Remove existing delete icons
+			document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+			
+			// Redraw line delete icons
+			lines.forEach(line => {
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					addDeleteIcon(line, 10, line.y / window.scaleFactor);
+				} else {
+					addDeleteIcon(line, line.x / window.scaleFactor, 10);
+				}
+			});
+		
+			// ✅ Reset stroke style for spots
+			ctx.strokeStyle = 'orange';
+			ctx.lineWidth = 2;
+		
+			// Redraw spots
+			spots.forEach(spot => {
+				let x = spot.x / window.scaleFactor;
+				let y = spot.y / window.scaleFactor;
+		
+				ctx.beginPath();
+				ctx.arc(x, y, 10, 0, 2 * Math.PI);
+				ctx.stroke();
+			});
+		}
+		
+		function selectImageSource(source) {
+			imageSource = source;
+			isLocalImage = (source === 'local');
+			
+			document.getElementById('eln-source-btn').classList.toggle('active', source === 'eln');
+			document.getElementById('eln-source-btn').classList.toggle('btn-lab-primary', source === 'eln');
+			document.getElementById('eln-source-btn').classList.toggle('btn-lab-outline', source !== 'eln');
+			
+			document.getElementById('local-source-btn').classList.toggle('active', source === 'local');
+			document.getElementById('local-source-btn').classList.toggle('btn-lab-primary', source === 'local');
+			document.getElementById('local-source-btn').classList.toggle('btn-lab-outline', source !== 'local');
+			
+			document.getElementById('local-upload-section').style.display = 
+				source === 'local' ? 'block' : 'none';
+			
+			if (source === 'eln') {
+				loadELNImage();
+			}
+		}
+		
+		function handleLocalImageUpload(event) {
+			const file = event.target.files[0];
+			if (file) {
+				handleLocalImageFile(file);
+			}
+		}
+				
+		function handleLocalImageFile(file) {
+			if (!file.type.startsWith('image/')) {
+				M.toast({ html: 'Please select a valid image file.', classes: 'red lighten-1' });
+				return;
+			}
+		
+			if (file.size > 10 * 1024 * 1024) {
+				M.toast({ html: 'File size should be less than 10MB.', classes: 'red lighten-1' });
+				return;
+			}
+		
+			const reader = new FileReader();
+		
+			reader.onload = function (e) {
+				const imageDataUrl = e.target.result;
+				const image = new Image();
+		
+				image.onload = function () {
+					// ✅ Get natural image size
+					const realWidth = image.naturalWidth;
+					const realHeight = image.naturalHeight;
+		
+					// ✅ Update your global canvas info before loading image
+					window.canvasWidth = realWidth;
+					window.canvasHeight = realHeight;
+		
+					// ✅ Load into canvas or image container
+					loadLocalImage(imageDataUrl, file.name); // Your existing loader
+				};
+		
+				image.src = imageDataUrl;
+			};
+		
+			reader.readAsDataURL(file);
+		}
+		function loadLocalImage(dataURL, fileName) {
+			image = new Image();
+			image.onload = function() {
+				// Calculate scaling to fit max height of 500px
+				let maxHeight = 500;
+				//let originalHeight = image.height;
+				let originalHeight = image.naturalHeight;
+				let originalWidth = image.width;
+		
+				if (image.height > maxHeight) {
+					let aspectRatio = image.width / image.height;
+					image.height = maxHeight;
+					image.width = maxHeight * aspectRatio;
+				}
+		
+				// Set canvas dimensions
+				canvas.width = image.width;
+				canvas.height = image.height;
+		
+				// Draw image on canvas
+				ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+				// Calculate scale factor for coordinate conversion
+				window.scaleFactor = originalHeight / canvas.height;
+		
+				// Update annotated image container size
+				document.getElementById('annotated-image').style.width = canvas.width + 'px';
+				document.getElementById('annotated-image').style.height = canvas.height + 'px';
+		
+				// Store filename for later use
+				window.currentImageFileName = fileName;
+				isLocalImage = true; // ✅ Set this flag
+		
+				// Clear any existing annotations
+				lines = [];
+				spots = [];
+		
+				// Remove existing delete icons
+				document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+		
+				// Clear table
+				const tableBody = document.querySelector('#values-table tbody');
+				if (tableBody) {
+					tableBody.innerHTML = '';
+				}
+		
+		
+				// Show success message and update heading
+				M.toast({html: `Image "${fileName}" loaded successfully!`, classes: 'green lighten-1'});
+				updateAnnotatedHeading('editing');
+			};
+		
+			image.onerror = function() {
+				M.toast({html: 'Failed to load image. Please try again.', classes: 'red lighten-1'});
+			};
+		
+			image.src = dataURL;
+		}
+					
+		// Function to download annotated image for local images
+		function downloadAnnotatedImage() {
+			const annotatedImage = document.getElementById("annotated-image");
+			if (annotatedImage && annotatedImage.src) {
+				const link = document.createElement('a');
+				link.download = `annotated_${window.currentImageFileName || 'tlc_image.png'}`;
+				link.href = annotatedImage.src;
+				link.click();
+				
+				Swal.fire({
+					title: 'Success!',
+					text: 'Annotated image downloaded successfully.',
+					icon: 'success',
+					confirmButtonText: 'OK'
+				});
+			} else {
+				Swal.fire({
+					title: 'Error!',
+					text: 'No annotated image available for download. Please calculate RF values first.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
+			}
+		}
+		
+		// Function to load ELN image (existing functionality)
+		function loadELNImage() {
+			if (typeof decodedImageUrl !== 'undefined' && decodedImageUrl) {
+				fetch('/fetch-image/?url=' + encodeURIComponent(decodedImageUrl))
+					.then(response => response.json())
+					.then(data => {
+						if (data.imagePath) {
+							fetch('/serve-image/?file_path=' + encodeURIComponent(data.imagePath))
+								.then(response => {
+									if (response.ok) {
+										image.src = '/serve-image/?file_path=' + encodeURIComponent(data.imagePath);
+										updateAnnotatedHeading('editing');
+									} else {
+										M.toast({html: 'Error loading ELN image.'});
+									}
+								});
+						} else {
+							M.toast({html: 'ELN image not found.'});
+						}
+					})
+					.catch(error => {
+						console.error('Error fetching ELN image:', error);
+						M.toast({html: 'Error loading ELN image.'});
+					});
+			}
+		}
+		
+		// Prevent default drag behaviors
+		function preventDefaults(e) {
+			e.preventDefault();
+			e.stopPropagation();
+		}
+	
+		// Clear all annotations
+		function clearAnnotations() {
+			if (window.lines) window.lines = [];
+			if (window.spots) window.spots = [];
+			
+			if (window.canvas && window.ctx) {
+				redrawCanvas();
+			}
+			
+			// Clear table
+			const tableBody = document.querySelector('#values-table tbody');
+			if (tableBody) {
+				tableBody.innerHTML = '';
+			}
+			
+			M.toast({html: 'All annotations cleared'});
+			console.log('Annotations cleared');
+		}
+	
+		// Reset entire application
+		function resetApplication() {
+			clearAnnotations();
+			selectImageSource('local');
+			
+			if (window.canvas && window.ctx) {
+				window.ctx.clearRect(0, 0, window.canvas.width, window.canvas.height);
+			}
+			
+			const annotatedImage = document.getElementById('annotated-image');
+			if (annotatedImage) {
+				annotatedImage.src = '';
+			}
+			
+			const fileInput = document.getElementById('local-image-input');
+			if (fileInput) {
+				fileInput.value = '';
+			}
+			
+			updateAnnotatedHeading('instructions');
+			M.toast({html: 'Application reset successfully'});
+			console.log('Application reset');
+		}
+	
+		// Cancel current annotation
+		function cancelCurrentAnnotation() {
+			window.isDrawing = false;
+			window.currentAnnotationMode = null;
+			addingSpots = false;
+			
+			if (window.canvas) {
+				window.canvas.style.cursor = 'default';
+			}
+			
+			// Remove event listeners
+			canvas.removeEventListener('click', drawSpot);
+			canvas.removeEventListener('click', drawLine);
+			
+			console.log('Current annotation cancelled');
+		}
+	
+		// Set annotation mode and update button states
+		function setAnnotationMode(mode) {
+			window.currentAnnotationMode = mode;
+			
+			// Update button states
+			document.querySelectorAll('.lab-btn').forEach(btn => {
+				btn.classList.remove('active');
+			});
+			
+			// Update cursor
+			if (window.canvas) {
+				window.canvas.style.cursor = mode === 'spot' ? 'crosshair' : 'crosshair';
+			}
+			
+			console.log('Annotation mode set to:', mode);
+		}
+	
+		// Adjust canvas for window resize
+		function adjustCanvasForResize() {
+			// Implementation depends on your responsive requirements
+			console.log('Canvas resize adjustment called');
+			
+			if (image && image.complete && canvas) {
+				// Maintain aspect ratio on resize
+				redrawCanvas();
+			}
+		}
+	
+		// Show initial instructions
+		function showInitialInstructions() {
+			updateAnnotatedHeading('instructions');
+			console.log('Showing initial instructions');
+		}	
+			
+		// Add this after your existing functions, before DOMContentLoaded
+		function handleError(error, context = '') {
+			console.error(`Error in ${context}:`, error);
+			
+			Swal.fire({
+				title: 'Error!',
+				text: `An error occurred${context ? ' in ' + context : ''}. Please try again.`,
+				icon: 'error',
+				confirmButtonText: 'OK'
+			});
+		}
+		
+		document.addEventListener('DOMContentLoaded', function () {
+				console.log('TLC Analyzer initializing...');
+				
+				// Initialize heading
+				updateAnnotatedHeading('instructions');
+				
+				// Initialize global variables
+				if (typeof lines === 'undefined') window.lines = [];
+				if (typeof spots === 'undefined') window.spots = [];
+				if (typeof isLocalImage === 'undefined') window.isLocalImage = false;
+				if (typeof imageSource === 'undefined') window.imageSource = 'local';
+				if (typeof scaleFactor === 'undefined') window.scaleFactor = 1;
+				
+				// Make canvas and context globally accessible
+				window.canvas = canvas;
+				window.ctx = ctx;
+				window.image = image;
+				
+				console.log('Global variables initialized');
+				
+				// Local upload handlers
+				const fileInput = document.getElementById('local-image-input');
+				const uploadArea = document.querySelector('.upload-area');
+				
+				if (fileInput) {
+					fileInput.addEventListener('change', handleLocalImageUpload);
+					console.log('File input handler attached');
+				}
+				
+				if (uploadArea) {
+					// Prevent default drag behaviors
+					['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+						uploadArea.addEventListener(eventName, preventDefaults, false);
+					});
+					
+					// Drag visual feedback
+					['dragenter', 'dragover'].forEach(eventName => {
+						uploadArea.addEventListener(eventName, function() {
+							uploadArea.style.background = 'rgba(74, 144, 226, 0.1)';
+							uploadArea.style.borderColor = 'var(--primary-blue)';
+						}, false);
+					});
+					
+					['dragleave', 'drop'].forEach(eventName => {
+						uploadArea.addEventListener(eventName, function() {
+							uploadArea.style.background = 'var(--lab-light-gray)';
+							uploadArea.style.borderColor = '#ddd';
+						}, false);
+					});
+					
+					// Handle dropped files
+					uploadArea.addEventListener('drop', function(e) {
+						const files = e.dataTransfer.files;
+						if (files.length > 0) {
+							handleLocalImageFile(files[0]);
+						}
+					}, false);
+					
+					console.log('Drag and drop handlers attached');
+				}
+				
+				// Canvas mouse handlers
+				if (canvas) {
+					canvas.addEventListener('mousedown', handleMouseDown);
+					canvas.addEventListener('mousemove', handleMouseMove);
+					canvas.addEventListener('mouseup', handleMouseUp);
+					canvas.addEventListener('dblclick', handleDoubleClick);
+					console.log('Canvas mouse handlers attached');
+				}
+				
+				// Keyboard shortcuts
+				document.addEventListener('keydown', function(e) {
+					// Escape to cancel current annotation
+					if (e.key === 'Escape') {
+						cancelCurrentAnnotation();
+					}
+					
+					// Ctrl/Cmd + S to save
+					if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+						e.preventDefault();
+						saveImageToServer();
+					}
+					
+					// Ctrl/Cmd + R to calculate RF
+					if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+						e.preventDefault();
+						calculateRF();
+					}
+				});
+				
+				// Window resize handler
+				window.addEventListener('resize', function() {
+					clearTimeout(window.resizeTimeout);
+					window.resizeTimeout = setTimeout(adjustCanvasForResize, 250);
+				});
+				
+				// Check URL parameters for initial source
+				const urlParams = new URLSearchParams(window.location.search);
+				const hasELNParams = urlParams.get('url');
+				
+				if (hasELNParams) {
+					console.log('ELN parameters detected, switching to ELN mode');
+					selectImageSource('eln');
+				} else {
+					console.log('No ELN parameters, defaulting to local mode');
+					selectImageSource('local');
+				}
+				
+				// Initialize Materialize components
+				try {
+					const tooltips = document.querySelectorAll('.tooltipped');
+					if (tooltips.length > 0) {
+						M.Tooltip.init(tooltips);
+						console.log('Tooltips initialized');
+					}
+					
+					const dropdowns = document.querySelectorAll('.dropdown-trigger');
+					if (dropdowns.length > 0) {
+						M.Dropdown.init(dropdowns);
+						console.log('Dropdowns initialized');
+					}
+				} catch (error) {
+					console.warn('Materialize initialization error:', error);
+				}
+				
+				console.log('TLC Analyzer initialization complete');
+				M.toast({html: 'TLC Analyzer loaded successfully!', displayLength: 2000});
+				
+				showInitialInstructions();
+			});
+				
     </script>
 </body>
 </html>
