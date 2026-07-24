@@ -131,6 +131,13 @@ def _blobs_data_url(centers: list[tuple[int, int]], size: int = 500) -> str:
     return "data:image/png;base64," + base64.b64encode(buffer.tobytes()).decode("ascii")
 
 
+class HealthzTests(SimpleTestCase):
+    def test_healthz_returns_ok(self) -> None:
+        response = Client().get(reverse("healthz"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+
 class DetectSpotsTests(SimpleTestCase):
     def setUp(self) -> None:
         self.client = Client()
@@ -165,9 +172,7 @@ class ServeImageSecurityTests(SimpleTestCase):
         self.client = Client()
 
     def test_path_traversal_is_rejected(self) -> None:
-        response = self.client.get(
-            reverse("serve_image"), {"file_path": "../../../../etc/passwd"}
-        )
+        response = self.client.get(reverse("serve_image"), {"file_path": "../../../../etc/passwd"})
         self.assertEqual(response.status_code, 404)
 
     def test_legitimate_media_file_is_served(self) -> None:

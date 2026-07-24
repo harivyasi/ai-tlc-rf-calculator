@@ -71,10 +71,18 @@ The E2E suite drives the annotation UI in a real browser. It also serves as a
 frontends and asserts they produce identical RF results. Further tests document
 the fixed image-fetch bugs and cover auto-detect, drag, and delete.
 
-### Linting
+### Linting, formatting, and type checking
 
 ```bash
-uv run ruff check .
+uv run ruff check .          # lint
+uv run ruff format .         # format (use --check in CI)
+uv run mypy                  # type-check config/ and tlc/
+```
+
+Optionally install the pre-commit hooks so these run on every commit:
+
+```bash
+uv run pre-commit install
 ```
 
 ## Configuration
@@ -119,19 +127,23 @@ docker run --rm -p 8050:8050 \
   tlc-rf-calculator
 ```
 
-The app listens on port `8050`. Static files are served by WhiteNoise;
-user-generated media is served by the app (fine for low-traffic internal use —
-front it with a reverse proxy for higher load).
+The app listens on port `8050` and exposes a health probe at `/healthz`. Static
+files are served by WhiteNoise; user-generated media is served by the app (fine
+for low-traffic internal use — front it with a reverse proxy for higher load).
+
+Gunicorn is configured via [gunicorn.conf.py](gunicorn.conf.py) and tuned with
+environment variables: `GUNICORN_WORKERS` (default 3), `GUNICORN_THREADS`
+(2), `GUNICORN_TIMEOUT` (60s), `GUNICORN_BIND` (`0.0.0.0:8050`).
 
 ## Continuous integration
 
-- **GitHub Actions** (`.github/workflows/ci.yml`): lint, unit tests, and the
-  Playwright e2e suite on every push to `main` and pull request; builds and
-  pushes the Docker image to the GitHub Container Registry (`ghcr.io`) only
-  when a **release** is published.
-- **GitLab CI** (`.gitlab-ci.yml`): lint, unit tests, and e2e on branches /
-  merge requests; builds and pushes the image to the GitLab registry only on a
-  **tag** (release).
+- **GitHub Actions** (`.github/workflows/ci.yml`): lint, format check, type
+  check, unit tests, and the Playwright e2e suite on every push to `main` and
+  pull request; builds and pushes the Docker image to the GitHub Container
+  Registry (`ghcr.io`) only when a **release** is published.
+- **GitLab CI** (`.gitlab-ci.yml`): the same lint/format/type/unit checks and
+  e2e on branches / merge requests; builds and pushes the image to the GitLab
+  registry only on a **tag** (release).
 
 ## Maintenance
 

@@ -41,7 +41,7 @@ def detect_spots(
     height, width = gray.shape[:2]
     area = height * width
 
-    params = cv2.SimpleBlobDetector_Params()
+    params = cv2.SimpleBlobDetector_Params()  # type: ignore[attr-defined]
     params.filterByColor = True
     params.blobColor = 0  # dark blobs on a bright plate
     params.filterByArea = True
@@ -53,7 +53,7 @@ def detect_spots(
     params.minConvexity = min_convexity
     params.filterByInertia = False
 
-    detector = cv2.SimpleBlobDetector_create(params)
+    detector = cv2.SimpleBlobDetector_create(params)  # type: ignore[attr-defined]
     keypoints = detector.detect(gray)
 
     spots = [{"x": int(round(kp.pt[0])), "y": int(round(kp.pt[1]))} for kp in keypoints]

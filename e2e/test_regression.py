@@ -234,9 +234,12 @@ def test_eln_load_fetch_count(page, servers, test_image_path, frontend, expected
 
     page.route(
         "**/fetch-image/**",
-        lambda route: (calls.append(route.request.url),
-                       route.fulfill(status=200, content_type="application/json",
-                                     body='{"imagePath": "stub.png"}'))[1],
+        lambda route: (
+            calls.append(route.request.url),
+            route.fulfill(
+                status=200, content_type="application/json", body='{"imagePath": "stub.png"}'
+            ),
+        )[1],
     )
     page.route(
         "**/serve-image/**",

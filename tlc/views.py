@@ -45,6 +45,18 @@ FETCH_TIMEOUT_SECONDS = 10
 MAX_IMAGE_BYTES = 25 * 1024 * 1024  # 25 MB
 
 
+def healthz(request: HttpRequest) -> JsonResponse:
+    """Liveness/readiness probe for container orchestration.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A small JSON body indicating the service is up.
+    """
+    return JsonResponse({"status": "ok"})
+
+
 @ensure_csrf_cookie
 def upload_image(request: HttpRequest) -> HttpResponse:
     """Render the single-page annotation tool.
@@ -64,6 +76,7 @@ def upload_image(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 # Security helpers
 # ---------------------------------------------------------------------------
+
 
 def _resolve_within_media(name: str) -> str | None:
     """Resolve a client-supplied name to an absolute path inside ``MEDIA_ROOT``.
@@ -149,8 +162,10 @@ def _load_annotation_image(
     if data.get("isLocalImage") and data.get("imageData"):
         image = _decode_data_url(data["imageData"])
         if image is None:
-            return None, "", JsonResponse(
-                {"error": "Could not decode the uploaded image."}, status=400
+            return (
+                None,
+                "",
+                JsonResponse({"error": "Could not decode the uploaded image."}, status=400),
             )
         return image, os.path.basename(data.get("imageSrc") or "local_upload.png"), None
 
@@ -180,7 +195,7 @@ def _decode_data_url(data_url: str) -> np.ndarray | None:
     payload = data_url.split(",", 1)[1] if "," in data_url else data_url
     try:
         raw = base64.b64decode(payload, validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return None
     if len(raw) > MAX_IMAGE_BYTES:
         return None
@@ -191,6 +206,7 @@ def _decode_data_url(data_url: str) -> np.ndarray | None:
 # ---------------------------------------------------------------------------
 # RF calculation
 # ---------------------------------------------------------------------------
+
 
 def calculate_rf(request: HttpRequest) -> JsonResponse:
     """Compute RF values from annotation data and render an annotated image.
@@ -237,6 +253,7 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     image, base_name, error = _load_annotation_image(data)
     if error is not None:
         return error
+    assert image is not None  # guaranteed when error is None
 
     rf_values: list[dict[str, Any]] = []
     for spot in spots:
@@ -264,12 +281,33 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         rf_values.append({"compound": compound, "solvent": solvent, "rf": rf_value})
 
         cv2.circle(image, (int(x), int(y)), 10, (0, 165, 255), -1)
-        cv2.putText(image, f"RF={rf_value}", (int(x) + 5, int(y) - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-        cv2.putText(image, f"{compound}", (int(x) + 5, int(y) + 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-        cv2.putText(image, f"{solvent}", (int(x) + 5, int(y) + 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        cv2.putText(
+            image,
+            f"RF={rf_value}",
+            (int(x) + 5, int(y) - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 255),
+            1,
+        )
+        cv2.putText(
+            image,
+            f"{compound}",
+            (int(x) + 5, int(y) + 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 0, 0),
+            1,
+        )
+        cv2.putText(
+            image,
+            f"{solvent}",
+            (int(x) + 5, int(y) + 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 0, 0),
+            1,
+        )
 
     # Unique output names so concurrent requests never clobber each other.
     token = uuid.uuid4().hex
@@ -286,17 +324,21 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         )
         writer.writeheader()
         for value in rf_values:
-            writer.writerow({
-                "Solvent (X value)": value["solvent"],
-                "Compound (Y value)": value["compound"],
-                "RF value": value["rf"],
-            })
+            writer.writerow(
+                {
+                    "Solvent (X value)": value["solvent"],
+                    "Compound (Y value)": value["compound"],
+                    "RF value": value["rf"],
+                }
+            )
 
-    return JsonResponse({
-        "rf_values": rf_values,
-        "annotated_image_url": settings.MEDIA_URL + annotated_name,
-        "csv_url": settings.MEDIA_URL + csv_name,
-    })
+    return JsonResponse(
+        {
+            "rf_values": rf_values,
+            "annotated_image_url": settings.MEDIA_URL + annotated_name,
+            "csv_url": settings.MEDIA_URL + csv_name,
+        }
+    )
 
 
 def detect_spots(request: HttpRequest) -> JsonResponse:
@@ -324,6 +366,7 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
     image, _, error = _load_annotation_image(data)
     if error is not None:
         return error
+    assert image is not None  # guaranteed when error is None
 
     spots = _detect_spots(image)
     return JsonResponse({"spots": spots, "count": len(spots)})
@@ -332,6 +375,7 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
 # ---------------------------------------------------------------------------
 # Remote image fetching / serving
 # ---------------------------------------------------------------------------
+
 
 def fetch_and_save_image(request: HttpRequest) -> JsonResponse:
     """Fetch an ELN image from a remote URL and store it under ``MEDIA_ROOT``.

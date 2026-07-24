@@ -32,4 +32,5 @@ RUN SECRET_KEY=build-only-key python manage.py collectstatic --noinput
 EXPOSE 8050
 
 # SECRET_KEY, ALLOWED_HOSTS, etc. must be provided at runtime (see README).
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8050"]
+# Worker/threads/timeout are configurable via GUNICORN_* env vars.
+CMD ["gunicorn", "config.wsgi:application", "-c", "gunicorn.conf.py"]
