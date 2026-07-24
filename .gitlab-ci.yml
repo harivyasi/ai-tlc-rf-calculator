@@ -5,7 +5,7 @@ stages:
 # Lint and run the unit test suite on every branch push and merge request.
 test:
   stage: test
-  image: python:3.12-slim
+  image: python:3.14-slim
   before_script:
     - pip install --no-cache-dir uv
     - uv sync --locked
@@ -19,7 +19,7 @@ test:
 # End-to-end / regression suite (Playwright + Chromium).
 e2e:
   stage: test
-  image: python:3.12-slim
+  image: python:3.14-slim
   before_script:
     - pip install --no-cache-dir uv
     - uv sync --locked

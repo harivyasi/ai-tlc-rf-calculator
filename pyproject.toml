@@ -3,7 +3,7 @@ name = "tlc-rf-calculator"
 version = "0.1.0"
 description = "Web tool for computing retention factor (RF) values from annotated Thin Layer Chromatography (TLC) plate images."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 dependencies = [
     "django>=5.2,<5.3",
@@ -28,7 +28,7 @@ testpaths = ["e2e"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "DJ"]

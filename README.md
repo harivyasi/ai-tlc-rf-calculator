@@ -27,7 +27,7 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 
 ## Tech stack
 
-- **Django 5.2 LTS** (Python 3.12+); minimal app set (no admin/auth — cookie-based CSRF)
+- **Django 5.2 LTS** (Python 3.14+); minimal app set (no admin/auth — cookie-based CSRF)
 - **OpenCV** (headless) + **NumPy** for image annotation and spot detection
 - **Gunicorn** + **WhiteNoise** for serving
 - **uv** for dependency management
