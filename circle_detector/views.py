@@ -34,6 +34,8 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 
+from rf_calculator.env import env_list
+
 logger = logging.getLogger(__name__)
 
 # Limits applied when fetching a remote (ELN) image.
@@ -103,9 +105,7 @@ def _is_safe_remote_url(url: str) -> bool:
     if parts.scheme not in ("http", "https") or not parts.hostname:
         return False
 
-    allowed = [
-        h.strip().lower() for h in os.getenv("ELN_ALLOWED_HOSTS", "").split(",") if h.strip()
-    ]
+    allowed = [h.lower() for h in env_list("ELN_ALLOWED_HOSTS")]
     if allowed and parts.hostname.lower() not in allowed:
         return False
 

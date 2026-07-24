@@ -15,14 +15,10 @@ Including another URLconf
 """
 
 from django.conf import settings
-from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.static import serve
 
 urlpatterns = [
-    # Admin site URL
-    path('admin/', admin.site.urls),
-
     # Include URLs from the circle_detector app
     path('', include('circle_detector.urls')),
 
