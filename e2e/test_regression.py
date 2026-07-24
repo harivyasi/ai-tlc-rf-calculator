@@ -147,6 +147,57 @@ def test_vertical_label_flows_to_solvent_column(page, servers, test_image_path, 
     assert solvent == "LaneA", f"{frontend}: solvent column was {solvent!r}"
 
 
+def _load_with_min_max(page, base_url, image_path):
+    """Load a local image and place min (y=250) and max (y=50) lines."""
+    _stub_cdn(page)
+    page.goto(base_url + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", image_path)
+    page.wait_for_function(
+        "() => { const h = document.getElementById('annotated-heading');"
+        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
+    )
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 50})
+    return canvas
+
+
+def test_drag_spot_changes_rf(page, servers, test_image_path):
+    """Dragging a spot upward must raise its RF (0.5 -> ~0.75)."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})  # RF 0.5 before drag
+
+    box = canvas.bounding_box()
+    page.mouse.move(box["x"] + 150, box["y"] + 150)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 150, box["y"] + 100, steps=10)  # drag up ~50px
+    page.mouse.up()
+
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    rf = float(page.locator("#values-table tbody tr").first.locator("td").nth(2).inner_text())
+    assert 0.70 <= rf <= 0.80, f"RF after drag was {rf} (expected ~0.75)"
+
+
+def test_double_click_deletes_spot(page, servers, test_image_path):
+    """Double-clicking a spot removes it (two spots -> one row after delete)."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 110, "y": 150})
+    canvas.click(position={"x": 210, "y": 150})
+
+    canvas.dblclick(position={"x": 110, "y": 150})  # delete the first spot
+
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    rows = page.locator("#values-table tbody tr").count()
+    assert rows == 1, f"expected 1 row after deleting one of two spots, got {rows}"
+
+
 def test_auto_detect_populates_spots(page, servers, blob_image_path):
     """New feature: Auto-detect finds the drawn spots and they flow into RF calc."""
     _stub_cdn(page)
