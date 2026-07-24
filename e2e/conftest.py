@@ -2,7 +2,7 @@
 
 Two Django servers are started from the same backend: one rendering the
 refactored frontend (``new``) and one rendering the original pre-refactor
-frontend via ``rf_calculator.settings_legacy`` (``legacy``). Tests run the same
+frontend via ``e2e.legacy.settings`` (``legacy``). Tests run the same
 browser flow against both to prove the JavaScript changes introduced no
 regression.
 """
@@ -72,8 +72,8 @@ def servers() -> Iterator[dict[str, str]]:
     urls: dict[str, str] = {}
     try:
         for key, module in (
-            ("new", "rf_calculator.settings"),
-            ("legacy", "rf_calculator.settings_legacy"),
+            ("new", "config.settings"),
+            ("legacy", "e2e.legacy.settings"),
         ):
             proc, url = _start_server(module)
             procs.append(proc)

@@ -34,7 +34,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 
-from rf_calculator.env import env_list
+from config.env import env_list
 
 from .detection import detect_spots as _detect_spots
 
@@ -58,7 +58,7 @@ def upload_image(request: HttpRequest) -> HttpResponse:
     Returns:
         The rendered annotation page.
     """
-    return render(request, "circle_detector/annotate.html")
+    return render(request, "tlc/annotate.html")
 
 
 # ---------------------------------------------------------------------------

@@ -66,11 +66,10 @@ uv run pytest e2e -v
 
 The E2E suite drives the annotation UI in a real browser. It also serves as a
 **regression harness against the original frontend**: the pre-refactor
-`annotate.html` is kept under `regression_legacy_templates/` and rendered via
-`rf_calculator.settings_legacy`, so the same flow runs against both the old and
-new frontends and asserts they produce identical RF results. Two further tests
-document the fixed image-fetch bugs (no spurious fetch on load; the ELN path
-fetches once instead of twice).
+`annotate.html` is kept under `e2e/legacy/templates/` and rendered via
+`e2e.legacy.settings`, so the same flow runs against both the old and new
+frontends and asserts they produce identical RF results. Further tests document
+the fixed image-fetch bugs and cover auto-detect, drag, and delete.
 
 ### Linting
 
@@ -148,17 +147,20 @@ uv run python manage.py cleanup_media --hours 24 --dry-run
 ## Project layout
 
 ```text
-rf_calculator/        Django project
-  settings.py         env-driven settings (see rf_calculator/env.py)
+config/               Django project configuration
+  settings.py         env-driven settings (see config/env.py)
   urls.py             root URLs (+ media serving)
-circle_detector/      Application
+  wsgi.py / asgi.py   server entry points
+tlc/                  the application
   views.py            upload page, RF calc, spot detection, image fetch/serve
   detection.py        OpenCV assisted spot detection
-  templates/          annotate.html (the single-page annotation UI)
-  static/             app.css, app.js (self-contained frontend)
+  urls.py             app URL routes
+  templates/tlc/      annotate.html (the single-page annotation UI)
+  static/tlc/         app.css, app.js (self-contained frontend)
   management/         cleanup_media command
   tests.py            RF calc, detection, and endpoint security tests
 e2e/                  Playwright regression suite (vs. the original frontend)
+  legacy/             pinned original frontend + settings for comparison
 ```
 
 ## License

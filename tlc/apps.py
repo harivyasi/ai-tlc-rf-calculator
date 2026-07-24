@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class CircleDetectorConfig(AppConfig):
+class TlcConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "circle_detector"
+    name = "tlc"

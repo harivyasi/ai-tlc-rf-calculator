@@ -1,4 +1,4 @@
-"""Django settings for the rf_calculator project.
+"""Django settings for the TLC RF Calculator project.
 
 Runtime configuration is driven by environment variables so the same image can
 run in development and production:
@@ -49,7 +49,7 @@ CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
 # omitted to minimise the attack surface.
 INSTALLED_APPS = [
     'django.contrib.staticfiles',
-    'circle_detector',
+    'tlc',
 ]
 
 MIDDLEWARE = [
@@ -60,16 +60,24 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Use WhiteNoise's compressed/hashed manifest storage only in production;
+# in DEBUG, plain storage serves via finders so no collectstatic run is needed
+# (e.g. when running the test suite).
+_staticfiles_backend = (
+    'django.contrib.staticfiles.storage.StaticFilesStorage'
+    if DEBUG
+    else 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+)
 STORAGES = {
     'default': {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
     },
     'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        'BACKEND': _staticfiles_backend,
     },
 }
 
-ROOT_URLCONF = 'rf_calculator.urls'
+ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
     {
@@ -85,18 +93,13 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'rf_calculator.wsgi.application'
+WSGI_APPLICATION = 'config.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+# Database: none. The app has no models; CSRF is cookie-based and there are no
+# sessions/auth, so no database connection is configured. Results are written
+# to MEDIA_ROOT as files, not persisted to a DB.
+DATABASES = {}
 
 
 # Internationalization

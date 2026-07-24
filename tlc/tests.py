@@ -9,7 +9,7 @@ import os
 import cv2
 import numpy as np
 from django.conf import settings
-from django.test import Client, TestCase
+from django.test import Client, SimpleTestCase
 from django.urls import reverse
 
 
@@ -36,7 +36,7 @@ def _valid_payload() -> dict:
     }
 
 
-class CalculateRfTests(TestCase):
+class CalculateRfTests(SimpleTestCase):
     def setUp(self) -> None:
         self.client = Client()
 
@@ -89,7 +89,7 @@ class CalculateRfTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
-class CsrfTests(TestCase):
+class CsrfTests(SimpleTestCase):
     """Verify CSRF is enforced on calculate_rf and the token flow works.
 
     Django's default test client bypasses CSRF, so these use a client with
@@ -131,7 +131,7 @@ def _blobs_data_url(centers: list[tuple[int, int]], size: int = 500) -> str:
     return "data:image/png;base64," + base64.b64encode(buffer.tobytes()).decode("ascii")
 
 
-class DetectSpotsTests(TestCase):
+class DetectSpotsTests(SimpleTestCase):
     def setUp(self) -> None:
         self.client = Client()
 
@@ -160,7 +160,7 @@ class DetectSpotsTests(TestCase):
         self.assertEqual(response.json()["count"], 0)
 
 
-class ServeImageSecurityTests(TestCase):
+class ServeImageSecurityTests(SimpleTestCase):
     def setUp(self) -> None:
         self.client = Client()
 
@@ -182,7 +182,7 @@ class ServeImageSecurityTests(TestCase):
             os.remove(os.path.join(settings.MEDIA_ROOT, name))
 
 
-class FetchImageSecurityTests(TestCase):
+class FetchImageSecurityTests(SimpleTestCase):
     def setUp(self) -> None:
         self.client = Client()
 
