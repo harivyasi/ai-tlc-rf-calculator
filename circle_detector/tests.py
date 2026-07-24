@@ -55,6 +55,27 @@ class CalculateRfTests(TestCase):
         self.assertEqual(len(body["rf_values"]), 1)
         self.assertEqual(body["rf_values"][0]["rf"], 0.5)
 
+    def test_solvent_and_compound_come_from_nearest_lines(self) -> None:
+        payload = {
+            "isLocalImage": True,
+            "imageData": _png_data_url(),
+            "imageSrc": "sample.png",
+            "lines": [
+                {"type": "min", "y": 200, "text": "min"},
+                {"type": "max", "y": 0, "text": "max"},
+                {"type": "vertical", "x": 150, "text": "SolventB"},
+                {"type": "horizontal", "y": 150, "text": "CompoundX"},
+            ],
+            "spots": [{"x": 150, "y": 100}],
+        }
+        response = self.client.post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        value = response.json()["rf_values"][0]
+        self.assertEqual(value["solvent"], "SolventB")
+        self.assertEqual(value["compound"], "CompoundX")
+
     def test_missing_min_max_lines_is_rejected(self) -> None:
         payload = {
             "isLocalImage": True,

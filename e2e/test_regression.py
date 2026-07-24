@@ -110,6 +110,43 @@ def test_legacy_frontend_had_spurious_fetch_on_local_load(page, servers):
     assert len(calls) >= 1, "expected the legacy eager fetch to fire"
 
 
+@pytest.mark.parametrize("frontend", ["new", "legacy"])
+def test_vertical_label_flows_to_solvent_column(page, servers, test_image_path, frontend):
+    """A V-Line label must reach the solvent column — both frontends, same result.
+
+    Exercises the rewritten line-capture + popup path and the backend's
+    nearest-line matching end-to-end.
+    """
+    _stub_cdn(page)
+    page.goto(servers[frontend] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(
+        "() => { const h = document.getElementById('annotated-heading');"
+        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
+    )
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 200, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 200, "y": 50})
+
+    # Add a labelled vertical line via the popup.
+    page.click("button:has-text('V-Line')")
+    canvas.click(position={"x": 120, "y": 150})
+    page.fill("#line-text", "LaneA")
+    page.click("#line-popup button")
+
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 260, "y": 150})
+
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    solvent = page.locator("#values-table tbody tr").first.locator("td").first.inner_text().strip()
+    assert solvent == "LaneA", f"{frontend}: solvent column was {solvent!r}"
+
+
 def test_auto_detect_populates_spots(page, servers, blob_image_path):
     """New feature: Auto-detect finds the drawn spots and they flow into RF calc."""
     _stub_cdn(page)
