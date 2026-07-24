@@ -19,17 +19,20 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 
 - Interactive canvas annotation: min/max reference lines, vertical/horizontal
   label lines, and draggable spots.
+- **Assisted spot detection** — one click finds candidate spots (OpenCV blob
+  detection); results are editable suggestions you review before calculating.
 - Two image sources: **local upload** or **fetch from an ELN URL**.
 - Server-side RF calculation and image annotation (OpenCV).
 - CSV export (download locally or POST back to an ELN).
 
 ## Tech stack
 
-- **Django 5.2 LTS** (Python 3.12+)
-- **OpenCV** (headless) + **NumPy** for image annotation
+- **Django 5.2 LTS** (Python 3.12+); minimal app set (no admin/auth — cookie-based CSRF)
+- **OpenCV** (headless) + **NumPy** for image annotation and spot detection
 - **Gunicorn** + **WhiteNoise** for serving
 - **uv** for dependency management
-- **SQLite** (sessions/admin only; no domain models)
+- Self-contained frontend: vanilla JS + CSS in `static/`, **no CDN/JS
+  frameworks** (inline SVG icons, system fonts)
 
 ## Getting started
 
@@ -39,8 +42,8 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 # Install dependencies into a virtual environment
 uv sync
 
-# Run the development server (DEBUG generates a throwaway SECRET_KEY)
-DEBUG=True uv run python manage.py migrate
+# Run the development server (DEBUG generates a throwaway SECRET_KEY).
+# There are no database models, so no migration step is needed.
 DEBUG=True uv run python manage.py runserver
 ```
 
@@ -123,11 +126,12 @@ front it with a reverse proxy for higher load).
 
 ## Continuous integration
 
-- **GitHub Actions** (`.github/workflows/ci.yml`): lints and tests on every
-  push to `main` and pull request; builds and pushes the Docker image to the
-  GitHub Container Registry (`ghcr.io`) only when a **release** is published.
-- **GitLab CI** (`.gitlab-ci.yml`): lints and tests on branches / merge
-  requests; builds and pushes the image to the GitLab registry only on a
+- **GitHub Actions** (`.github/workflows/ci.yml`): lint, unit tests, and the
+  Playwright e2e suite on every push to `main` and pull request; builds and
+  pushes the Docker image to the GitHub Container Registry (`ghcr.io`) only
+  when a **release** is published.
+- **GitLab CI** (`.gitlab-ci.yml`): lint, unit tests, and e2e on branches /
+  merge requests; builds and pushes the image to the GitLab registry only on a
   **tag** (release).
 
 ## Maintenance
@@ -144,12 +148,17 @@ uv run python manage.py cleanup_media --hours 24 --dry-run
 ## Project layout
 
 ```text
-rf_calculator/        Django project (settings, URLs, WSGI/ASGI)
-circle_detector/      Application: views, templates, tests
-  views.py            upload page, RF calculation, image fetch/serve
+rf_calculator/        Django project
+  settings.py         env-driven settings (see rf_calculator/env.py)
+  urls.py             root URLs (+ media serving)
+circle_detector/      Application
+  views.py            upload page, RF calc, spot detection, image fetch/serve
+  detection.py        OpenCV assisted spot detection
   templates/          annotate.html (the single-page annotation UI)
+  static/             app.css, app.js (self-contained frontend)
   management/         cleanup_media command
-  tests.py            RF calculation + endpoint security tests
+  tests.py            RF calc, detection, and endpoint security tests
+e2e/                  Playwright regression suite (vs. the original frontend)
 ```
 
 ## License
