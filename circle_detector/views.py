@@ -36,6 +36,8 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 
 from rf_calculator.env import env_list
 
+from .detection import detect_spots as _detect_spots
+
 logger = logging.getLogger(__name__)
 
 # Limits applied when fetching a remote (ELN) image.
@@ -129,6 +131,42 @@ def _is_safe_remote_url(url: str) -> bool:
     return True
 
 
+def _load_annotation_image(
+    data: dict[str, Any],
+) -> tuple[np.ndarray | None, str, JsonResponse | None]:
+    """Load the source image referenced by an annotation payload.
+
+    Local uploads carry the image as a base64 ``imageData`` data URL; ELN
+    images are referenced by ``imageSrc`` (a media file name).
+
+    Args:
+        data: The parsed JSON request body.
+
+    Returns:
+        A ``(image, base_name, error)`` tuple. On success ``error`` is ``None``;
+        on failure ``image`` is ``None`` and ``error`` is a ready JsonResponse.
+    """
+    if data.get("isLocalImage") and data.get("imageData"):
+        image = _decode_data_url(data["imageData"])
+        if image is None:
+            return None, "", JsonResponse(
+                {"error": "Could not decode the uploaded image."}, status=400
+            )
+        return image, os.path.basename(data.get("imageSrc") or "local_upload.png"), None
+
+    image_src = data.get("imageSrc")
+    if not image_src:
+        return None, "", JsonResponse({"error": 'Missing "imageSrc" data in request'}, status=400)
+    image_path = _resolve_within_media(image_src)
+    if not image_path or not os.path.exists(image_path):
+        logger.warning("Image not found for request: %r", image_src)
+        return None, "", JsonResponse({"error": "Image not found."}, status=400)
+    image = cv2.imread(image_path)
+    if image is None:
+        return None, "", JsonResponse({"error": "Failed to read the image file."}, status=400)
+    return image, os.path.basename(image_src), None
+
+
 def _decode_data_url(data_url: str) -> np.ndarray | None:
     """Decode a base64 ``data:`` URL into an OpenCV image (BGR).
 
@@ -196,23 +234,9 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": '"min" and "max" lines must differ.'}, status=400)
 
     # Load the source image from the appropriate origin.
-    if data.get("isLocalImage") and data.get("imageData"):
-        image = _decode_data_url(data["imageData"])
-        if image is None:
-            return JsonResponse({"error": "Could not decode the uploaded image."}, status=400)
-        base_name = os.path.basename(data.get("imageSrc") or "local_upload.png")
-    else:
-        image_src = data.get("imageSrc")
-        if not image_src:
-            return JsonResponse({"error": 'Missing "imageSrc" data in request'}, status=400)
-        image_path = _resolve_within_media(image_src)
-        if not image_path or not os.path.exists(image_path):
-            logger.warning("Image not found for request: %r", image_src)
-            return JsonResponse({"error": "Image not found."}, status=400)
-        image = cv2.imread(image_path)
-        if image is None:
-            return JsonResponse({"error": "Failed to read the image file."}, status=400)
-        base_name = os.path.basename(image_src)
+    image, base_name, error = _load_annotation_image(data)
+    if error is not None:
+        return error
 
     rf_values: list[dict[str, Any]] = []
     for spot in spots:
@@ -273,6 +297,36 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         "annotated_image_url": settings.MEDIA_URL + annotated_name,
         "csv_url": settings.MEDIA_URL + csv_name,
     })
+
+
+def detect_spots(request: HttpRequest) -> JsonResponse:
+    """Detect candidate TLC spots and return them as editable suggestions.
+
+    Accepts the same image payload as :func:`calculate_rf` (base64 ``imageData``
+    for local uploads or ``imageSrc`` for ELN images) and returns spot centres
+    in original-image coordinates, ready to drop into the annotation ``spots``
+    array. Detection is best-effort — the user reviews the result.
+
+    Args:
+        request: The HTTP request carrying the JSON image payload.
+
+    Returns:
+        A JSON response with ``spots`` (a list of ``{"x", "y"}``) and ``count``.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=405)
+
+    try:
+        data: dict[str, Any] = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+
+    image, _, error = _load_annotation_image(data)
+    if error is not None:
+        return error
+
+    spots = _detect_spots(image)
+    return JsonResponse({"spots": spots, "count": len(spots)})
 
 
 # ---------------------------------------------------------------------------

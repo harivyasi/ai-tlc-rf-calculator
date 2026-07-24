@@ -100,6 +100,45 @@ class CsrfTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+def _blobs_data_url(centers: list[tuple[int, int]], size: int = 500) -> str:
+    """A light image with dark filled circles at ``centers`` (for detection)."""
+    image = np.full((size, size, 3), 245, dtype=np.uint8)
+    for cx, cy in centers:
+        cv2.circle(image, (cx, cy), 20, (40, 40, 40), -1)
+    ok, buffer = cv2.imencode(".png", image)
+    assert ok
+    return "data:image/png;base64," + base64.b64encode(buffer.tobytes()).decode("ascii")
+
+
+class DetectSpotsTests(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_detects_expected_number_of_spots(self) -> None:
+        centers = [(120, 120), (360, 130), (240, 360)]
+        payload = {"isLocalImage": True, "imageData": _blobs_data_url(centers)}
+        response = self.client.post(
+            reverse("detect_spots"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["count"], len(centers))
+        # Each detected centre should lie near a drawn blob.
+        for spot in body["spots"]:
+            self.assertTrue(
+                any(abs(spot["x"] - cx) < 15 and abs(spot["y"] - cy) < 15 for cx, cy in centers),
+                f"unexpected spot {spot}",
+            )
+
+    def test_blank_image_yields_no_spots(self) -> None:
+        payload = {"isLocalImage": True, "imageData": _blobs_data_url([])}
+        response = self.client.post(
+            reverse("detect_spots"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 0)
+
+
 class ServeImageSecurityTests(TestCase):
     def setUp(self) -> None:
         self.client = Client()
