@@ -1,0 +1,38 @@
+[project]
+name = "tlc-rf-calculator"
+version = "0.1.0"
+description = "Web tool for computing retention factor (RF) values from annotated Thin Layer Chromatography (TLC) plate images."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "django>=5.2,<5.3",
+    "gunicorn>=23.0.0",
+    "whitenoise>=6.9.0",
+    "opencv-python-headless>=4.11.0.86",
+    "numpy>=2.2.0",
+    "requests>=2.32.3",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "pytest>=8.3.0",
+    "playwright>=1.49.0",
+]
+
+[tool.pytest.ini_options]
+# Bare `pytest` runs the Playwright regression suite; Django unit tests run via
+# `python manage.py test`.
+testpaths = ["e2e"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["regression_legacy_templates"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "DJ"]
+
+[tool.uv]
+package = false

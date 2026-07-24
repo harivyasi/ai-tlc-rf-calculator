@@ -14,19 +14,20 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from django.contrib import admin
-from django.urls import path, include
 from django.conf import settings
-from django.conf.urls.static import static
+from django.contrib import admin
+from django.urls import include, path, re_path
+from django.views.static import serve
 
 urlpatterns = [
     # Admin site URL
     path('admin/', admin.site.urls),
-    
+
     # Include URLs from the circle_detector app
     path('', include('circle_detector.urls')),
-]
 
-# Serve media files during development
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # Serve user media (annotated images, CSVs). This is a low-traffic internal
+    # tool, so serving media through Django is acceptable; a reverse proxy could
+    # take this over in a higher-traffic deployment.
+    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+]

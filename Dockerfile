@@ -1,29 +1,35 @@
-# Use the official Python image from the Docker Hub
-FROM python
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# Faster, cleaner Python in containers.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/usr/local
 
-# Set the working directory
+# opencv-python-headless needs libglib2.0 at runtime (no OpenGL required).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv (copied from its official image).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /code
 
-# Install openGL library
-RUN apt-get update && apt-get install -y libgl1 libglib2.0-0
+# Install dependencies first for better layer caching.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project
 
-# Install dependencies
-COPY requirements.txt /code/
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
-
-# Copy the project
+# Copy the project.
 COPY . /code/
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
+# Collect static files. A throwaway key is fine here; collectstatic reads no
+# secrets. DEBUG stays off so production settings are exercised.
+RUN SECRET_KEY=build-only-key python manage.py collectstatic --noinput
 
-# Expose the port the app runs on
 EXPOSE 8050
 
-# Run the application
+# SECRET_KEY, ALLOWED_HOSTS, etc. must be provided at runtime (see README).
 CMD ["gunicorn", "rf_calculator.wsgi:application", "--bind", "0.0.0.0:8050"]

@@ -1,93 +1,157 @@
-# TLC_application_rf_calculator
+# TLC RF Calculator
 
+A web tool for computing **retention factor (RF)** values from **Thin Layer
+Chromatography (TLC)** plate images.
 
+Upload a photo of a TLC plate (or load one from an Electronic Lab Notebook),
+annotate the reference lines and spots in the browser, and the server computes
+the RF for each spot, produces an annotated image, and exports the results as
+CSV.
+
+RF is defined as the distance travelled by a spot divided by the distance
+travelled by the solvent front:
+
+```text
+RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
+```
+
+## Features
+
+- Interactive canvas annotation: min/max reference lines, vertical/horizontal
+  label lines, and draggable spots.
+- Two image sources: **local upload** or **fetch from an ELN URL**.
+- Server-side RF calculation and image annotation (OpenCV).
+- CSV export (download locally or POST back to an ELN).
+
+## Tech stack
+
+- **Django 5.2 LTS** (Python 3.12+)
+- **OpenCV** (headless) + **NumPy** for image annotation
+- **Gunicorn** + **WhiteNoise** for serving
+- **uv** for dependency management
+- **SQLite** (sessions/admin only; no domain models)
 
 ## Getting started
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+```bash
+# Install dependencies into a virtual environment
+uv sync
 
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.kit.edu/kit/ioc/digitalization-ioc/tlc_application_rf_calculator.git
-git branch -M main
-git push -uf origin main
+# Run the development server (DEBUG generates a throwaway SECRET_KEY)
+DEBUG=True uv run python manage.py migrate
+DEBUG=True uv run python manage.py runserver
 ```
 
-## Integrate with your tools
+Then open <http://localhost:8000/>.
 
-- [ ] [Set up project integrations](https://gitlab.kit.edu/kit/ioc/digitalization-ioc/tlc_application_rf_calculator/-/settings/integrations)
+### Running the tests
 
-## Collaborate with your team
+Unit tests (RF calculation + endpoint security):
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+```bash
+DEBUG=True uv run python manage.py test
+```
 
-## Test and Deploy
+End-to-end / regression tests (Playwright + Chromium):
 
-Use the built-in continuous integration in GitLab.
+```bash
+uv run playwright install chromium   # one-time browser download
+uv run pytest e2e -v
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+The E2E suite drives the annotation UI in a real browser. It also serves as a
+**regression harness against the original frontend**: the pre-refactor
+`annotate.html` is kept under `regression_legacy_templates/` and rendered via
+`rf_calculator.settings_legacy`, so the same flow runs against both the old and
+new frontends and asserts they produce identical RF results. Two further tests
+document the fixed image-fetch bugs (no spurious fetch on load; the ELN path
+fetches once instead of twice).
 
-***
+### Linting
 
-# Editing this README
+```bash
+uv run ruff check .
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## Configuration
 
-## Suggestions for a good README
+All configuration is via environment variables:
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+| Variable               | Default                     | Description                                                            |
+| ---------------------- | --------------------------- | ---------------------------------------------------------------------- |
+| `DEBUG`                | `False`                     | Enable Django debug mode. **Never enable in production.**              |
+| `SECRET_KEY`           | *(required if not DEBUG)*   | Django secret key. A throwaway key is generated only when `DEBUG=True`. |
+| `ALLOWED_HOSTS`        | `localhost,127.0.0.1`       | Comma-separated allowed hosts.                                         |
+| `CSRF_TRUSTED_ORIGINS` | *(empty)*                   | Comma-separated trusted origins for CSRF (e.g. `https://tlc.example.org`). |
+| `ELN_ALLOWED_HOSTS`    | *(empty = any public host)* | Comma-separated allowlist of hosts the server may fetch ELN images from. |
+| `SECURE_SSL_REDIRECT`  | `True` (when not DEBUG)     | Redirect HTTP to HTTPS.                                                |
+| `SECURE_HSTS_SECONDS`  | `31536000`                  | HSTS max-age (when not DEBUG).                                         |
 
-## Name
-Choose a self-explaining name for your project.
+When `DEBUG` is off, secure cookies, HSTS, and SSL redirect are enabled
+automatically. Verify a deployment's configuration with:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```bash
+uv run python manage.py check --deploy
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## Security notes
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+- **Image fetching (`/fetch-image/`)** validates URLs against SSRF: only
+  `http(s)` is allowed, the host must resolve to a public address, and an
+  optional `ELN_ALLOWED_HOSTS` allowlist can restrict it further. Downloads are
+  bounded by a timeout and a 25 MB size cap, and redirects are not followed.
+- **Image serving (`/serve-image/`)** is confined to `MEDIA_ROOT`; path
+  traversal is not possible.
+- CSRF protection is enforced on the calculation endpoint.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+## Deployment (Docker)
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```bash
+docker build -t tlc-rf-calculator .
+docker run --rm -p 8050:8050 \
+  -e SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \
+  -e ALLOWED_HOSTS="tlc.example.org" \
+  -e CSRF_TRUSTED_ORIGINS="https://tlc.example.org" \
+  tlc-rf-calculator
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+The app listens on port `8050`. Static files are served by WhiteNoise;
+user-generated media is served by the app (fine for low-traffic internal use —
+front it with a reverse proxy for higher load).
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Continuous integration
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+- **GitHub Actions** (`.github/workflows/ci.yml`): lints and tests on every
+  push to `main` and pull request; builds and pushes the Docker image to the
+  GitHub Container Registry (`ghcr.io`) only when a **release** is published.
+- **GitLab CI** (`.gitlab-ci.yml`): lints and tests on branches / merge
+  requests; builds and pushes the image to the GitLab registry only on a
+  **tag** (release).
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## Maintenance
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+Generated files (annotated images, CSVs, downloaded ELN images) accumulate in
+`MEDIA_ROOT`. Prune old ones with the bundled management command — run it from
+cron:
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+```bash
+uv run python manage.py cleanup_media --hours 24        # delete files older than 24h
+uv run python manage.py cleanup_media --hours 24 --dry-run
+```
+
+## Project layout
+
+```text
+rf_calculator/        Django project (settings, URLs, WSGI/ASGI)
+circle_detector/      Application: views, templates, tests
+  views.py            upload page, RF calculation, image fetch/serve
+  templates/          annotate.html (the single-page annotation UI)
+  management/         cleanup_media command
+  tests.py            RF calculation + endpoint security tests
+```
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+MIT

@@ -1,259 +1,354 @@
+"""Views for the TLC RF-calculator application.
+
+The application lets a user annotate a Thin Layer Chromatography (TLC) plate
+image in the browser and computes the retention factor (RF) for each marked
+spot. Images arrive either from an Electronic Lab Notebook (ELN) via a remote
+URL, or as a local upload whose bytes are sent base64-encoded in the request
+body.
+
+RF is defined as the distance travelled by a spot divided by the distance
+travelled by the solvent front::
+
+    rf = (spot_y - min_line_y) / (max_line_y - min_line_y)
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import csv
+import ipaddress
+import json
+import logging
 import os
+import socket
+import uuid
+from typing import Any
+from urllib.parse import urlsplit
+
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.cluster import DBSCAN
-from django.shortcuts import render
-from django.core.files.storage import FileSystemStorage
-from django.conf import settings
-from django.views.decorators.csrf import csrf_exempt
-import json
-import csv
-from django.core.files.storage import default_storage
 import requests
-import logging
-import tempfile
-from django.http import JsonResponse, HttpResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
+from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.shortcuts import render
+from django.views.decorators.csrf import ensure_csrf_cookie
 
-# View for handling image upload
-def upload_image(request):
-    """
-    Handle image upload and rendering.
-
-    This view handles both GET and POST requests. When an image is uploaded via
-    a POST request, it saves the image to the server's file system and redirects
-    the user to the annotation page. For GET requests, it renders the image upload page.
-
-    Args:
-        request (HttpRequest): The HTTP request object containing image file data (if POST).
-
-    Returns:
-        HttpResponse: A rendered HTML template for either image upload or annotation,
-                      depending on the request method.
-    """
-    ## Check if the request method is POST and an image file is provided
-    #if request.method == 'POST' and request.FILES.get('image'):
-    #    image = request.FILES['image']  # Get the uploaded image file
-    #    fs = FileSystemStorage()  # Initialize file system storage handler
-    #    filename = fs.save(image.name, image)  # Save the uploaded image to the server
-    #    uploaded_file_url = fs.url(filename)  # Get the URL of the saved image
-    #
-    #    # Render the annotation page with the URL of the uploaded image
-    #    return render(request, 'circle_detector/annotate.html', {
-    #        'uploaded_file_url': uploaded_file_url,
-    #    })
-
-    # If the request method is GET, render the upload page template
-    return render(request, 'circle_detector/annotate.html')
-
-
-
-# Configure logging for the module
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@csrf_exempt
-def calculate_rf(request):
-    """
-    Handles the calculation of RF values from the spots and lines in the request body.
+# Limits applied when fetching a remote (ELN) image.
+FETCH_TIMEOUT_SECONDS = 10
+MAX_IMAGE_BYTES = 25 * 1024 * 1024  # 25 MB
 
-    This function processes image data and performs RF (Retention Factor) calculations
-    based on the position of lines (min, max, vertical, horizontal) and spots. The annotated
-    image and the RF values are returned as URLs.
+
+@ensure_csrf_cookie
+def upload_image(request: HttpRequest) -> HttpResponse:
+    """Render the single-page annotation tool.
+
+    Decorated with :func:`ensure_csrf_cookie` so the ``csrftoken`` cookie is
+    present for the JavaScript ``fetch`` call to ``calculate_rf``.
 
     Args:
-        request (HttpRequest): The HTTP request containing JSON data for lines, spots, and imageSrc.
+        request: The incoming HTTP request.
 
     Returns:
-        JsonResponse: JSON response with RF values, annotated image URL, and CSV URL,
-                      or an error message if the request is invalid.
+        The rendered annotation page.
     """
-    if request.method == 'POST':
-        try:
-            # Parse the incoming JSON data
-            data = json.loads(request.body)
+    return render(request, "circle_detector/annotate.html")
 
-            # Extract lines, spots, and imageSrc from the request
-            lines = data.get('lines')
-            spots = data.get('spots')
-            image_src = data.get('imageSrc')
 
-            # Check for missing data and return error responses accordingly
-            if not lines:
-                logger.error('Lines data is missing')
-                return JsonResponse({'error': 'Missing "lines" data in request'}, status=400)
-            if not spots:
-                logger.error('Spots data is missing')
-                return JsonResponse({'error': 'Missing "spots" data in request'}, status=400)
-            if not image_src:
-                logger.error('Image source is missing')
-                return JsonResponse({'error': 'Missing "imageSrc" data in request'}, status=400)
+# ---------------------------------------------------------------------------
+# Security helpers
+# ---------------------------------------------------------------------------
 
-            # Check for the presence of both min and max lines
-            min_line = next((line for line in lines if line['type'] == 'min'), None)
-            max_line = next((line for line in lines if line['type'] == 'max'), None)
+def _resolve_within_media(name: str) -> str | None:
+    """Resolve a client-supplied name to an absolute path inside ``MEDIA_ROOT``.
 
-            if not min_line or not max_line:
-                logger.error('Min or Max line is missing')
-                return JsonResponse({'error': 'Please add "min" and "max" lines.'}, status=400)
+    Only the final path component is used, so directory-traversal sequences
+    (``..``) and absolute paths cannot escape the media directory.
 
-            # Construct the image path and ensure the image exists
-            #image_src = image_src.strip('/')  # Remove leading slashes
-            image_path = os.path.join(settings.MEDIA_ROOT, image_src)  # Cross-platform path
-            if not os.path.exists(image_path):
-                logger.error(f'Image not found at path: {image_path}')
-                return JsonResponse({'error': f'Image not found: {image_path}'}, status=400)
+    Args:
+        name: The client-supplied file name.
 
-            # Load the image using OpenCV
-            image = cv2.imread(image_path)
-            if image is None:
-                logger.error(f'Failed to load image from path: {image_path}')
-                return JsonResponse({'error': 'Failed to read the image file.'}, status=400)
+    Returns:
+        The absolute, canonicalised path, or ``None`` if it is empty or would
+        resolve outside ``MEDIA_ROOT``.
+    """
+    safe_name = os.path.basename(name or "")
+    if not safe_name or safe_name in (".", ".."):
+        return None
 
-            # Get the original image dimensions
-            original_height, original_width = image.shape[:2]
+    media_root = os.path.realpath(settings.MEDIA_ROOT)
+    candidate = os.path.realpath(os.path.join(media_root, safe_name))
+    if candidate == media_root or os.path.commonpath([media_root, candidate]) != media_root:
+        return None
+    return candidate
 
-            # Calculate RF values based on spot positions
-            min_y = min_line['y']
-            max_y = max_line['y']
 
-            rf_values_for_csv = []
-            for spot in spots:
-                x = spot['x']
-                y = spot['y']
+def _is_safe_remote_url(url: str) -> bool:
+    """Return whether ``url`` is safe to fetch server-side (SSRF guard).
 
-                # Calculate the RF value for the spot
-                rf_value = (y - min_y) / (max_y - min_y)
-                rf_value = round(rf_value, 2)  # Round to two decimal places
+    The URL must use http(s) and must not resolve to a private, loopback,
+    link-local, reserved, or otherwise non-public address. When the
+    ``ELN_ALLOWED_HOSTS`` environment variable is set (comma-separated), the
+    host must additionally appear in that allowlist.
 
-                # Skip invalid RF values (outside the range 0.0 to 1.0)
-                if rf_value <= 0.0 or rf_value >= 1.0:
-                    continue
+    Args:
+        url: The remote URL to validate.
 
-                # Find closest vertical and horizontal lines for annotation
-                closest_vertical_line = min(
-                    (line for line in lines if line['type'] == 'vertical'),
-                    key=lambda line: abs(line.get('x', 0) - x),
-                    default=None
-                )
-                closest_horizontal_line = min(
-                    (line for line in lines if line['type'] == 'horizontal'),
-                    key=lambda line: abs(line.get('y', 0) - y),
-                    default=None
-                )
+    Returns:
+        ``True`` if the URL is considered safe to fetch, else ``False``.
+    """
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False
 
-                solvent = closest_vertical_line['text'] if closest_vertical_line else 'Unknown'
-                compound = closest_horizontal_line['text'] if closest_horizontal_line else 'Unknown'
+    allowed = [
+        h.strip().lower() for h in os.getenv("ELN_ALLOWED_HOSTS", "").split(",") if h.strip()
+    ]
+    if allowed and parts.hostname.lower() not in allowed:
+        return False
 
-                # Add the RF value, solvent, and compound to the CSV list
-                rf_values_for_csv.append({
-                    "compound": compound,
-                    "solvent": solvent,
-                    "rf": rf_value
-                })
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        addr_infos = socket.getaddrinfo(parts.hostname, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return False
 
-                # Annotate the image with the calculated RF value
-                cv2.circle(image, (int(x), int(y)), 10, (0, 165, 255), -1)  # Draw circle at spot location
-                cv2.putText(image, f'RF={rf_value}', (int(x)+5, int(y)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                cv2.putText(image, f'{compound}', (int(x)+5, int(y)+10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-                cv2.putText(image, f'{solvent}', (int(x)+5, int(y)+25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+    for info in addr_infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+    return True
 
-            # Save the annotated image
-            annotated_image_name = f'annotated_{os.path.basename(image_src)}'
-            annotated_image_path = os.path.join(settings.MEDIA_ROOT, annotated_image_name)
-            cv2.imwrite(annotated_image_path, image)
 
-            # Save RF values to a CSV file
-            csv_name = f'rf_values_{os.path.splitext(os.path.basename(image_src))[0]}.csv'
-            csv_path = os.path.join(settings.MEDIA_ROOT, csv_name)
-            with open(csv_path, 'w', newline='') as csvfile:
-                fieldnames = ['Solvent (X value)', 'Compound (Y value)', 'RF value']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                for value in rf_values_for_csv:
-                    writer.writerow({
-                        'Solvent (X value)': value['solvent'],
-                        'Compound (Y value)': value['compound'],
-                        'RF value': value['rf']
-                    })
+def _decode_data_url(data_url: str) -> np.ndarray | None:
+    """Decode a base64 ``data:`` URL into an OpenCV image (BGR).
 
-            # Return URLs for the annotated image and CSV
-            annotated_image_url = settings.MEDIA_URL + annotated_image_name
-            csv_url = settings.MEDIA_URL + csv_name
+    Args:
+        data_url: A ``data:image/...;base64,<payload>`` string, or a bare
+            base64 payload.
 
-            return JsonResponse({
-                'rf_values': rf_values_for_csv,
-                'annotated_image_url': annotated_image_url,
-                'csv_url': csv_url
+    Returns:
+        The decoded image as a NumPy array, or ``None`` if decoding fails.
+    """
+    payload = data_url.split(",", 1)[1] if "," in data_url else data_url
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if len(raw) > MAX_IMAGE_BYTES:
+        return None
+    image = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    return image
+
+
+# ---------------------------------------------------------------------------
+# RF calculation
+# ---------------------------------------------------------------------------
+
+def calculate_rf(request: HttpRequest) -> JsonResponse:
+    """Compute RF values from annotation data and render an annotated image.
+
+    Expects a JSON body containing ``lines`` (with ``min`` and ``max``
+    reference lines plus optional ``vertical``/``horizontal`` label lines),
+    ``spots``, and either ``imageSrc`` (a media file name, for ELN images) or
+    ``imageData`` (a base64 data URL, for local uploads).
+
+    Args:
+        request: The HTTP request carrying the JSON annotation payload.
+
+    Returns:
+        A JSON response with ``rf_values``, ``annotated_image_url``, and
+        ``csv_url``, or an ``error`` message with an appropriate status code.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=405)
+
+    try:
+        data: dict[str, Any] = json.loads(request.body)
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON format received")
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+
+    lines = data.get("lines")
+    spots = data.get("spots")
+    if not lines:
+        return JsonResponse({"error": 'Missing "lines" data in request'}, status=400)
+    if not spots:
+        return JsonResponse({"error": 'Missing "spots" data in request'}, status=400)
+
+    min_line = next((line for line in lines if line.get("type") == "min"), None)
+    max_line = next((line for line in lines if line.get("type") == "max"), None)
+    if not min_line or not max_line:
+        return JsonResponse({"error": 'Please add "min" and "max" lines.'}, status=400)
+
+    min_y = min_line["y"]
+    max_y = max_line["y"]
+    if max_y == min_y:
+        return JsonResponse({"error": '"min" and "max" lines must differ.'}, status=400)
+
+    # Load the source image from the appropriate origin.
+    if data.get("isLocalImage") and data.get("imageData"):
+        image = _decode_data_url(data["imageData"])
+        if image is None:
+            return JsonResponse({"error": "Could not decode the uploaded image."}, status=400)
+        base_name = os.path.basename(data.get("imageSrc") or "local_upload.png")
+    else:
+        image_src = data.get("imageSrc")
+        if not image_src:
+            return JsonResponse({"error": 'Missing "imageSrc" data in request'}, status=400)
+        image_path = _resolve_within_media(image_src)
+        if not image_path or not os.path.exists(image_path):
+            logger.warning("Image not found for request: %r", image_src)
+            return JsonResponse({"error": "Image not found."}, status=400)
+        image = cv2.imread(image_path)
+        if image is None:
+            return JsonResponse({"error": "Failed to read the image file."}, status=400)
+        base_name = os.path.basename(image_src)
+
+    rf_values: list[dict[str, Any]] = []
+    for spot in spots:
+        x = spot["x"]
+        y = spot["y"]
+        rf_value = round((y - min_y) / (max_y - min_y), 2)
+
+        # Keep only physically meaningful values strictly between 0 and 1.
+        if rf_value <= 0.0 or rf_value >= 1.0:
+            continue
+
+        closest_vertical = min(
+            (line for line in lines if line.get("type") == "vertical"),
+            key=lambda line: abs(line.get("x", 0) - x),
+            default=None,
+        )
+        closest_horizontal = min(
+            (line for line in lines if line.get("type") == "horizontal"),
+            key=lambda line: abs(line.get("y", 0) - y),
+            default=None,
+        )
+        solvent = closest_vertical["text"] if closest_vertical else "Unknown"
+        compound = closest_horizontal["text"] if closest_horizontal else "Unknown"
+
+        rf_values.append({"compound": compound, "solvent": solvent, "rf": rf_value})
+
+        cv2.circle(image, (int(x), int(y)), 10, (0, 165, 255), -1)
+        cv2.putText(image, f"RF={rf_value}", (int(x) + 5, int(y) - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        cv2.putText(image, f"{compound}", (int(x) + 5, int(y) + 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        cv2.putText(image, f"{solvent}", (int(x) + 5, int(y) + 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+
+    # Unique output names so concurrent requests never clobber each other.
+    token = uuid.uuid4().hex
+    stem = os.path.splitext(base_name)[0]
+    annotated_name = f"annotated_{stem}_{token}.png"
+    csv_name = f"rf_values_{stem}_{token}.csv"
+
+    os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+    cv2.imwrite(os.path.join(settings.MEDIA_ROOT, annotated_name), image)
+
+    with open(os.path.join(settings.MEDIA_ROOT, csv_name), "w", newline="") as csvfile:
+        writer = csv.DictWriter(
+            csvfile, fieldnames=["Solvent (X value)", "Compound (Y value)", "RF value"]
+        )
+        writer.writeheader()
+        for value in rf_values:
+            writer.writerow({
+                "Solvent (X value)": value["solvent"],
+                "Compound (Y value)": value["compound"],
+                "RF value": value["rf"],
             })
 
-        except json.JSONDecodeError:
-            logger.error('Invalid JSON format received')
-            return JsonResponse({'error': 'Invalid JSON format'}, status=400)
-
-    return JsonResponse({'error': 'Invalid request'}, status=400)
-
-@csrf_exempt
-def fetch_and_save_image(request):
-    """
-    Fetch and save an image from a remote URL.
-
-    This view fetches an image from the URL provided as a GET parameter,
-    temporarily saves it to the server, and returns the file path.
-
-    Args:
-        request (HttpRequest): The HTTP request object containing the 'url' parameter.
-
-    Returns:
-        JsonResponse: A JSON response containing the local path of the saved image
-                      or an error message if the fetch fails.
-    """
-    # Extract the image URL from the request
-    image_url = request.GET.get('url')
-    
-    # Attempt to fetch the image from the remote URL
-    response = requests.get(image_url)
-    
-    if response.status_code == 200:
-        # If the request is successful, save the image to a temporary file
-        temp_dir = tempfile.gettempdir()  # Get the system's temporary directory
-        temp_file_path = os.path.join(settings.MEDIA_ROOT, 'downloaded_image.png')  # Set file name and path
-        
-        # Write the image content to the temp file
-        with open(temp_file_path, 'wb') as temp_file:
-            temp_file.write(response.content)
-        
-        # Return the file path of the saved image
-        return JsonResponse({'imagePath': temp_file_path})
-    else:
-        # Return an error message if the image fetch fails
-        return JsonResponse({'error': 'Failed to fetch image'}, status=400)
+    return JsonResponse({
+        "rf_values": rf_values,
+        "annotated_image_url": settings.MEDIA_URL + annotated_name,
+        "csv_url": settings.MEDIA_URL + csv_name,
+    })
 
 
-def serve_image(request):
-    """
-    Serve an image file to the client.
+# ---------------------------------------------------------------------------
+# Remote image fetching / serving
+# ---------------------------------------------------------------------------
 
-    This view reads an image from the local file system, given its path in the
-    'file_path' GET parameter, and serves it as a PNG image.
+def fetch_and_save_image(request: HttpRequest) -> JsonResponse:
+    """Fetch an ELN image from a remote URL and store it under ``MEDIA_ROOT``.
+
+    The URL is validated against SSRF (see :func:`_is_safe_remote_url`), the
+    download is bounded by a timeout and a maximum size, and the file is saved
+    under a random name. Only that name (not a filesystem path) is returned, so
+    the client cannot influence where subsequent reads occur.
 
     Args:
-        request (HttpRequest): The HTTP request object containing the 'file_path' parameter.
+        request: The HTTP request; expects a ``url`` query parameter.
 
     Returns:
-        HttpResponse: A response containing the image file's binary content and correct
-                      content type or an error message if the file is not found.
+        A JSON response with ``imagePath`` (a media-relative file name), or an
+        ``error`` message.
     """
-    # Get the file path from the request
-    file_path = request.GET.get('file_path')
-    
-    # Check if the file exists at the specified path
-    if os.path.exists(file_path):
-        # Serve the image if found
-        with open(file_path, 'rb') as f:
-            return HttpResponse(f.read(), content_type="image/png")
-    else:
-        # Return an error if the file does not exist
-        return JsonResponse({'error': 'File not found'}, status=404)
+    image_url = request.GET.get("url")
+    if not image_url:
+        return JsonResponse({"error": 'Missing "url" parameter'}, status=400)
+    if not _is_safe_remote_url(image_url):
+        logger.warning("Refused to fetch unsafe URL: %r", image_url)
+        return JsonResponse({"error": "The provided URL is not allowed."}, status=400)
 
+    try:
+        response = requests.get(
+            image_url, timeout=FETCH_TIMEOUT_SECONDS, stream=True, allow_redirects=False
+        )
+    except requests.RequestException:
+        logger.warning("Error fetching remote image", exc_info=True)
+        return JsonResponse({"error": "Failed to fetch image"}, status=400)
+
+    if response.status_code != 200:
+        return JsonResponse({"error": "Failed to fetch image"}, status=400)
+
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_content(chunk_size=64 * 1024):
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            return JsonResponse({"error": "Remote image is too large."}, status=400)
+        chunks.append(chunk)
+    content = b"".join(chunks)
+
+    if cv2.imdecode(np.frombuffer(content, np.uint8), cv2.IMREAD_COLOR) is None:
+        return JsonResponse({"error": "Remote resource is not a valid image."}, status=400)
+
+    file_name = f"{uuid.uuid4().hex}.png"
+    os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+    with open(os.path.join(settings.MEDIA_ROOT, file_name), "wb") as fh:
+        fh.write(content)
+
+    return JsonResponse({"imagePath": file_name})
+
+
+def serve_image(request: HttpRequest) -> HttpResponse:
+    """Serve an image stored under ``MEDIA_ROOT`` by name.
+
+    The ``file_path`` parameter is confined to ``MEDIA_ROOT`` (see
+    :func:`_resolve_within_media`), so arbitrary files on the host cannot be
+    read.
+
+    Args:
+        request: The HTTP request; expects a ``file_path`` query parameter.
+
+    Returns:
+        The image bytes as ``image/png``, or a JSON ``error`` with status 404.
+    """
+    requested = request.GET.get("file_path")
+    resolved = _resolve_within_media(requested or "")
+    if not resolved or not os.path.exists(resolved):
+        return JsonResponse({"error": "File not found"}, status=404)
+
+    with open(resolved, "rb") as fh:
+        return HttpResponse(fh.read(), content_type="image/png")

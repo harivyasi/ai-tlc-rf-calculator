@@ -1,3 +1,139 @@
-from django.test import TestCase
+"""Tests for the RF calculation and the security-sensitive image endpoints."""
 
-# Create your tests here.
+from __future__ import annotations
+
+import base64
+import glob
+import os
+
+import cv2
+import numpy as np
+from django.conf import settings
+from django.test import Client, TestCase
+from django.urls import reverse
+
+
+def _png_data_url(width: int = 300, height: int = 300) -> str:
+    """Return a base64 ``data:`` URL for a small solid PNG image."""
+    image = np.full((height, width, 3), 255, dtype=np.uint8)
+    ok, buffer = cv2.imencode(".png", image)
+    assert ok
+    encoded = base64.b64encode(buffer.tobytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def _valid_payload() -> dict:
+    """A well-formed calculate_rf payload whose single spot yields RF 0.5."""
+    return {
+        "isLocalImage": True,
+        "imageData": _png_data_url(),
+        "imageSrc": "sample.png",
+        "lines": [
+            {"type": "min", "y": 200, "text": "min"},
+            {"type": "max", "y": 0, "text": "max"},
+        ],
+        "spots": [{"x": 150, "y": 100}],  # midway -> RF 0.5
+    }
+
+
+class CalculateRfTests(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def tearDown(self) -> None:
+        # Remove output files written into the real MEDIA_ROOT by the view.
+        for pattern in ("annotated_sample_*.png", "rf_values_sample_*.csv"):
+            for path in glob.glob(os.path.join(settings.MEDIA_ROOT, pattern)):
+                os.remove(path)
+
+    def test_rf_value_is_computed_correctly(self) -> None:
+        response = self.client.post(
+            reverse("calculate_rf"), data=_valid_payload(), content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(len(body["rf_values"]), 1)
+        self.assertEqual(body["rf_values"][0]["rf"], 0.5)
+
+    def test_missing_min_max_lines_is_rejected(self) -> None:
+        payload = {
+            "isLocalImage": True,
+            "imageData": _png_data_url(),
+            "lines": [{"type": "vertical", "x": 10, "text": "a"}],
+            "spots": [{"x": 5, "y": 5}],
+        }
+        response = self.client.post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+
+class CsrfTests(TestCase):
+    """Verify CSRF is enforced on calculate_rf and the token flow works.
+
+    Django's default test client bypasses CSRF, so these use a client with
+    ``enforce_csrf_checks=True`` to exercise the real browser behaviour.
+    """
+
+    def tearDown(self) -> None:
+        for pattern in ("annotated_sample_*.png", "rf_values_sample_*.csv"):
+            for path in glob.glob(os.path.join(settings.MEDIA_ROOT, pattern)):
+                os.remove(path)
+
+    def test_post_without_csrf_token_is_rejected(self) -> None:
+        client = Client(enforce_csrf_checks=True)
+        response = client.post(
+            reverse("calculate_rf"), data=_valid_payload(), content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_post_with_csrf_token_is_accepted(self) -> None:
+        client = Client(enforce_csrf_checks=True)
+        client.get(reverse("upload_image"))  # @ensure_csrf_cookie sets the cookie
+        token = client.cookies["csrftoken"].value
+        response = client.post(
+            reverse("calculate_rf"),
+            data=_valid_payload(),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertEqual(response.status_code, 200)
+
+
+class ServeImageSecurityTests(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_path_traversal_is_rejected(self) -> None:
+        response = self.client.get(
+            reverse("serve_image"), {"file_path": "../../../../etc/passwd"}
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_legitimate_media_file_is_served(self) -> None:
+        os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+        name = "unit_test_image.png"
+        cv2.imwrite(os.path.join(settings.MEDIA_ROOT, name), np.zeros((4, 4, 3), np.uint8))
+        try:
+            response = self.client.get(reverse("serve_image"), {"file_path": name})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "image/png")
+        finally:
+            os.remove(os.path.join(settings.MEDIA_ROOT, name))
+
+
+class FetchImageSecurityTests(TestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_missing_url_is_rejected(self) -> None:
+        response = self.client.get(reverse("fetch_image"))
+        self.assertEqual(response.status_code, 400)
+
+    def test_loopback_url_is_rejected(self) -> None:
+        response = self.client.get(reverse("fetch_image"), {"url": "http://127.0.0.1/x.png"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_http_scheme_is_rejected(self) -> None:
+        response = self.client.get(reverse("fetch_image"), {"url": "file:///etc/passwd"})
+        self.assertEqual(response.status_code, 400)

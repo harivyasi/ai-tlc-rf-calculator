@@ -829,48 +829,20 @@
 
     <script>
 			
-		// Get references to HTML elements
-		var imageElement = document.getElementById('imageElement');
 		let image = new Image();
-		var imageContainer = document.getElementById('imageContainer');
-		var fullUrl = window.location.href;
-		
-		// Extract query parameters from URL
-		var url = new URL(fullUrl);
-		var encodedImageUrl = url.searchParams.get("url");
-		var encodedPostUrl = url.searchParams.get("url");
-		var decodedImageUrl = decodeURIComponent(encodedImageUrl);
-		var decodedPostUrl = decodeURIComponent(encodedPostUrl);
-		
-		// Log the decoded post URL for debugging
-		console.log(decodedImageUrl);
-		
-		// Fetch image data from the server
-		fetch('/fetch-image/?url=' + encodeURIComponent(decodedImageUrl))
-			.then(response => response.json())
-			.then(data => {
-				if (data.imagePath) {
-					console.log(data.imagePath)
-					// Serve the fetched image if the imagePath is present
-					fetch('/serve-image/?file_path=' + encodeURIComponent(data.imagePath))
-						.then(response => {
-							if (response.ok) {
-								// Set the image source for the image element
-								
-								image.src = '/serve-image/?file_path=' + encodeURIComponent(data.imagePath);
-								console.log("Setting image.src to:", image.src);
-							} else {
-								console.error('Failed to serve image');
-							}
-						});
-				} else {
-					console.error('Failed to fetch and save image:', data.error);
-				}
-			})
-			.catch(error => {
-				console.error('Error:', error);
-			});
-		
+
+		// Extract query parameters from the URL. The ELN passes the image URL
+		// (which is also used as the upload target) via the "url" parameter.
+		const url = new URL(window.location.href);
+		const encodedUrl = url.searchParams.get("url");
+		const decodedImageUrl = encodedUrl ? decodeURIComponent(encodedUrl) : null;
+		const decodedPostUrl = decodedImageUrl;
+
+		// The ELN image is loaded on demand by loadELNImage() (called from
+		// selectImageSource('eln') once the DOM is ready), so there is no
+		// eager fetch here — that previously double-fetched in ELN mode and
+		// fired a spurious request in local mode.
+
 		// Initialize canvas and image rendering
 		let canvas = document.getElementById('image-canvas');
 		let ctx = canvas.getContext('2d');
@@ -1161,60 +1133,9 @@
 			redrawCanvas();
 		}	
 		
-		function redrawCanvas() {
-			ctx.clearRect(0, 0, canvas.width, canvas.height);
-			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-		
-			// Redraw lines
-			lines.forEach(line => {
-				ctx.font = '16px Arial';
-				ctx.fillStyle = 'red';
-		
-				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
-					ctx.beginPath();
-					ctx.moveTo(0, line.y / window.scaleFactor);
-					ctx.lineTo(canvas.width, line.y / window.scaleFactor);
-					ctx.stroke();
-					ctx.fillText(line.text, 10, line.y / window.scaleFactor - 5);
-				} else {
-					ctx.beginPath();
-					ctx.moveTo(line.x / window.scaleFactor, 0);
-					ctx.lineTo(line.x / window.scaleFactor, canvas.height);
-					ctx.stroke();
-					ctx.fillText(line.text, line.x / window.scaleFactor + 5, 10);
-				}
-			});
-		
-			// Redraw line delete icons
-			document.querySelectorAll('.delete-icon').forEach(el => el.remove());
-			lines.forEach(line => {
-				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
-					addDeleteIcon(line, 10, line.y / window.scaleFactor); // accurate y
-				} else {
-					addDeleteIcon(line, line.x / window.scaleFactor, 10); // accurate x
-				}
-			});
-		
-			// Remove existing spot delete icons
-			spots.forEach(spot => {
-				if (spot.deleteIcon) {
-					spot.deleteIcon.remove();
-				}
-			});
-		
-			// Redraw spots and add delete icons
-			spots.forEach(spot => {
-				let x = spot.x / window.scaleFactor;
-				let y = spot.y / window.scaleFactor;
-		
-				ctx.beginPath();
-				ctx.arc(x, y, 10, 0, 2 * Math.PI);
-				ctx.strokeStyle = 'orange';
-				ctx.lineWidth = 2;
-				ctx.stroke();
-			});
-		}
-				
+		// NOTE: redrawCanvas() is defined once, further below. The earlier
+		// duplicate definition was removed as dead code.
+
 		function handleMouseDown(e) {
 			const target = e.target;
 			if (target.classList.contains('delete-icon')) return;
@@ -2017,49 +1938,6 @@
 			e.stopPropagation();
 		}
 	
-		// Clear all annotations
-		function clearAnnotations() {
-			if (window.lines) window.lines = [];
-			if (window.spots) window.spots = [];
-			
-			if (window.canvas && window.ctx) {
-				redrawCanvas();
-			}
-			
-			// Clear table
-			const tableBody = document.querySelector('#values-table tbody');
-			if (tableBody) {
-				tableBody.innerHTML = '';
-			}
-			
-			M.toast({html: 'All annotations cleared'});
-			console.log('Annotations cleared');
-		}
-	
-		// Reset entire application
-		function resetApplication() {
-			clearAnnotations();
-			selectImageSource('local');
-			
-			if (window.canvas && window.ctx) {
-				window.ctx.clearRect(0, 0, window.canvas.width, window.canvas.height);
-			}
-			
-			const annotatedImage = document.getElementById('annotated-image');
-			if (annotatedImage) {
-				annotatedImage.src = '';
-			}
-			
-			const fileInput = document.getElementById('local-image-input');
-			if (fileInput) {
-				fileInput.value = '';
-			}
-			
-			updateAnnotatedHeading('instructions');
-			M.toast({html: 'Application reset successfully'});
-			console.log('Application reset');
-		}
-	
 		// Cancel current annotation
 		function cancelCurrentAnnotation() {
 			window.isDrawing = false;
@@ -2075,23 +1953,6 @@
 			canvas.removeEventListener('click', drawLine);
 			
 			console.log('Current annotation cancelled');
-		}
-	
-		// Set annotation mode and update button states
-		function setAnnotationMode(mode) {
-			window.currentAnnotationMode = mode;
-			
-			// Update button states
-			document.querySelectorAll('.lab-btn').forEach(btn => {
-				btn.classList.remove('active');
-			});
-			
-			// Update cursor
-			if (window.canvas) {
-				window.canvas.style.cursor = mode === 'spot' ? 'crosshair' : 'crosshair';
-			}
-			
-			console.log('Annotation mode set to:', mode);
 		}
 	
 		// Adjust canvas for window resize
@@ -2111,18 +1972,6 @@
 			console.log('Showing initial instructions');
 		}	
 			
-		// Add this after your existing functions, before DOMContentLoaded
-		function handleError(error, context = '') {
-			console.error(`Error in ${context}:`, error);
-			
-			Swal.fire({
-				title: 'Error!',
-				text: `An error occurred${context ? ' in ' + context : ''}. Please try again.`,
-				icon: 'error',
-				confirmButtonText: 'OK'
-			});
-		}
-		
 		document.addEventListener('DOMContentLoaded', function () {
 				console.log('TLC Analyzer initializing...');
 				

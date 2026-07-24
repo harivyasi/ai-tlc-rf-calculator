@@ -1,0 +1,2259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLC Image Annotation Tool</title>
+
+<!-- Import Google Icon Font for Material Icons -->
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Import Materialize CSS framework for styling -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+
+<!-- Lab System Theme Styles -->
+<style>
+    :root {
+        /* Lab System Color Palette */
+        --primary-blue: #4A90E2;
+        --primary-blue-dark: #357ABD;
+        --primary-blue-light: #6BA3E8;
+        --secondary-teal: #5BC0DE;
+        --secondary-teal-dark: #46B8DA;
+        --accent-orange: #F0AD4E;
+        --accent-orange-dark: #EC971F;
+        --success-green: #5CB85C;
+        --success-green-dark: #449D44;
+        --danger-red: #D9534F;
+        --danger-red-dark: #C9302C;
+        --warning-yellow: #F0AD4E;
+        
+        /* Neutral Colors */
+        --lab-white: #FFFFFF;
+        --lab-light-gray: #F8F9FA;
+        --lab-gray: #E9ECEF;
+        --lab-medium-gray: #DEE2E6;
+        --lab-dark-gray: #6C757D;
+        --lab-darker-gray: #495057;
+        --lab-text: #212529;
+        --lab-text-muted: #6C757D;
+        
+        /* Shadows and Effects */
+        --lab-shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+        --lab-shadow-md: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+        --lab-shadow-lg: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23);
+        
+        /* Border Radius */
+        --lab-radius-sm: 4px;
+        --lab-radius-md: 6px;
+        --lab-radius-lg: 8px;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--lab-light-gray);
+        min-height: 100vh;
+        margin: 0;
+        padding: 15px;
+        color: var(--lab-text);
+    }
+
+    .main-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-lg);
+        box-shadow: var(--lab-shadow-md);
+        overflow: hidden;
+        border: 1px solid var(--lab-medium-gray);
+    }
+
+    /* Lab System Header */
+    .header {
+        background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-blue-dark) 100%);
+        color: white;
+        padding: 1.5rem 2rem;
+        border-bottom: 3px solid var(--primary-blue-dark);
+        position: relative;
+    }
+
+    .header h1 {
+        margin: 0;
+        font-size: 1.8rem;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+    }
+
+    .header p {
+        margin: 0.3rem 0 0 0;
+        opacity: 0.9;
+        font-size: 0.95rem;
+        font-weight: 400;
+    }
+
+    .content-wrapper {
+        padding: 1.5rem;
+        background: var(--lab-white);
+    }
+
+    /* Lab System Card Styling */
+    .lab-card {
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        box-shadow: var(--lab-shadow-sm);
+        border: 1px solid var(--lab-medium-gray);
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+    }
+
+    .card-header {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--lab-medium-gray);
+        background: var(--lab-light-gray);
+    }
+
+    .card-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--lab-text);
+        margin: 0;
+    }
+
+    .card-content {
+        padding: 1.5rem;
+    }
+
+    /* Images Grid Layout */
+    .images-grid {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 1.5rem;
+        align-items: start;
+        margin-bottom: 1.5rem;
+    }
+
+    .image-panel {
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        padding: 1rem;
+        box-shadow: var(--lab-shadow-sm);
+        border: 1px solid var(--lab-medium-gray);
+    }
+
+    .image-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--lab-text);
+        margin-bottom: 1rem;
+        text-align: center;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--lab-gray);
+    }
+
+    #canvas-container {
+        position: relative;
+        display: flex;
+        justify-content: center;
+        margin-bottom: 1rem;
+    }
+
+    #image-canvas {
+        border: 2px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-sm);
+        max-width: 100%;
+        box-shadow: var(--lab-shadow-sm);
+    }
+
+    #annotated-image {
+        border: 2px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-sm);
+        max-width: 100%;
+        display: block;
+        margin: 0 auto;
+        box-shadow: var(--lab-shadow-sm);
+    }
+
+    /* Lab System Controls Panel */
+    .controls-panel {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-width: 280px;
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        padding: 1.5rem;
+        box-shadow: var(--lab-shadow-md);
+        border: 2px solid var(--primary-blue);
+        position: relative;
+    }
+
+    .controls-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--primary-blue);
+        margin-bottom: 1.5rem;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .button-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        width: 100%;
+        margin-bottom: 1.5rem;
+    }
+
+    /* Lab System Button Styles */
+    .lab-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.25rem;
+        border: 1px solid transparent;
+        border-radius: var(--lab-radius-sm);
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        min-height: 40px;
+        text-transform: none;
+    }
+
+    .lab-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--lab-shadow-sm);
+    }
+
+    .lab-btn:active {
+        transform: translateY(0);
+    }
+
+    /* Primary Button (Blue) */
+    .btn-lab-primary {
+        background: var(--primary-blue);
+        color: white;
+        border-color: var(--primary-blue-dark);
+    }
+
+    .btn-lab-primary:hover {
+        background: var(--primary-blue-dark);
+        border-color: var(--primary-blue-dark);
+    }
+
+    /* Secondary Button (Teal) */
+    .btn-lab-secondary {
+        background: var(--secondary-teal);
+        color: white;
+        border-color: var(--secondary-teal-dark);
+    }
+
+    .btn-lab-secondary:hover {
+        background: var(--secondary-teal-dark);
+        border-color: var(--secondary-teal-dark);
+    }
+
+    /* Success Button (Green) */
+    .btn-lab-success {
+        background: var(--success-green);
+        color: white;
+        border-color: var(--success-green-dark);
+    }
+
+    .btn-lab-success:hover {
+        background: var(--success-green-dark);
+        border-color: var(--success-green-dark);
+    }
+
+    /* Warning Button (Orange) */
+    .btn-lab-warning {
+        background: var(--accent-orange);
+        color: white;
+        border-color: var(--accent-orange-dark);
+    }
+
+    .btn-lab-warning:hover {
+        background: var(--accent-orange-dark);
+        border-color: var(--accent-orange-dark);
+    }
+
+    /* Danger Button (Red) */
+    .btn-lab-danger {
+        background: var(--danger-red);
+        color: white;
+        border-color: var(--danger-red-dark);
+    }
+
+    .btn-lab-danger:hover {
+        background: var(--danger-red-dark);
+        border-color: var(--danger-red-dark);
+    }
+
+    /* Outline Buttons */
+    .btn-lab-outline {
+        background: transparent;
+        color: var(--primary-blue);
+        border-color: var(--primary-blue);
+    }
+
+    .btn-lab-outline:hover {
+        background: var(--primary-blue);
+        color: white;
+    }
+
+    /* Active Button State */
+    .lab-btn.active {
+        box-shadow: 0 0 0 2px var(--primary-blue-light);
+        transform: translateY(-1px);
+    }
+
+    /* Floating Action Buttons - Lab Style */
+    .fab-container {
+        position: fixed;
+        top: 2rem;
+        right: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        z-index: 1000;
+    }
+
+    .lab-fab {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        border: none;
+        cursor: pointer;
+        box-shadow: var(--lab-shadow-md);
+        transition: all 0.2s ease;
+        border: 2px solid rgba(255,255,255,0.2);
+    }
+
+    .lab-fab:hover {
+        transform: scale(1.1);
+        box-shadow: var(--lab-shadow-lg);
+    }
+
+    .fab-lab-primary {
+        background: var(--primary-blue);
+    }
+
+    .fab-lab-secondary {
+        background: var(--secondary-teal);
+    }
+
+    .fab-lab-warning {
+        background: var(--accent-orange);
+    }
+
+    /* Instructions Panel - Lab Style */
+    .instructions-panel {
+        background: var(--lab-light-gray);
+        border: 1px solid var(--lab-medium-gray);
+        border-left: 4px solid var(--primary-blue);
+        border-radius: var(--lab-radius-md);
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .instructions-title {
+        color: var(--primary-blue);
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .instructions-content {
+        color: var(--lab-text);
+        line-height: 1.5;
+    }
+
+    .instructions-content ol {
+        padding-left: 1.5rem;
+    }
+
+    .instructions-content li {
+        margin-bottom: 0.5rem;
+    }
+
+    .highlight {
+        background: rgba(74, 144, 226, 0.15);
+        color: var(--primary-blue-dark);
+        padding: 0.125rem 0.25rem;
+        border-radius: var(--lab-radius-sm);
+        font-weight: 500;
+    }
+
+    /* Delete Icons - Lab Style */
+    .delete-icon {
+        cursor: pointer;
+        color: var(--danger-red);
+        font-size: 16px;
+        position: absolute;
+        z-index: 20;
+        background: var(--lab-white);
+        border-radius: 50%;
+        padding: 3px;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        box-shadow: var(--lab-shadow-sm);
+        transition: all 0.2s ease;
+        border: 1px solid var(--lab-medium-gray);
+    }
+
+    .delete-icon:hover {
+        transform: scale(1.15);
+        color: var(--danger-red-dark);
+        box-shadow: var(--lab-shadow-md);
+        background: #fff5f5;
+    }
+
+    /* Popup Styling - Lab Style */
+    .popup {
+        position: absolute;
+        display: none;
+        background: var(--lab-white);
+        border: 1px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-md);
+        padding: 1.25rem;
+        z-index: 1000;
+        box-shadow: var(--lab-shadow-lg);
+        min-width: 280px;
+    }
+
+    .popup .input-field {
+        margin-bottom: 1rem;
+    }
+
+    .popup input {
+        border: 1px solid var(--lab-medium-gray);
+        border-radius: var(--lab-radius-sm);
+        padding: 0.75rem;
+        width: 100%;
+        font-size: 0.875rem;
+        transition: border-color 0.2s ease;
+    }
+
+    .popup input:focus {
+        outline: none;
+        border-color: var(--primary-blue);
+        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+    }
+
+    /* Table Styling - Lab Style */
+    .table-container {
+        background: var(--lab-white);
+        border-radius: var(--lab-radius-md);
+        overflow: hidden;
+        box-shadow: var(--lab-shadow-sm);
+        border: 1px solid var(--lab-medium-gray);
+    }
+
+    .table-header {
+        background: var(--primary-blue);
+        color: white;
+        padding: 1rem 1.5rem;
+    }
+
+    .table-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    #values-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    #values-table th {
+        background: var(--lab-light-gray);
+        color: var(--lab-text);
+        font-weight: 600;
+        padding: 0.875rem;
+        text-align: left;
+        border-bottom: 1px solid var(--lab-medium-gray);
+        font-size: 0.875rem;
+    }
+
+    #values-table td {
+        padding: 0.875rem;
+        border-bottom: 1px solid var(--lab-gray);
+        color: var(--lab-text);
+        font-size: 0.875rem;
+    }
+
+    #values-table tbody tr:hover {
+        background: var(--lab-light-gray);
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+        .images-grid {
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+        }
+        
+        .controls-panel {
+            order: 2;
+            min-width: auto;
+            width: 100%;
+        }
+        
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        body {
+            padding: 10px;
+        }
+        
+        .content-wrapper {
+            padding: 1rem;
+        }
+        
+        .header {
+            padding: 1rem 1.5rem;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+        }
+        
+        .fab-container {
+            top: 1rem;
+            right: 1rem;
+        }
+        
+        .button-group {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* Spots styling - Lab colors */
+    .spot {
+        background-color: var(--accent-orange);
+        border: 2px solid var(--accent-orange-dark);
+        border-radius: 50%;
+        position: absolute;
+        z-index: 2000;
+        box-shadow: var(--lab-shadow-sm);
+    }
+
+    /* Status Badges */
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: var(--lab-radius-sm);
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .status-active {
+        background: rgba(92, 184, 92, 0.15);
+        color: var(--success-green-dark);
+    }
+
+    .status-pending {
+        background: rgba(240, 173, 78, 0.15);
+        color: var(--accent-orange-dark);
+    }
+</style>
+</head>
+<body>
+
+<div class="main-container">
+    <!-- Lab System Header -->
+    <div class="header">
+        <h1>TLC Image Annotation Tool</h1>
+        <p>Thin Layer Chromatography Analysis • Laboratory Management System</p>
+    </div>
+
+    <div class="content-wrapper">
+        <!-- Image Source Selection -->
+        <div class="lab-card">
+            <div class="card-header">
+                <h5 class="card-title">📁 Image Source</h5>
+            </div>
+            <div class="card-content">
+                <div class="source-selection">
+                    <div class="button-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <button id="eln-source-btn" class="lab-btn btn-lab-primary active" onclick="selectImageSource('eln')">
+                            <i class="material-icons">cloud</i>
+                            From ELN
+                        </button>
+                        <button id="local-source-btn" class="lab-btn btn-lab-outline" onclick="selectImageSource('local')">
+                            <i class="material-icons">upload_file</i>
+                            Upload Local
+                        </button>
+                    </div>
+                    
+                    <!-- Local Upload Section -->
+                    <div id="local-upload-section" style="display: none; margin-top: 1.5rem;">
+                        <div class="upload-area" style="border: 2px dashed var(--lab-medium-gray); border-radius: var(--lab-radius-md); padding: 2rem; text-align: center; background: var(--lab-light-gray);">
+                            <i class="material-icons" style="font-size: 3rem; color: var(--lab-dark-gray);">cloud_upload</i>
+                            <h6 style="margin: 1rem 0; color: var(--lab-text);">Upload TLC Image</h6>
+                            <p style="color: var(--lab-text-muted); margin-bottom: 1.5rem;">Drag & drop your image here or click to browse</p>
+                            <input type="file" id="local-image-input" accept="image/*" style="display: none;">
+                            <button class="lab-btn btn-lab-primary" onclick="document.getElementById('local-image-input').click()">
+                                <i class="material-icons">folder_open</i>
+                                Choose File
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content Card -->
+        <div class="lab-card">
+            <div class="card-content">
+                <!-- Images and Controls Grid -->
+                <div class="images-grid">
+                    <!-- Original Image Panel -->
+                    <div class="image-panel">
+                        <h5 class="image-title">📸 Original Image</h5>
+                        <div id="canvas-container">
+                            <canvas id="image-canvas"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Controls Panel (Centered) -->
+                    <div class="controls-panel">
+                        <h6 class="controls-title">Annotation Tools</h6>
+                        
+                        <div class="button-group">
+                            <button class="lab-btn btn-lab-primary" onclick="addSpots(event)">
+                                <i class="material-icons">add_circle</i>
+                                Add Spots
+                            </button>
+                            <button class="lab-btn btn-lab-secondary" onclick="addMinLine(event)">
+                                <i class="material-icons">horizontal_rule</i>
+                                Min Line
+                            </button>
+                            <button class="lab-btn btn-lab-secondary" onclick="addMaxLine(event)">
+                                <i class="material-icons">horizontal_rule</i>
+                                Max Line
+                            </button>
+                            <button class="lab-btn btn-lab-primary" onclick="addHorizontalLine(event)">
+                                <i class="material-icons">remove</i>
+                                H-Line
+                            </button>
+                            <button class="lab-btn btn-lab-primary" onclick="addVerticalLine(event)">
+                                <i class="material-icons">more_vert</i>
+                                V-Line
+                            </button>
+                        </div>
+
+                        <div class="button-group">
+                            <button class="lab-btn btn-lab-success" onclick="calculateRF()">
+                                <i class="material-icons">calculate</i>
+                                Calculate RF
+                            </button>
+                            <button class="lab-btn btn-lab-danger" onclick="resetCanvas()">
+                                <i class="material-icons">refresh</i>
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Result Panel -->
+                    <div class="image-panel">
+                        <h5 class="image-title" id="annotated-heading">📋 Instructions</h5>
+                        
+					<!-- Instructions Panel -->
+					<div id="instructions-box" class="instructions-panel">
+						<h6 class="instructions-title">
+							<i class="material-icons">info</i>
+							TLC Analysis Instructions
+						</h6>
+						<div class="instructions-content">
+							<p><strong>Follow these steps to analyze your TLC plate:</strong></p>
+							
+							<h6 style="color: var(--primary-blue); margin-top: 1.5rem; margin-bottom: 0.75rem;">📋 Step-by-Step Guide:</h6>
+							<ol style="line-height: 1.8;">
+								<li><strong>Image Ready:</strong> Your TLC plate image has been automatically loaded from the ELN system and appears in the left panel. You can now begin annotation.</li>
+								
+								<li><strong>Set Reference Lines First:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>Click <span class="highlight">Min Line</span> → Draw a horizontal line at the <strong>solvent front</strong> (bottom baseline)</li>
+										<li>Click <span class="highlight">Max Line</span> → Draw a horizontal line at the <strong>solvent front</strong> (top line where solvent reached)</li>
+									</ul>
+								</li>
+								
+								<li><strong>Mark Your Spots:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>Click <span class="highlight">Add Spots</span> button</li>
+										<li>Click directly on each spot in your TLC plate</li>
+										<li>Each spot will be marked with an orange circle</li>
+										<li>Add as many spots as needed for your analysis</li>
+									</ul>
+								</li>
+								
+								<li><strong>Add Lane Separators (Optional):</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li><span class="highlight">V-Line</span>: Vertical lines to separate different sample lanes</li>
+										<li><span class="highlight">H-Line</span>: Additional horizontal reference lines</li>
+										<li>Type labels when prompted (e.g., "Sample A", "Standard", etc.)</li>
+									</ul>
+								</li>
+								
+								<li><strong>Calculate RF Values:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>Click <span class="highlight">Calculate RF</span> button</li>
+										<li>RF values will be automatically calculated using the formula: <strong>RF = Distance traveled by spot / Distance traveled by solvent</strong></li>
+										<li>Results appear in the table below with spot coordinates and RF values</li>
+									</ul>
+								</li>
+								
+								<li><strong>Export Your Results:</strong>
+									<ul style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+										<li>💾 <strong>Download CSV:</strong> Save RF data as spreadsheet</li>
+										<li>🖼️ <strong>Save Image:</strong> Download annotated TLC image</li>
+										<li>☁️ <strong>Upload to ELN:</strong> Send results to laboratory database</li>
+									</ul>
+								</li>
+							</ol>
+					
+							<div style="background: rgba(74, 144, 226, 0.1); padding: 1rem; border-radius: 6px; margin: 1.5rem 0;">
+								<h6 style="color: var(--primary-blue); margin: 0 0 0.5rem 0;">💡 Pro Tips:</h6>
+								<ul style="margin: 0; font-size: 0.9rem;">
+									<li><strong>Accuracy:</strong> Zoom in on your image for precise spot marking</li>
+									<li><strong>Order Matters:</strong> Always set Min/Max lines before adding spots</li>
+									<li><strong>Multiple Lanes:</strong> Use V-Lines to organize different samples</li>
+									<li><strong>Corrections:</strong> Click the red ❌ on any annotation to delete it</li>
+									<li><strong>Reset:</strong> Use the Reset button to start over if needed</li>
+								</ul>
+							</div>
+					
+							<div style="background: rgba(240, 173, 78, 0.1); padding: 1rem; border-radius: 6px; margin: 1.5rem 0;">
+								<h6 style="color: var(--accent-orange-dark); margin: 0 0 0.5rem 0;">⚠️ Important Notes:</h6>
+								<ul style="margin: 0; font-size: 0.9rem;">
+									<li><strong>Image Quality:</strong> Use clear, well-lit TLC plate photos</li>
+									<li><strong>Reference Lines:</strong> Min line = starting point, Max line = solvent front</li>
+									<li><strong>Spot Center:</strong> Click the center of each spot for accurate measurements</li>
+									<li><strong>Data Validation:</strong> Review RF values - they should be between 0 and 1</li>
+								</ul>
+							</div>
+					
+							<div style="text-align: center; margin-top: 2rem;">
+								<button class="lab-btn btn-lab-warning" onclick="updateAnnotatedHeading('editing')" style="font-size: 1rem; padding: 0.875rem 2rem;">
+									<i class="material-icons">play_arrow</i>
+									Start TLC Analysis
+								</button>
+							</div>
+						</div>
+					</div>
+                        
+                        <!-- Annotated Image (initially hidden) -->
+                        <img id="annotated-image" style="display: none;" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RF Values Table -->
+        <div class="table-container">
+            <div class="table-header">
+                <h5 class="table-title">📊 RF Values Analysis Results</h5>
+            </div>
+            <table id="values-table">
+                <thead>
+                    <tr>
+                        <th>Mixture Label (X axis)</th>
+                        <th>Substance Label (Y axis)</th>
+                        <th>RF Value</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- RF Values will be populated dynamically here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Floating Action Buttons -->
+    <div class="fab-container">
+        <button class="lab-fab fab-lab-primary" onclick="saveCSV()" title="Download CSV">
+            <i class="material-icons">save_alt</i>
+        </button>
+        <button class="lab-fab fab-lab-secondary" onclick="saveImageToServer()" title="Save Image">
+            <i class="material-icons">image</i>
+        </button>
+        <button class="lab-fab fab-lab-warning" onclick="saveCSVToServer()" title="Upload to ELN">
+            <i class="material-icons">cloud_upload</i>
+        </button>
+    </div>
+
+    <!-- Popup for Line Annotations -->
+    <div id="line-popup" class="popup">
+        <div class="input-field">
+            <input type="text" id="line-text" placeholder="Enter annotation text">
+        </div>
+        <button class="lab-btn btn-lab-primary" onclick="submitAnnotation()">
+            <i class="material-icons">check</i>
+            Submit
+        </button>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <script>
+			
+		// Get references to HTML elements
+		var imageElement = document.getElementById('imageElement');
+		let image = new Image();
+		var imageContainer = document.getElementById('imageContainer');
+		var fullUrl = window.location.href;
+		
+		// Extract query parameters from URL
+		var url = new URL(fullUrl);
+		var encodedImageUrl = url.searchParams.get("url");
+		var encodedPostUrl = url.searchParams.get("url");
+		var decodedImageUrl = decodeURIComponent(encodedImageUrl);
+		var decodedPostUrl = decodeURIComponent(encodedPostUrl);
+		
+		// Log the decoded post URL for debugging
+		console.log(decodedImageUrl);
+		
+		// Fetch image data from the server
+		fetch('/fetch-image/?url=' + encodeURIComponent(decodedImageUrl))
+			.then(response => response.json())
+			.then(data => {
+				if (data.imagePath) {
+					console.log(data.imagePath)
+					// Serve the fetched image if the imagePath is present
+					fetch('/serve-image/?file_path=' + encodeURIComponent(data.imagePath))
+						.then(response => {
+							if (response.ok) {
+								// Set the image source for the image element
+								
+								image.src = '/serve-image/?file_path=' + encodeURIComponent(data.imagePath);
+								console.log("Setting image.src to:", image.src);
+							} else {
+								console.error('Failed to serve image');
+							}
+						});
+				} else {
+					console.error('Failed to fetch and save image:', data.error);
+				}
+			})
+			.catch(error => {
+				console.error('Error:', error);
+			});
+		
+		// Initialize canvas and image rendering
+		let canvas = document.getElementById('image-canvas');
+		let ctx = canvas.getContext('2d');
+		
+		// Initialize variables for annotations
+		let lines = [];
+		
+		let draggingSpot = null;
+		let isDragging = false;
+		let dragOffsetX = 0;
+		let dragOffsetY = 0;
+		let justDragged = false; // Prevent accidental spot creation after drag
+		let draggingLine = null;
+		let lineDragOffsetY = 0;
+		let spots = [];
+		let currentLine = null;
+		let isHorizontal = true; // Flag for line orientation
+		let lineType = ''; // Type of line to be drawn
+		let addingSpots = false; // Flag to indicate spot addition mode
+		let lineDragOffsetX = 0;
+		let imageSource = 'eln'; // Default to ELN
+		let isLocalImage = false;
+		
+		
+		
+		function setActiveButton(clickedButton) {
+			// Remove active class from all annotation buttons
+			document.querySelectorAll('.lab-btn').forEach(btn => btn.classList.remove('active'));
+			
+			// Add active class to clicked button
+			if (clickedButton) {
+				clickedButton.classList.add('active');
+			}
+		}
+		
+		// Handle image loading and drawing on the canvas
+		image.onload = function () {
+			let maxHeight = 500; // Maximum height for the image on the canvas
+			let originalHeight = image.height;
+			let originalWidth = image.width;
+		
+			// Maintain aspect ratio if the image exceeds maxHeight
+			if (image.height > maxHeight) {
+				let aspectRatio = image.width / image.height;
+				image.height = maxHeight;
+				image.width = maxHeight * aspectRatio;
+			}
+		
+			// Set canvas dimensions and draw the image
+			canvas.width = image.width;
+			canvas.height = image.height;
+			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+			// Calculate scale factor for annotations
+			window.scaleFactor = originalHeight / canvas.height;
+		
+			// Ensure the annotated image matches the original canvas size
+			document.getElementById('annotated-image').style.width = canvas.width + 'px';
+			document.getElementById('annotated-image').style.height = canvas.height + 'px';
+		
+		};
+		
+		// Function to disable other annotation actions
+		function disableOtherActions() {
+			addingSpots = false; // Ensure we are not adding spots
+			canvas.removeEventListener('click', drawSpot); // Remove spot drawing event listener
+			canvas.removeEventListener('click', drawLine); // Remove line drawing event listener
+		}
+				
+		function addMinLine(event) {
+			disableOtherActions();
+			lineType = 'min';
+			isHorizontal = true;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
+		}
+		
+		function addMaxLine(event) {
+			disableOtherActions();
+			lineType = 'max';
+			isHorizontal = true;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
+		}
+		
+		function addHorizontalLine(event) {
+			disableOtherActions();
+			lineType = 'horizontal';
+			isHorizontal = true;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
+		}
+		
+		function addVerticalLine(event) {
+			disableOtherActions();
+			lineType = 'vertical';
+			isHorizontal = false;
+			updateAnnotatedHeading('editing');
+			canvas.addEventListener('click', drawLine);
+			if (event && event.target) setActiveButton(event.target);
+		}
+		
+
+		
+		// Function to draw a line on the canvas
+		function drawLine(event) {
+			let x = event.offsetX; // Get the x-coordinate of the click
+			let y = event.offsetY; // Get the y-coordinate of the click
+			ctx.font = '16px Arial'; // Set font for text
+			ctx.fillStyle = 'red'; // Set color for the text
+		
+			// Check if the line is horizontal
+			if (isHorizontal) {
+				// ✅ Prevent duplicate 'min' or 'max' lines
+				if (lineType === 'min' || lineType === 'max') {
+					const existing = lines.find(line => line.type === lineType);
+					if (existing) {
+						M.toast({ html: `A "${lineType}" line already exists. `});
+						canvas.removeEventListener('click', drawLine);
+						return;
+					}
+				}
+				ctx.beginPath(); // Start drawing a new path
+				ctx.moveTo(0, y); // Move to the start point of the line
+				ctx.lineTo(canvas.width, y); // Draw the line to the end point
+				ctx.stroke(); // Render the line
+		
+				// Create a current line object with properties
+				currentLine = {
+					id: Date.now(), // Unique ID based on current timestamp
+					type: lineType, // The type of the line (min, max, horizontal)
+					y: y * window.scaleFactor, // Scale the y-coordinate
+					text: lineType === 'min' ? 'min' : lineType === 'max' ? 'max' : ''
+				};
+		
+				ctx.fillText(currentLine.text, 10, y - 5); // Display the line type label
+				addDeleteIcon(currentLine, 10, y); // Add a delete icon to the line
+				if (lineType !== 'min' && lineType !== 'max') {
+					showPopup(event.pageX, event.pageY); // Show annotation popup for other lines
+				}
+		
+				lines.push(currentLine); // Add the line to the lines array
+				canvas.removeEventListener('click', drawLine); // Remove the event listener after drawing
+			} else {
+				// Handle vertical line drawing
+				ctx.beginPath(); // Start drawing a new path
+				ctx.moveTo(x, 0); // Move to the start point of the line
+				ctx.lineTo(x, canvas.height); // Draw the line to the end point
+				ctx.stroke(); // Render the line
+		
+				// Create a current line object with properties
+				currentLine = {
+					id: Date.now(), // Unique ID based on current timestamp
+					type: lineType, // The type of the line (vertical)
+					x: x * window.scaleFactor, // Scale the x-coordinate
+					text: '' // No text for vertical lines
+				};
+		
+				addDeleteIcon(currentLine, x, 10); // Add a delete icon to the line
+				showPopup(event.pageX, event.pageY); // Show the annotation popup
+				lines.push(currentLine); // Add the line to the lines array
+				canvas.removeEventListener('click', drawLine); // Remove the event listener after drawing
+			}
+		}
+		
+
+		// Function to show a popup for line annotations
+		function showPopup(x, y) {
+			let popup = document.getElementById('line-popup'); // Get the popup element
+			let input = document.getElementById('line-text'); // Get the input field
+			
+			popup.style.left = x + 'px'; // Set the popup's x position
+			popup.style.top = y + 'px'; // Set the popup's y position
+			popup.style.display = 'block'; // Display the popup
+			
+			// ✅ Clear any previous text
+			input.value = '';
+			
+			// ✅ Auto-focus on the input field with a small delay
+			setTimeout(() => {
+				input.focus();
+			}, 100);
+		}
+		
+
+		// Function to submit an annotation for the current line
+		function submitAnnotation() {
+			let text = document.getElementById('line-text').value; // Get the text input from the popup
+			if (text.trim() === '') return; // Return if the input is empty
+		
+			currentLine.text = text; // Assign the text to the current line's object
+			ctx.font = '16px Arial'; // Set the font for the text
+			ctx.fillStyle = 'red'; // Set the text color
+		
+			// Check the type of line to determine where to place the text
+			if (currentLine.type === 'horizontal' || currentLine.type === 'min' || currentLine.type === 'max') {
+				ctx.fillText(text, 10, currentLine.y / window.scaleFactor - 5); // Place text above the line
+			} else {
+				ctx.fillText(text, currentLine.x / window.scaleFactor + 5, 10); // Place text to the right of the line
+			}
+		
+			// Clear the input field and hide the popup
+			document.getElementById('line-text').value = '';
+			document.getElementById('line-popup').style.display = 'none';
+		}
+		
+		// Function to add a delete icon to a line
+		function addDeleteIcon(line, x, y) {
+			let icon = document.createElement('i'); // Create a new icon element
+			icon.innerHTML = 'delete'; // Set the inner HTML to the delete icon
+			icon.className = 'material-icons delete-icon'; // Assign classes for styling
+			icon.style.left = x + 'px'; // Set the x position
+			icon.style.top = y + 'px'; // Set the y position
+		
+			// Set the onclick event to delete the line when the icon is clicked
+			icon.onclick = function() {
+				deleteLine(line.id); // Call deleteLine with the line's ID
+			};
+		
+			document.getElementById('canvas-container').appendChild(icon); // Append the icon to the canvas container
+			line.deleteIcon = icon; // Store a reference to the icon in the line object
+		}
+		
+		
+		function deleteSpot(id) {
+			let spotToDelete = spots.find(s => s.id === id);
+			if (spotToDelete && spotToDelete.deleteIcon) {
+				spotToDelete.deleteIcon.remove();
+			}
+			spots = spots.filter(s => s.id !== id);
+			redrawCanvas();
+		}		
+		
+		function deleteLine(id) {
+			const index = lines.findIndex(line => line.id === id);
+			if (index === -1) return; // No such line, skip
+		
+			const lineToDelete = lines[index];
+			if (lineToDelete.deleteIcon) {
+				lineToDelete.deleteIcon.remove();
+			}
+		
+			lines.splice(index, 1); // Remove from array
+			redrawCanvas(); // Redraw everything
+		}
+		
+		function addSpots(event) {
+			disableOtherActions();
+			addingSpots = true;
+			updateAnnotatedHeading('editing');
+			
+			canvas.removeEventListener('click', drawSpot);
+			canvas.addEventListener('click', drawSpot);
+			
+			if (event && event.target) {
+				setActiveButton(event.target);
+			}
+		}
+		
+		// Function to draw a spot on the canvas
+		function drawSpot(event) {
+			if (!addingSpots || isDragging || justDragged) return;
+		
+			let x = event.offsetX;
+			let y = event.offsetY;
+		
+			// Prevent duplicate spots at same/similar location
+			let isDuplicate = spots.some(spot =>
+				Math.abs(spot.x / window.scaleFactor - x) < 12 &&
+				Math.abs(spot.y / window.scaleFactor - y) < 12
+			);
+			if (isDuplicate) {
+				M.toast({ html: 'Spot already exists here.' });
+				return;
+			}
+		
+			// Create and store new spot
+			let spot = {
+				id: Date.now(),
+				x: x * window.scaleFactor,
+				y: y * window.scaleFactor
+			};
+		
+			spots.push(spot);
+			redrawCanvas();
+		}	
+		
+		function redrawCanvas() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+			// Redraw lines
+			lines.forEach(line => {
+				ctx.font = '16px Arial';
+				ctx.fillStyle = 'red';
+		
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					ctx.beginPath();
+					ctx.moveTo(0, line.y / window.scaleFactor);
+					ctx.lineTo(canvas.width, line.y / window.scaleFactor);
+					ctx.stroke();
+					ctx.fillText(line.text, 10, line.y / window.scaleFactor - 5);
+				} else {
+					ctx.beginPath();
+					ctx.moveTo(line.x / window.scaleFactor, 0);
+					ctx.lineTo(line.x / window.scaleFactor, canvas.height);
+					ctx.stroke();
+					ctx.fillText(line.text, line.x / window.scaleFactor + 5, 10);
+				}
+			});
+		
+			// Redraw line delete icons
+			document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+			lines.forEach(line => {
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					addDeleteIcon(line, 10, line.y / window.scaleFactor); // accurate y
+				} else {
+					addDeleteIcon(line, line.x / window.scaleFactor, 10); // accurate x
+				}
+			});
+		
+			// Remove existing spot delete icons
+			spots.forEach(spot => {
+				if (spot.deleteIcon) {
+					spot.deleteIcon.remove();
+				}
+			});
+		
+			// Redraw spots and add delete icons
+			spots.forEach(spot => {
+				let x = spot.x / window.scaleFactor;
+				let y = spot.y / window.scaleFactor;
+		
+				ctx.beginPath();
+				ctx.arc(x, y, 10, 0, 2 * Math.PI);
+				ctx.strokeStyle = 'orange';
+				ctx.lineWidth = 2;
+				ctx.stroke();
+			});
+		}
+				
+		function handleMouseDown(e) {
+			const target = e.target;
+			if (target.classList.contains('delete-icon')) return;
+		
+			let x = e.offsetX;
+			let y = e.offsetY;
+		
+			// Check if clicking on a spot
+			for (let spot of spots) {
+				let spotX = spot.x / window.scaleFactor;
+				let spotY = spot.y / window.scaleFactor;
+		
+				let dx = x - spotX;
+				let dy = y - spotY;
+				if (Math.sqrt(dx * dx + dy * dy) < 12) {
+					draggingSpot = spot;
+					isDragging = true;
+					dragOffsetX = dx;
+					dragOffsetY = dy;
+					canvas.style.cursor = 'grabbing';
+					return;
+				}
+			}
+		
+			// Check if clicking near any line
+			for (let line of lines) {
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					let lineY = line.y / window.scaleFactor;
+					if (Math.abs(y - lineY) < 6) {
+						draggingLine = line;
+						isDragging = true;
+						lineDragOffsetY = y - lineY;
+						canvas.style.cursor = 'ns-resize';
+						return;
+					}
+				} else if (line.type === 'vertical') {
+					let lineX = line.x / window.scaleFactor;
+					if (Math.abs(x - lineX) < 6) {
+						draggingLine = line;
+						isDragging = true;
+						lineDragOffsetX = x - lineX;
+						canvas.style.cursor = 'ew-resize';
+						return;
+					}
+				}
+			}
+		}
+		
+		function handleMouseMove(e) {
+			let isOverSpot = false;
+		
+			// Check if hovering over a spot
+			for (let spot of spots) {
+				let spotX = spot.x / window.scaleFactor;
+				let spotY = spot.y / window.scaleFactor;
+		
+				let dx = e.offsetX - spotX;
+				let dy = e.offsetY - spotY;
+		
+				if (Math.sqrt(dx * dx + dy * dy) < 12) {
+					isOverSpot = true;
+					break;
+				}
+			}
+		
+			if (isDragging) {
+				if (draggingSpot) {
+					let newX = e.offsetX - dragOffsetX;
+					let newY = e.offsetY - dragOffsetY;
+		
+					draggingSpot.x = newX * window.scaleFactor;
+					draggingSpot.y = newY * window.scaleFactor;
+		
+					redrawCanvas();
+					canvas.style.cursor = 'grabbing';
+				} else if (draggingLine) {
+					if (draggingLine.type === 'horizontal' || draggingLine.type === 'min' || draggingLine.type === 'max') {
+						let newY = e.offsetY - lineDragOffsetY;
+						draggingLine.y = newY * window.scaleFactor;
+						redrawCanvas();
+						canvas.style.cursor = 'ns-resize';
+					} else if (draggingLine.type === 'vertical') {
+						let newX = e.offsetX - lineDragOffsetX;
+						draggingLine.x = newX * window.scaleFactor;
+						redrawCanvas();
+						canvas.style.cursor = 'ew-resize';
+					}
+				}
+			} else {
+				canvas.style.cursor = isOverSpot ? 'pointer' : 'default';
+			}
+		}
+
+		function handleMouseUp(e) {
+			if (isDragging) {
+				isDragging = false;
+				draggingSpot = null;
+				draggingLine = null;
+				canvas.style.cursor = 'default';
+				justDragged = true;
+		
+				setTimeout(() => {
+					justDragged = false;
+				}, 200);
+			}
+		}
+
+				
+		function handleDoubleClick(e) {
+			let x = e.offsetX;
+			let y = e.offsetY;
+		
+			// Check if double-clicking on a spot
+			for (let spot of spots) {
+				let spotX = spot.x / window.scaleFactor;
+				let spotY = spot.y / window.scaleFactor;
+		
+				let dx = x - spotX;
+				let dy = y - spotY;
+				
+				// If click is within spot radius (12px)
+				if (Math.sqrt(dx * dx + dy * dy) < 12) {
+					// Remove the spot
+					spots = spots.filter(s => s.id !== spot.id);
+					redrawCanvas();
+					
+					// Show confirmation toast
+					M.toast({ html: 'Spot deleted!' });
+					return; // Exit after deleting one spot
+				}
+			}
+		}		
+		
+		// Function to calculate RF (retention factor)
+		function calculateRF() {
+			// Find min and max lines from the lines array
+			let minLine = lines.find(line => line.type === 'min');
+			let maxLine = lines.find(line => line.type === 'max');
+		
+			// Alert user if min and max lines are not present
+			if (!minLine || !maxLine) {
+				M.toast({html: 'Please add "min" and "max" lines before calculating RF values.'});
+				return;
+			}
+		
+			// Check if there are any spots to calculate
+			if (spots.length === 0) {
+				M.toast({html: 'Please add spots before calculating RF values.'});
+				return;
+			}
+		
+			console.log('Current image source:', image.src);
+		
+			// HANDLE DIFFERENT IMAGE SOURCES
+			let imageSrc;
+			let imageData = null;
+		
+			if (isLocalImage) {
+				// For local images, use the stored filename and image data
+				imageSrc = window.currentImageFileName || 'local_upload.png';
+				imageData = image.src; // This contains the base64 data URL
+				console.log('Using local image:', imageSrc);
+			} else {
+				// For ELN images, extract filename from URL
+				try {
+					const parsedUrl = new URL(image.src);
+					const filePath = parsedUrl.searchParams.get("file_path");
+					imageSrc = decodeURIComponent(filePath).split('/').pop();
+					console.log('Using ELN image:', imageSrc);
+				} catch (error) {
+					console.error('Error parsing image URL:', error);
+					imageSrc = 'unknown_image.png';
+				}
+			}
+		
+
+			let naturalWidth, naturalHeight;
+			
+			if (isLocalImage) {
+				// Local image: use true natural size
+				naturalWidth = image.naturalWidth || canvas.width;
+				naturalHeight = image.naturalHeight || canvas.height;
+			} else {
+				// ELN image: assume canvas size matches what's drawn
+				naturalWidth = canvas.width;
+				naturalHeight = canvas.height;
+			}
+			
+			let data = {
+				lines: lines,
+				spots: spots,
+				imageSrc: imageSrc,
+				isLocalImage: isLocalImage,
+				imageData: imageData, // Include base64 data for local images
+				canvasWidth: naturalWidth,
+				canvasHeight: naturalHeight,
+				scaleFactor: window.scaleFactor || 1
+			};
+		
+			console.log('Data to send to server:', {
+				...data,
+				imageData: imageData ? 'base64 data present' : 'no image data'
+			});
+		
+			// Show loading indicator
+			Swal.fire({
+				title: 'Calculating RF Values...',
+				text: 'Please wait while we process your annotations.',
+				allowOutsideClick: false,
+				didOpen: () => {
+					Swal.showLoading();
+				}
+			});
+		
+			// Send data to the server
+			fetch('/calculate_rf/', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRFToken': getCookie('csrftoken')
+				},
+				body: JSON.stringify(data)
+			})
+			.then(response => {
+				console.log('Response status:', response.status);
+				if (!response.ok) {
+					return response.text().then(text => {
+						console.error('Server response:', text);
+						throw new Error(`HTTP error! status: ${response.status}`);
+					});
+				}
+				return response.json();
+			})
+			.then(result => {
+				console.log('Backend Response:', result);
+				Swal.close();
+		
+				if (result.rf_values && result.rf_values.length > 0) {
+					populateTable(result.rf_values);
+		
+					let annotatedImage = document.getElementById('annotated-image');
+					if (result.annotated_image_url) {
+						annotatedImage.src = result.annotated_image_url + '?t=' + new Date().getTime();
+						updateAnnotatedHeading('annotated');
+						annotatedImage.style.width = canvas.width + 'px';
+						annotatedImage.style.height = canvas.height + 'px';
+						M.toast({html: `RF calculation completed! Found ${result.rf_values.length} spots.`});
+					} else {
+						console.warn('No annotated image URL in response');
+						M.toast({html: 'RF values calculated, but annotated image not available.'});
+					}
+				} else {
+					M.toast({html: 'No RF values calculated. Please check your annotations.'});
+				}
+			})
+			.catch(error => {
+				console.error('Error calculating RF:', error);
+				Swal.close();
+				
+				Swal.fire({
+					title: 'Calculation Error!',
+					text: 'Failed to calculate RF values. Please check your annotations and try again.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
+			});
+		}
+		function populateTable(rfValues) {
+			let tbody = document.getElementById('values-table').getElementsByTagName('tbody')[0];
+			tbody.innerHTML = '';
+		
+			rfValues.forEach((value, index) => {
+				let row = tbody.insertRow();
+				let cell1 = row.insertCell(0);
+				let cell2 = row.insertCell(1);
+				let cell3 = row.insertCell(2);
+				let cell4 = row.insertCell(3);
+				
+				// Use correct property names based on your backend response
+				cell1.innerHTML = value.mixture_label || value.solvent || `Lane ${index + 1}`;
+				cell2.innerHTML = value.substance_label || value.compound || `Spot ${index + 1}`;
+				cell3.innerHTML = typeof value.rf_value !== 'undefined' ? value.rf_value : value.rf;
+				cell4.innerHTML = '<span class="status-badge status-active">Calculated</span>';
+			});
+		}
+		
+		// Function to save RF values to a CSV file
+		function saveCSV() {
+			let table = document.getElementById('values-table');
+			let rows = Array.from(table.rows);
+			let csvContent = 'data:text/csv;charset=utf-8,';
+			csvContent += 'Measurement type;thin layer chromatography (TLC);CHMO:0001007\n';
+			csvContent += '\n';
+			csvContent += 'mixture_label (X axis),substance_label (Y axis),RF value\n';
+		
+			rows.forEach((row, index) => {
+				if (index === 0) return;
+				let cols = Array.from(row.cells).map(cell => cell.textContent);
+				csvContent += cols[0] + "," + cols[1] + "," + cols[2] + "\n";
+			});
+		
+			let encodedUri = encodeURI(csvContent);
+			let link = document.createElement('a');
+			link.setAttribute('href', encodedUri);
+			link.setAttribute('download', 'rf_values.csv');
+			document.body.appendChild(link);
+			link.click(); // Trigger the download
+		
+			// Show success message using SweetAlert
+			Swal.fire({
+				title: 'Success!',
+				text: 'CSV has been successfully saved.',
+				icon: 'success',
+				confirmButtonText: 'OK'
+			});
+		}
+		
+				
+		// Event listener for save button click to save annotated image and CSV to the server
+		function saveImageToServer() {
+			//  CHECK IF IT'S A LOCAL IMAGE FIRST
+			if (isLocalImage) {
+				downloadAnnotatedImage();
+				return;
+			}
+			
+			//  ELN IMAGE HANDLING (your existing code)
+			const inputText = '';
+			const dateTime = new Date().toLocaleString('en-GB', {
+				year: '2-digit',
+				month: '2-digit',
+				day: '2-digit',
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit',
+				hour12: false
+			}).replace(/\//g, '').replace(/, /g, '').replace(/:/g, '');
+		
+			const filename = inputText + '_' + dateTime + '.png';
+			const annotatedImage = document.getElementById("annotated-image");
+		
+			if (annotatedImage && annotatedImage.src) {
+				const originalImage = new Image();
+				originalImage.src = annotatedImage.src;
+		
+				originalImage.onload = function() {
+					const canvas = document.createElement("canvas");
+					const context = canvas.getContext("2d");
+					canvas.width = originalImage.naturalWidth;
+					canvas.height = originalImage.naturalHeight;
+					context.drawImage(originalImage, 0, 0);
+		
+					canvas.toBlob(function(blob) {
+						const formData = new FormData();
+						formData.append('file', blob, filename);
+		
+						const externalApiUrl = decodedPostUrl;
+						const csrftoken = getCookie('csrftoken');
+		
+						fetch(externalApiUrl, {
+							method: 'POST',
+							body: formData,
+							headers: {'X-CSRFToken': csrftoken}
+						})
+						.then(response => response.json())
+						.then(data => {
+							Swal.fire({
+								title: 'Success!',
+								text: 'Image saved to ELN successfully.',
+								icon: 'success',
+								confirmButtonText: 'OK'
+							});
+						})
+						.catch(error => {
+							console.error('Error saving to ELN:', error);
+							Swal.fire({
+								title: 'Error!',
+								text: 'Error saving image to ELN.',
+								icon: 'error',
+								confirmButtonText: 'OK'
+							});
+						});
+					}, 'image/png');
+				};
+		
+				originalImage.onerror = function() {
+					console.error('Failed to load annotated image for saving.');
+					Swal.fire({
+						title: 'Error!',
+						text: 'Failed to load annotated image.',
+						icon: 'error',
+						confirmButtonText: 'OK'
+					});
+				};
+			} else {
+				console.error('Annotated image not found or has no source.');
+				Swal.fire({
+					title: 'Error!',
+					text: 'Annotated image not found. Please calculate RF values first.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
+			}
+		}
+								
+		function saveCSVToServer() {
+			const inputText = '';
+			const dateTime = new Date().toLocaleString('en-GB', {
+				year: '2-digit',
+				month: '2-digit',
+				day: '2-digit',
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit',
+				hour12: false
+			}).replace(/\//g, '').replace(/, /g, '').replace(/:/g, '');
+		
+			const csvFilename = inputText + '_' + dateTime + '.csv';
+			const csvData = getCSVData(); // Assumes getCSVData() is defined and returns data
+		
+			if (csvData) {
+				const csvBlob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+				const formData = new FormData();
+				formData.append('file', csvBlob, csvFilename); // Use 'file' as key
+		
+				const externalApiUrl = decodedPostUrl; // Ensure this URL is correctly defined
+				const csrftoken = getCookie('csrftoken'); // Ensure csrf token is correctly fetched
+		
+				fetch(externalApiUrl, {
+					method: 'POST',
+					body: formData,
+					headers: {
+						'X-CSRFToken': csrftoken
+					}
+				})
+				.then(response => response.json())
+				.then(data => {
+					console.log('CSV saved to ELN successfully:', data);
+					Swal.fire({
+						title: 'Success!',
+						text: 'CSV file saved to ELN successfully.',
+						icon: 'success',
+						confirmButtonText: 'OK'
+					});
+				})
+				.catch(error => {
+					console.error('Error saving CSV to server:', error);
+					Swal.fire({
+						title: 'Error!',
+						text: 'Failed to save CSV to server.',
+						icon: 'error',
+						confirmButtonText: 'OK'
+					});
+				});
+			} else {
+				console.error('No CSV data found.');
+				Swal.fire({
+					title: 'Error!',
+					text: 'No CSV data found to save.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
+			}
+		}
+		
+		// Function to retrieve CSV data from the values table with correct inline notation
+		function getCSVData() {
+			let table = document.getElementById('values-table'); // Get the values table
+			let rows = Array.from(table.rows); // Convert table rows to an array
+		
+			// Initialize CSV content with the required headers
+			let csvContent = "Measurement type;thin layer chromatography (TLC);CHMO:0001007\n\n";
+			csvContent += "mixture_label (X axis),substance_label (Y axis),RF value\n"; // Add column headers
+		
+			let rfValues = []; // Array to store RF values for inline notation
+		
+			// Iterate over rows and build the CSV content dynamically
+			rows.forEach(function(row, index) {
+				if (index === 0) return; // Skip the header row
+		
+				let cols = Array.from(row.cells).map(function(cell) {
+					return cell.textContent.trim();
+				}); // Get cell text content
+		
+				// Append row data to CSV dynamically (Using String Concatenation)
+				csvContent += cols[0] + "," + cols[1] + "," + cols[2] + "\n";
+		
+				// Append RF value for inline notation: "0.72 (zzz)[h1]"
+				rfValues.push(cols[2] + " (" + cols[1] + ")[h" + index + "]");
+			});
+		
+			// Append inline notation at the end
+			csvContent += "\nDetails:\nTLC (solvents); Rf (UV-Vis in nm, staining) = " + rfValues.join(", ") + ".\n";
+		
+			return csvContent;
+		}
+		
+		
+		// Function to get CSRF token from cookie
+		function getCookie(name) {
+			let cookieValue = null; // Initialize cookie value
+			if (document.cookie && document.cookie !== '') {
+				const cookies = document.cookie.split(';'); // Split cookies into an array
+				for (let i = 0; i < cookies.length; i++) {
+					const cookie = cookies[i].trim(); // Trim whitespace
+					// Check if the cookie matches the desired name
+					if (cookie.substring(0, name.length + 1) === (name + '=')) {
+						cookieValue = decodeURIComponent(cookie.substring(name.length + 1)); // Decode cookie value
+						break; // Exit loop once found
+					}
+				}
+			}
+			return cookieValue; // Return the cookie value
+		}
+		
+		function updateAnnotatedHeading(state) {
+			const heading = document.getElementById('annotated-heading');
+			const annotatedImage = document.getElementById('annotated-image');
+			const instructionsBox = document.getElementById('instructions-box');
+		
+			if (!heading) return;
+		
+			if (state === 'instructions') {
+				heading.textContent = 'Instructions';
+				instructionsBox.style.display = 'block';
+				annotatedImage.style.display = 'none';
+			} else if (state === 'editing') {
+				heading.textContent = 'Prepare Annotations';
+				instructionsBox.style.display = 'none';
+				annotatedImage.style.display = 'none';
+			} else if (state === 'annotated') {
+				heading.textContent = 'Annotated Image';
+				instructionsBox.style.display = 'none';
+				annotatedImage.style.display = 'block';
+			}
+		}
+		
+		
+		function resetCanvas() {
+			// Clear all annotations
+			lines = [];
+			spots = [];
+			
+			// Remove all delete icons
+			document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+			
+			// Clear canvas and redraw image
+			if (image && image.complete) {
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+				ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+			}
+			
+			// Clear table
+			const tableBody = document.querySelector('#values-table tbody');
+			if (tableBody) {
+				tableBody.innerHTML = '';
+			}
+			
+			// Reset heading
+			updateAnnotatedHeading('editing');
+			
+			// Remove active state from all buttons
+			document.querySelectorAll('.lab-btn').forEach(btn => btn.classList.remove('active'));
+			
+			// Show success message
+			M.toast({ html: 'Canvas reset successfully!' });
+		}
+		
+		function redrawCanvas() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+			// ✅ Reset stroke style for lines
+			ctx.strokeStyle = 'red';
+			ctx.lineWidth = 2;
+		
+			// Redraw lines
+			lines.forEach(line => {
+				ctx.font = '16px Arial';
+				ctx.fillStyle = 'red';
+		
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					ctx.beginPath();
+					ctx.moveTo(0, line.y / window.scaleFactor);
+					ctx.lineTo(canvas.width, line.y / window.scaleFactor);
+					ctx.stroke();
+					ctx.fillText(line.text, 10, line.y / window.scaleFactor - 5);
+				} else {
+					ctx.beginPath();
+					ctx.moveTo(line.x / window.scaleFactor, 0);
+					ctx.lineTo(line.x / window.scaleFactor, canvas.height);
+					ctx.stroke();
+					ctx.fillText(line.text, line.x / window.scaleFactor + 5, 10);
+				}
+			});
+		
+			// Remove existing delete icons
+			document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+			
+			// Redraw line delete icons
+			lines.forEach(line => {
+				if (line.type === 'horizontal' || line.type === 'min' || line.type === 'max') {
+					addDeleteIcon(line, 10, line.y / window.scaleFactor);
+				} else {
+					addDeleteIcon(line, line.x / window.scaleFactor, 10);
+				}
+			});
+		
+			// ✅ Reset stroke style for spots
+			ctx.strokeStyle = 'orange';
+			ctx.lineWidth = 2;
+		
+			// Redraw spots
+			spots.forEach(spot => {
+				let x = spot.x / window.scaleFactor;
+				let y = spot.y / window.scaleFactor;
+		
+				ctx.beginPath();
+				ctx.arc(x, y, 10, 0, 2 * Math.PI);
+				ctx.stroke();
+			});
+		}
+		
+		function selectImageSource(source) {
+			imageSource = source;
+			isLocalImage = (source === 'local');
+			
+			document.getElementById('eln-source-btn').classList.toggle('active', source === 'eln');
+			document.getElementById('eln-source-btn').classList.toggle('btn-lab-primary', source === 'eln');
+			document.getElementById('eln-source-btn').classList.toggle('btn-lab-outline', source !== 'eln');
+			
+			document.getElementById('local-source-btn').classList.toggle('active', source === 'local');
+			document.getElementById('local-source-btn').classList.toggle('btn-lab-primary', source === 'local');
+			document.getElementById('local-source-btn').classList.toggle('btn-lab-outline', source !== 'local');
+			
+			document.getElementById('local-upload-section').style.display = 
+				source === 'local' ? 'block' : 'none';
+			
+			if (source === 'eln') {
+				loadELNImage();
+			}
+		}
+		
+		function handleLocalImageUpload(event) {
+			const file = event.target.files[0];
+			if (file) {
+				handleLocalImageFile(file);
+			}
+		}
+				
+		function handleLocalImageFile(file) {
+			if (!file.type.startsWith('image/')) {
+				M.toast({ html: 'Please select a valid image file.', classes: 'red lighten-1' });
+				return;
+			}
+		
+			if (file.size > 10 * 1024 * 1024) {
+				M.toast({ html: 'File size should be less than 10MB.', classes: 'red lighten-1' });
+				return;
+			}
+		
+			const reader = new FileReader();
+		
+			reader.onload = function (e) {
+				const imageDataUrl = e.target.result;
+				const image = new Image();
+		
+				image.onload = function () {
+					// ✅ Get natural image size
+					const realWidth = image.naturalWidth;
+					const realHeight = image.naturalHeight;
+		
+					// ✅ Update your global canvas info before loading image
+					window.canvasWidth = realWidth;
+					window.canvasHeight = realHeight;
+		
+					// ✅ Load into canvas or image container
+					loadLocalImage(imageDataUrl, file.name); // Your existing loader
+				};
+		
+				image.src = imageDataUrl;
+			};
+		
+			reader.readAsDataURL(file);
+		}
+		function loadLocalImage(dataURL, fileName) {
+			image = new Image();
+			image.onload = function() {
+				// Calculate scaling to fit max height of 500px
+				let maxHeight = 500;
+				//let originalHeight = image.height;
+				let originalHeight = image.naturalHeight;
+				let originalWidth = image.width;
+		
+				if (image.height > maxHeight) {
+					let aspectRatio = image.width / image.height;
+					image.height = maxHeight;
+					image.width = maxHeight * aspectRatio;
+				}
+		
+				// Set canvas dimensions
+				canvas.width = image.width;
+				canvas.height = image.height;
+		
+				// Draw image on canvas
+				ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+		
+				// Calculate scale factor for coordinate conversion
+				window.scaleFactor = originalHeight / canvas.height;
+		
+				// Update annotated image container size
+				document.getElementById('annotated-image').style.width = canvas.width + 'px';
+				document.getElementById('annotated-image').style.height = canvas.height + 'px';
+		
+				// Store filename for later use
+				window.currentImageFileName = fileName;
+				isLocalImage = true; // ✅ Set this flag
+		
+				// Clear any existing annotations
+				lines = [];
+				spots = [];
+		
+				// Remove existing delete icons
+				document.querySelectorAll('.delete-icon').forEach(el => el.remove());
+		
+				// Clear table
+				const tableBody = document.querySelector('#values-table tbody');
+				if (tableBody) {
+					tableBody.innerHTML = '';
+				}
+		
+		
+				// Show success message and update heading
+				M.toast({html: `Image "${fileName}" loaded successfully!`, classes: 'green lighten-1'});
+				updateAnnotatedHeading('editing');
+			};
+		
+			image.onerror = function() {
+				M.toast({html: 'Failed to load image. Please try again.', classes: 'red lighten-1'});
+			};
+		
+			image.src = dataURL;
+		}
+					
+		// Function to download annotated image for local images
+		function downloadAnnotatedImage() {
+			const annotatedImage = document.getElementById("annotated-image");
+			if (annotatedImage && annotatedImage.src) {
+				const link = document.createElement('a');
+				link.download = `annotated_${window.currentImageFileName || 'tlc_image.png'}`;
+				link.href = annotatedImage.src;
+				link.click();
+				
+				Swal.fire({
+					title: 'Success!',
+					text: 'Annotated image downloaded successfully.',
+					icon: 'success',
+					confirmButtonText: 'OK'
+				});
+			} else {
+				Swal.fire({
+					title: 'Error!',
+					text: 'No annotated image available for download. Please calculate RF values first.',
+					icon: 'error',
+					confirmButtonText: 'OK'
+				});
+			}
+		}
+		
+		// Function to load ELN image (existing functionality)
+		function loadELNImage() {
+			if (typeof decodedImageUrl !== 'undefined' && decodedImageUrl) {
+				fetch('/fetch-image/?url=' + encodeURIComponent(decodedImageUrl))
+					.then(response => response.json())
+					.then(data => {
+						if (data.imagePath) {
+							fetch('/serve-image/?file_path=' + encodeURIComponent(data.imagePath))
+								.then(response => {
+									if (response.ok) {
+										image.src = '/serve-image/?file_path=' + encodeURIComponent(data.imagePath);
+										updateAnnotatedHeading('editing');
+									} else {
+										M.toast({html: 'Error loading ELN image.'});
+									}
+								});
+						} else {
+							M.toast({html: 'ELN image not found.'});
+						}
+					})
+					.catch(error => {
+						console.error('Error fetching ELN image:', error);
+						M.toast({html: 'Error loading ELN image.'});
+					});
+			}
+		}
+		
+		// Prevent default drag behaviors
+		function preventDefaults(e) {
+			e.preventDefault();
+			e.stopPropagation();
+		}
+	
+		// Clear all annotations
+		function clearAnnotations() {
+			if (window.lines) window.lines = [];
+			if (window.spots) window.spots = [];
+			
+			if (window.canvas && window.ctx) {
+				redrawCanvas();
+			}
+			
+			// Clear table
+			const tableBody = document.querySelector('#values-table tbody');
+			if (tableBody) {
+				tableBody.innerHTML = '';
+			}
+			
+			M.toast({html: 'All annotations cleared'});
+			console.log('Annotations cleared');
+		}
+	
+		// Reset entire application
+		function resetApplication() {
+			clearAnnotations();
+			selectImageSource('local');
+			
+			if (window.canvas && window.ctx) {
+				window.ctx.clearRect(0, 0, window.canvas.width, window.canvas.height);
+			}
+			
+			const annotatedImage = document.getElementById('annotated-image');
+			if (annotatedImage) {
+				annotatedImage.src = '';
+			}
+			
+			const fileInput = document.getElementById('local-image-input');
+			if (fileInput) {
+				fileInput.value = '';
+			}
+			
+			updateAnnotatedHeading('instructions');
+			M.toast({html: 'Application reset successfully'});
+			console.log('Application reset');
+		}
+	
+		// Cancel current annotation
+		function cancelCurrentAnnotation() {
+			window.isDrawing = false;
+			window.currentAnnotationMode = null;
+			addingSpots = false;
+			
+			if (window.canvas) {
+				window.canvas.style.cursor = 'default';
+			}
+			
+			// Remove event listeners
+			canvas.removeEventListener('click', drawSpot);
+			canvas.removeEventListener('click', drawLine);
+			
+			console.log('Current annotation cancelled');
+		}
+	
+		// Set annotation mode and update button states
+		function setAnnotationMode(mode) {
+			window.currentAnnotationMode = mode;
+			
+			// Update button states
+			document.querySelectorAll('.lab-btn').forEach(btn => {
+				btn.classList.remove('active');
+			});
+			
+			// Update cursor
+			if (window.canvas) {
+				window.canvas.style.cursor = mode === 'spot' ? 'crosshair' : 'crosshair';
+			}
+			
+			console.log('Annotation mode set to:', mode);
+		}
+	
+		// Adjust canvas for window resize
+		function adjustCanvasForResize() {
+			// Implementation depends on your responsive requirements
+			console.log('Canvas resize adjustment called');
+			
+			if (image && image.complete && canvas) {
+				// Maintain aspect ratio on resize
+				redrawCanvas();
+			}
+		}
+	
+		// Show initial instructions
+		function showInitialInstructions() {
+			updateAnnotatedHeading('instructions');
+			console.log('Showing initial instructions');
+		}	
+			
+		// Add this after your existing functions, before DOMContentLoaded
+		function handleError(error, context = '') {
+			console.error(`Error in ${context}:`, error);
+			
+			Swal.fire({
+				title: 'Error!',
+				text: `An error occurred${context ? ' in ' + context : ''}. Please try again.`,
+				icon: 'error',
+				confirmButtonText: 'OK'
+			});
+		}
+		
+		document.addEventListener('DOMContentLoaded', function () {
+				console.log('TLC Analyzer initializing...');
+				
+				// Initialize heading
+				updateAnnotatedHeading('instructions');
+				
+				// Initialize global variables
+				if (typeof lines === 'undefined') window.lines = [];
+				if (typeof spots === 'undefined') window.spots = [];
+				if (typeof isLocalImage === 'undefined') window.isLocalImage = false;
+				if (typeof imageSource === 'undefined') window.imageSource = 'local';
+				if (typeof scaleFactor === 'undefined') window.scaleFactor = 1;
+				
+				// Make canvas and context globally accessible
+				window.canvas = canvas;
+				window.ctx = ctx;
+				window.image = image;
+				
+				console.log('Global variables initialized');
+				
+				// Local upload handlers
+				const fileInput = document.getElementById('local-image-input');
+				const uploadArea = document.querySelector('.upload-area');
+				
+				if (fileInput) {
+					fileInput.addEventListener('change', handleLocalImageUpload);
+					console.log('File input handler attached');
+				}
+				
+				if (uploadArea) {
+					// Prevent default drag behaviors
+					['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+						uploadArea.addEventListener(eventName, preventDefaults, false);
+					});
+					
+					// Drag visual feedback
+					['dragenter', 'dragover'].forEach(eventName => {
+						uploadArea.addEventListener(eventName, function() {
+							uploadArea.style.background = 'rgba(74, 144, 226, 0.1)';
+							uploadArea.style.borderColor = 'var(--primary-blue)';
+						}, false);
+					});
+					
+					['dragleave', 'drop'].forEach(eventName => {
+						uploadArea.addEventListener(eventName, function() {
+							uploadArea.style.background = 'var(--lab-light-gray)';
+							uploadArea.style.borderColor = '#ddd';
+						}, false);
+					});
+					
+					// Handle dropped files
+					uploadArea.addEventListener('drop', function(e) {
+						const files = e.dataTransfer.files;
+						if (files.length > 0) {
+							handleLocalImageFile(files[0]);
+						}
+					}, false);
+					
+					console.log('Drag and drop handlers attached');
+				}
+				
+				// Canvas mouse handlers
+				if (canvas) {
+					canvas.addEventListener('mousedown', handleMouseDown);
+					canvas.addEventListener('mousemove', handleMouseMove);
+					canvas.addEventListener('mouseup', handleMouseUp);
+					canvas.addEventListener('dblclick', handleDoubleClick);
+					console.log('Canvas mouse handlers attached');
+				}
+				
+				// Keyboard shortcuts
+				document.addEventListener('keydown', function(e) {
+					// Escape to cancel current annotation
+					if (e.key === 'Escape') {
+						cancelCurrentAnnotation();
+					}
+					
+					// Ctrl/Cmd + S to save
+					if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+						e.preventDefault();
+						saveImageToServer();
+					}
+					
+					// Ctrl/Cmd + R to calculate RF
+					if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+						e.preventDefault();
+						calculateRF();
+					}
+				});
+				
+				// Window resize handler
+				window.addEventListener('resize', function() {
+					clearTimeout(window.resizeTimeout);
+					window.resizeTimeout = setTimeout(adjustCanvasForResize, 250);
+				});
+				
+				// Check URL parameters for initial source
+				const urlParams = new URLSearchParams(window.location.search);
+				const hasELNParams = urlParams.get('url');
+				
+				if (hasELNParams) {
+					console.log('ELN parameters detected, switching to ELN mode');
+					selectImageSource('eln');
+				} else {
+					console.log('No ELN parameters, defaulting to local mode');
+					selectImageSource('local');
+				}
+				
+				// Initialize Materialize components
+				try {
+					const tooltips = document.querySelectorAll('.tooltipped');
+					if (tooltips.length > 0) {
+						M.Tooltip.init(tooltips);
+						console.log('Tooltips initialized');
+					}
+					
+					const dropdowns = document.querySelectorAll('.dropdown-trigger');
+					if (dropdowns.length > 0) {
+						M.Dropdown.init(dropdowns);
+						console.log('Dropdowns initialized');
+					}
+				} catch (error) {
+					console.warn('Materialize initialization error:', error);
+				}
+				
+				console.log('TLC Analyzer initialization complete');
+				M.toast({html: 'TLC Analyzer loaded successfully!', displayLength: 2000});
+				
+				showInitialInstructions();
+			});
+				
+    </script>
+</body>
+</html>

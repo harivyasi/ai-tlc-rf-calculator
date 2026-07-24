@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+pyvenv.cfg
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+/staticfiles/
+
+# User-generated / regenerable media (keep the directory, ignore contents)
+/media/*
+!/media/.gitkeep
+
+# Environment / secrets
+.env
+*.env
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+test-results/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
