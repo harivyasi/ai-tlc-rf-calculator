@@ -110,6 +110,30 @@ def test_legacy_frontend_had_spurious_fetch_on_local_load(page, servers):
     assert len(calls) >= 1, "expected the legacy eager fetch to fire"
 
 
+def test_auto_detect_populates_spots(page, servers, blob_image_path):
+    """New feature: Auto-detect finds the drawn spots and they flow into RF calc."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(
+        "() => { const h = document.getElementById('annotated-heading');"
+        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
+    )
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 200, "y": 280})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 200, "y": 40})
+
+    page.click("button:has-text('Auto-detect')")
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    rows = page.locator("#values-table tbody tr").count()
+    assert rows == 3, f"expected 3 auto-detected spots, table had {rows}"
+
+
 @pytest.mark.parametrize("frontend,expected", [("new", 1), ("legacy", 2)])
 def test_eln_load_fetch_count(page, servers, test_image_path, frontend, expected):
     """ELN-load path: the refactor fetches once; the original fetched twice.

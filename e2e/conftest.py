@@ -98,6 +98,17 @@ def test_image_path(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture(scope="session")
+def blob_image_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """A 400x300 light image with three dark filled circles for auto-detection."""
+    path = tmp_path_factory.mktemp("img") / "blobs.png"
+    image = np.full((300, 400, 3), 245, dtype=np.uint8)
+    for cx, cy in [(100, 100), (200, 150), (300, 220)]:
+        cv2.circle(image, (cx, cy), 22, (40, 40, 40), -1)
+    cv2.imwrite(str(path), image)
+    return str(path)
+
+
+@pytest.fixture(scope="session")
 def browser() -> Iterator[Browser]:
     with sync_playwright() as p:
         b = p.chromium.launch()
