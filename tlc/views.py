@@ -397,13 +397,28 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     )
 
 
+def _parse_region(raw: Any) -> tuple[int, int, int, int] | None:
+    """Parse an optional ``{x, y, width, height}`` region into a tuple, or None."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        x, y = int(raw["x"]), int(raw["y"])
+        width, height = int(raw["width"]), int(raw["height"])
+    except KeyError, TypeError, ValueError:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return x, y, width, height
+
+
 def detect_spots(request: HttpRequest) -> JsonResponse:
     """Detect candidate TLC spots and return them as editable suggestions.
 
     Accepts the same image payload as :func:`calculate_rf` (base64 ``imageData``
     for local uploads or ``imageSrc`` for ELN images) and returns spot centres
     in original-image coordinates, ready to drop into the annotation ``spots``
-    array. Detection is best-effort — the user reviews the result.
+    array. An optional ``region`` (``{x, y, width, height}``) confines detection
+    to a user-drawn plate area. Detection is best-effort — the user reviews it.
 
     Args:
         request: The HTTP request carrying the JSON image payload.
@@ -424,7 +439,7 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
         return error
     assert image is not None  # guaranteed when error is None
 
-    spots = detection.detect_spots(image)
+    spots = detection.detect_spots(image, region=_parse_region(data.get("region")))
     return JsonResponse({"spots": spots, "count": len(spots)})
 
 

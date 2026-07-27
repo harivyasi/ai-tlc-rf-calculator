@@ -215,6 +215,22 @@ class DetectSpotsTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["count"], 0)
 
+    def test_region_confines_detection(self) -> None:
+        # Three blobs; a region covering only the top two must yield two spots.
+        centers = [(120, 120), (360, 130), (240, 360)]
+        payload = {
+            "isLocalImage": True,
+            "imageData": _blobs_data_url(centers),
+            "region": {"x": 0, "y": 0, "width": 500, "height": 280},
+        }
+        response = self.client.post(
+            reverse("detect_spots"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["count"], 2)
+        self.assertTrue(all(spot["y"] < 280 for spot in body["spots"]))
+
 
 class ServeImageSecurityTests(SimpleTestCase):
     def setUp(self) -> None:

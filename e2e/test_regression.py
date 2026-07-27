@@ -222,6 +222,38 @@ def test_auto_detect_populates_spots(page, servers, blob_image_path):
     assert rows == 3, f"expected 3 auto-detected spots, table had {rows}"
 
 
+def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
+    """Drawing a plate area limits Auto-detect to that region (2 of 3 blobs)."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(
+        "() => { const h = document.getElementById('annotated-heading');"
+        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
+    )
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 200, "y": 280})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 200, "y": 40})
+
+    # Draw a plate area around the top two blobs (at y=100,150), excluding y=220.
+    page.click("button:has-text('Plate Area')")
+    box = canvas.bounding_box()
+    page.mouse.move(box["x"] + 40, box["y"] + 40)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 260, box["y"] + 190, steps=8)
+    page.mouse.up()
+
+    page.click("button:has-text('Auto-detect')")
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    rows = page.locator("#values-table tbody tr").count()
+    assert rows == 2, f"expected 2 spots within the region, table had {rows}"
+
+
 @pytest.mark.parametrize("frontend,expected", [("new", 1), ("legacy", 2)])
 def test_eln_load_fetch_count(page, servers, test_image_path, frontend, expected):
     """ELN-load path: the refactor fetches once; the original fetched twice.

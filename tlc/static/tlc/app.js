@@ -44,6 +44,13 @@ let lineDragOffsetX = 0;
 let lineDragOffsetY = 0;
 let justDragged = false;
 
+// Optional plate region-of-interest that constrains auto-detect.
+let plateRegion = null; // {x, y, width, height} in original-image coordinates
+let selectingRegion = false; // the "Plate Area" tool is armed
+let draggingRegion = false; // a region drag is in progress
+let regionStart = null; // {x, y} in display coordinates
+let regionCurrent = null; // {x, y} in display coordinates
+
 // --- Small UI helpers (replace Materialize toast / SweetAlert) ------------
 function notify(message, type = "info") {
     const container = document.getElementById("toast-container");
@@ -162,6 +169,27 @@ function redrawCanvas() {
         ctx.arc(spot.x / window.scaleFactor, spot.y / window.scaleFactor, 10, 0, 2 * Math.PI);
         ctx.stroke();
     });
+
+    // Optional plate region (dashed): in-progress drag or a stored region.
+    const sf = window.scaleFactor || 1;
+    let rect = null;
+    if (draggingRegion && regionStart && regionCurrent) {
+        rect = [
+            Math.min(regionStart.x, regionCurrent.x),
+            Math.min(regionStart.y, regionCurrent.y),
+            Math.abs(regionCurrent.x - regionStart.x),
+            Math.abs(regionCurrent.y - regionStart.y),
+        ];
+    } else if (plateRegion) {
+        rect = [plateRegion.x / sf, plateRegion.y / sf, plateRegion.width / sf, plateRegion.height / sf];
+    }
+    if (rect) {
+        ctx.save();
+        ctx.strokeStyle = "#2f6f4f";
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(rect[0], rect[1], rect[2], rect[3]);
+        ctx.restore();
+    }
 }
 
 // --- Annotation tools -----------------------------------------------------
@@ -172,8 +200,17 @@ function setActiveButton(button) {
 
 function disableOtherActions() {
     addingSpots = false;
+    selectingRegion = false;
     canvas.removeEventListener("click", drawSpot);
     canvas.removeEventListener("click", drawLine);
+}
+
+function selectPlateArea(event) {
+    disableOtherActions();
+    selectingRegion = true;
+    updateAnnotatedHeading("editing");
+    if (event && event.currentTarget) setActiveButton(event.currentTarget);
+    notify("Drag a box around the plate, then Auto-detect. Click once to clear.", "info");
 }
 
 function startLine(type, horizontal, event) {
@@ -294,6 +331,12 @@ function drawSpot(event) {
 // --- Mouse interaction (drag / double-click delete) -----------------------
 function handleMouseDown(e) {
     if (e.target.classList.contains("delete-icon")) return;
+    if (selectingRegion) {
+        draggingRegion = true;
+        regionStart = { x: e.offsetX, y: e.offsetY };
+        regionCurrent = { x: e.offsetX, y: e.offsetY };
+        return;
+    }
     const x = e.offsetX;
     const y = e.offsetY;
 
@@ -329,6 +372,11 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
+    if (draggingRegion) {
+        regionCurrent = { x: e.offsetX, y: e.offsetY };
+        redrawCanvas();
+        return;
+    }
     if (!isDragging) {
         let over = false;
         for (const spot of spots) {
@@ -353,6 +401,31 @@ function handleMouseMove(e) {
 }
 
 function handleMouseUp() {
+    if (draggingRegion) {
+        draggingRegion = false;
+        selectingRegion = false;
+        setActiveButton(null);
+        const sf = window.scaleFactor || 1;
+        const x0 = Math.min(regionStart.x, regionCurrent.x);
+        const y0 = Math.min(regionStart.y, regionCurrent.y);
+        const w = Math.abs(regionCurrent.x - regionStart.x);
+        const h = Math.abs(regionCurrent.y - regionStart.y);
+        regionStart = regionCurrent = null;
+        if (w < 5 || h < 5) {
+            plateRegion = null; // a click (no real drag) clears the region
+            notify("Plate area cleared.", "info");
+        } else {
+            plateRegion = {
+                x: Math.round(x0 * sf),
+                y: Math.round(y0 * sf),
+                width: Math.round(w * sf),
+                height: Math.round(h * sf),
+            };
+            notify("Plate area set — Auto-detect will use it.", "success");
+        }
+        redrawCanvas();
+        return;
+    }
     if (!isDragging) return;
     isDragging = false;
     draggingSpot = null;
@@ -453,10 +526,12 @@ function autoDetectSpots() {
         return;
     }
     showOverlay("Detecting spots…");
+    const payload = getImagePayload();
+    if (plateRegion) payload.region = plateRegion;
     fetch("/detect-spots/", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
-        body: JSON.stringify(getImagePayload()),
+        body: JSON.stringify(payload),
     })
         .then((response) => {
             if (!response.ok) throw new Error("HTTP " + response.status);
@@ -617,6 +692,8 @@ function updateAnnotatedHeading(state) {
 function resetCanvas() {
     lines = [];
     spots = [];
+    plateRegion = null;
+    selectingRegion = false;
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
     if (image && image.complete) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -675,6 +752,7 @@ function loadLocalImage(dataURL, fileName) {
         isLocalImage = true;
         lines = [];
         spots = [];
+        plateRegion = null;
         document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
         const tbody = document.querySelector("#values-table tbody");
         if (tbody) tbody.innerHTML = "";
@@ -725,6 +803,7 @@ const ACTIONS = {
     triggerFileInput,
     addSpots,
     autoDetectSpots,
+    selectPlateArea,
     addMinLine,
     addMaxLine,
     addHorizontalLine,

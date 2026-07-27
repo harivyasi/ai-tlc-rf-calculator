@@ -64,27 +64,31 @@ def _plate_mask(image: np.ndarray, gray: np.ndarray, erode_px: int) -> np.ndarra
     return mask > 0
 
 
-def _darkness_map(image: np.ndarray) -> tuple[np.ndarray, float]:
-    """Return an illumination-flattened map (bright where spots are), plus scale.
+def _darkness_map(image: np.ndarray, max_r: float) -> np.ndarray:
+    """Return an illumination-flattened map (bright where spots are).
 
     Confined to the plate interior and normalised within it, so plate edges and
     off-plate clutter neither register nor dominate the normalisation.
+
+    Args:
+        image: BGR or grayscale image (already cropped to any region).
+        max_r: Expected maximum spot radius (px); sizes the background kernel
+            and the plate-edge erosion.
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     gray = gray.astype(np.float32)
 
-    scale = float(min(gray.shape[:2]))
-    ksize = int(scale // 6) | 1  # background scale, larger than a spot
+    ksize = int(max_r * 1.5) | 1  # background scale, larger than a spot
     background = cv2.GaussianBlur(gray, (ksize, ksize), 0)
     darkness: np.ndarray = np.clip(background - gray, 0.0, None)
     darkness = cv2.GaussianBlur(darkness, (3, 3), 0)
 
-    darkness[~_plate_mask(image, gray, erode_px=int(MAX_RADIUS_FRAC * scale))] = 0.0
+    darkness[~_plate_mask(image, gray, erode_px=int(max_r))] = 0.0
 
     peak = float(darkness.max())
     if peak > 0:
         darkness = darkness / peak
-    return darkness, scale
+    return darkness
 
 
 def _candidate_points(darkness: np.ndarray, method: str, min_r: float, max_r: float) -> list:
@@ -170,12 +174,21 @@ def _dedup(points: list, min_dist: float) -> list:
     return kept
 
 
-def detect_spots(image: np.ndarray, *, method: str = "combined") -> list[dict[str, int]]:
+def detect_spots(
+    image: np.ndarray,
+    *,
+    method: str = "combined",
+    region: tuple[int, int, int, int] | None = None,
+) -> list[dict[str, int]]:
     """Detect candidate TLC spots.
 
     Args:
         image: BGR (or grayscale) image as a NumPy array.
         method: ``"blob"``, ``"lane"``, or ``"combined"`` (default; both).
+        region: Optional ``(x, y, width, height)`` in image coordinates to
+            confine detection to (e.g. a user-drawn plate area). When given, the
+            image is cropped to it and results are offset back to full-image
+            coordinates; the automatic plate segmentation is thereby bypassed.
 
     Returns:
         Spot centres as ``{"x": int, "y": int}`` in original-image coordinates,
@@ -184,12 +197,26 @@ def detect_spots(image: np.ndarray, *, method: str = "combined") -> list[dict[st
     if image is None or image.size == 0:
         return []
 
-    darkness, scale = _darkness_map(image)
+    # Spot radii are absolute, so derive them from the full image — not the
+    # (possibly small) cropped region.
+    scale = float(min(image.shape[:2]))
     min_r = max(2.0, MIN_RADIUS_FRAC * scale)
     max_r = max(min_r + 1.0, MAX_RADIUS_FRAC * scale)
+
+    offset_x = offset_y = 0
+    if region is not None:
+        rx, ry, rw, rh = (int(v) for v in region)
+        x0, y0 = max(0, rx), max(0, ry)
+        x1, y1 = min(image.shape[1], rx + rw), min(image.shape[0], ry + rh)
+        if x1 - x0 < 2 or y1 - y0 < 2:
+            return []
+        image = image[y0:y1, x0:x1]
+        offset_x, offset_y = x0, y0
+
+    darkness = _darkness_map(image, max_r)
 
     candidates = _candidate_points(darkness, method, min_r, max_r)
     spots = _shape_gated_spots(darkness, candidates, min_r, max_r)
     spots = _dedup(spots, min_dist=1.5 * min_r)
     spots.sort(key=lambda p: (p[1], p[0]))
-    return [{"x": x, "y": y} for x, y in spots]
+    return [{"x": x + offset_x, "y": y + offset_y} for x, y in spots]

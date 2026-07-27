@@ -25,6 +25,10 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
   editable suggestions you review before calculating.
 - Two image sources: **local upload** or **fetch from an ELN URL**.
 - Server-side RF calculation and image annotation (OpenCV).
+- **Assisted spot detection** ("Auto-detect"): scikit-image Laplacian-of-Gaussian
+  blobs + lane-profile peak finding, shape-gated to suppress lines/labels.
+  Detected spots are editable suggestions. Optionally draw a **Plate Area** box
+  first to confine detection to the plate.
 - CSV export (download locally or POST back to an ELN).
 
 ## Tech stack
