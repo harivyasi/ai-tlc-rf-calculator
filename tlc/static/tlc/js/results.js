@@ -1,0 +1,279 @@
+/*
+ * Server round-trips and results: building the image payload, RF calculation,
+ * assisted spot detection, the results table (with row highlight/delete), CSV
+ * export, and saving image/CSV back to the ELN.
+ */
+
+"use strict";
+
+import { elnUrl, state } from "./state.js";
+import { getCookie, hideOverlay, notify, showOverlay, timestampedName } from "./ui-kit.js";
+import { hasImage, updateAnnotatedHeading } from "./ui.js";
+import { addSpot } from "./annotations.js";
+import { redrawCanvas } from "./canvas.js";
+
+// --- Image payload (shared by calculate + auto-detect) --------------------
+export function getImagePayload() {
+    let payload;
+    if (state.isLocalImage) {
+        payload = {
+            imageSrc: window.currentImageFileName || "local_upload.png",
+            isLocalImage: true,
+            imageData: state.image.src,
+        };
+    } else {
+        try {
+            const parsed = new URL(state.image.src);
+            const filePath = parsed.searchParams.get("file_path");
+            payload = {
+                imageSrc: decodeURIComponent(filePath).split("/").pop(),
+                isLocalImage: false,
+                imageData: null,
+            };
+        } catch (err) {
+            payload = { imageSrc: "unknown_image.png", isLocalImage: false, imageData: null };
+        }
+    }
+    payload.rotation = state.rotation; // backend re-orients to match the displayed image
+    return payload;
+}
+
+// --- RF calculation -------------------------------------------------------
+export function calculateRF() {
+    const minLine = state.lines.find((l) => l.type === "min");
+    const maxLine = state.lines.find((l) => l.type === "max");
+    if (!minLine || !maxLine) {
+        notify('Please add "min" and "max" lines before calculating RF.', "warning");
+        return;
+    }
+    if (state.spots.length === 0) {
+        notify("Please add spots before calculating RF.", "warning");
+        return;
+    }
+
+    const data = Object.assign({ lines: state.lines, spots: state.spots }, getImagePayload());
+    showOverlay("Calculating RF values…");
+
+    fetch("/calculate_rf/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
+        body: JSON.stringify(data),
+    })
+        .then((response) => {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.json();
+        })
+        .then((result) => {
+            hideOverlay();
+            if (result.rf_values && result.rf_values.length > 0) {
+                populateTable(result.rf_values);
+                const annotated = document.getElementById("annotated-image");
+                if (result.annotated_image_url) {
+                    annotated.src = result.annotated_image_url + "?t=" + Date.now();
+                    updateAnnotatedHeading("annotated");
+                }
+                notify("RF calculation complete: " + result.rf_values.length + " spot(s).", "success");
+            } else {
+                notify("No RF values calculated. Check your annotations.", "warning");
+            }
+        })
+        .catch((error) => {
+            hideOverlay();
+            console.error("Error calculating RF:", error);
+            notify("Failed to calculate RF values.", "error");
+        });
+}
+
+// --- Assisted spot detection ----------------------------------------------
+export function autoDetectSpots() {
+    if (!hasImage()) {
+        notify("Load an image first.", "warning");
+        return;
+    }
+    showOverlay("Detecting spots…");
+    const payload = getImagePayload();
+    if (state.plateRegion) payload.region = state.plateRegion;
+    const ringToggle = document.getElementById("ring-center");
+    if (ringToggle) payload.ringCenter = ringToggle.checked;
+    fetch("/detect-spots/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
+        body: JSON.stringify(payload),
+    })
+        .then((response) => {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.json();
+        })
+        .then((result) => {
+            hideOverlay();
+            let added = 0;
+            (result.spots || []).forEach((s) => {
+                if (addSpot(s.x, s.y)) added++;
+            });
+            redrawCanvas();
+            updateAnnotatedHeading("editing");
+            if (added > 0) {
+                notify("Detected " + added + " spot(s). Review and adjust as needed.", "success");
+            } else {
+                notify("No new spots detected — add them manually.", "info");
+            }
+        })
+        .catch((error) => {
+            hideOverlay();
+            console.error("Error detecting spots:", error);
+            notify("Spot detection failed.", "error");
+        });
+}
+
+export function populateTable(rfValues) {
+    const tbody = document.getElementById("values-table").getElementsByTagName("tbody")[0];
+    tbody.innerHTML = "";
+    state.highlightedSpot = null;
+    rfValues.forEach((value, index) => {
+        const row = tbody.insertRow();
+        if (typeof value.x === "number" && typeof value.y === "number") {
+            row.dataset.x = value.x;
+            row.dataset.y = value.y;
+            row.classList.add("clickable");
+            row.addEventListener("click", () => highlightSpotFromRow(row));
+        }
+        row.insertCell(0).textContent = value.solvent || "Lane " + (index + 1);
+        row.insertCell(1).textContent = value.compound || "Spot " + (index + 1);
+        row.insertCell(2).textContent = typeof value.rf !== "undefined" ? value.rf : value.rf_value;
+        const actions = row.insertCell(3);
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "row-del";
+        del.setAttribute("aria-label", "Delete this spot");
+        del.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>';
+        del.addEventListener("click", (e) => {
+            e.stopPropagation();
+            deleteResultRow(row);
+        });
+        actions.appendChild(del);
+    });
+}
+
+function highlightSpotFromRow(row) {
+    if (row.dataset.x === undefined) return;
+    state.highlightedSpot = { x: Number(row.dataset.x), y: Number(row.dataset.y) };
+    document
+        .querySelectorAll("#values-table tbody tr.active")
+        .forEach((r) => r.classList.remove("active"));
+    row.classList.add("active");
+    redrawCanvas();
+}
+
+function deleteResultRow(row) {
+    if (row.dataset.x !== undefined) {
+        const rx = Number(row.dataset.x);
+        const ry = Number(row.dataset.y);
+        state.spots = state.spots.filter((s) => Math.abs(s.x - rx) > 1 || Math.abs(s.y - ry) > 1);
+        if (
+            state.highlightedSpot &&
+            Math.abs(state.highlightedSpot.x - rx) < 2 &&
+            Math.abs(state.highlightedSpot.y - ry) < 2
+        ) {
+            state.highlightedSpot = null;
+        }
+    }
+    row.remove();
+    redrawCanvas();
+}
+
+// --- CSV export -----------------------------------------------------------
+function tableToCsvRows() {
+    const table = document.getElementById("values-table");
+    return Array.from(table.rows)
+        .slice(1)
+        .map((row) => Array.from(row.cells).map((c) => c.textContent.trim()));
+}
+
+function buildCsvContent() {
+    let csv = "Measurement type;thin layer chromatography (TLC);CHMO:0001007\n\n";
+    csv += "mixture_label (X axis),substance_label (Y axis),RF value\n";
+    const inline = [];
+    tableToCsvRows().forEach((cols, i) => {
+        csv += cols[0] + "," + cols[1] + "," + cols[2] + "\n";
+        inline.push(cols[2] + " (" + cols[1] + ")[h" + (i + 1) + "]");
+    });
+    csv += "\nDetails:\nTLC (solvents); Rf (UV-Vis in nm, staining) = " + inline.join(", ") + ".\n";
+    return csv;
+}
+
+export function saveCSV() {
+    const uri = encodeURI("data:text/csv;charset=utf-8," + buildCsvContent());
+    const link = document.createElement("a");
+    link.href = uri;
+    link.download = "rf_values.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    notify("CSV downloaded.", "success");
+}
+
+// --- Save back to the ELN -------------------------------------------------
+function postToEln(blob, filename) {
+    if (!elnUrl) {
+        notify("No ELN target configured.", "warning");
+        return;
+    }
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+    fetch(elnUrl, {
+        method: "POST",
+        body: formData,
+        headers: { "X-CSRFToken": getCookie("csrftoken") },
+    })
+        .then((response) => response.json())
+        .then(() => notify("Saved to ELN.", "success"))
+        .catch((error) => {
+            console.error("Error saving to ELN:", error);
+            notify("Failed to save to ELN.", "error");
+        });
+}
+
+function downloadAnnotatedImage() {
+    const annotated = document.getElementById("annotated-image");
+    if (!annotated || !annotated.src) {
+        notify("Calculate RF values first.", "warning");
+        return;
+    }
+    const link = document.createElement("a");
+    link.download = "annotated_" + (window.currentImageFileName || "tlc_image.png");
+    link.href = annotated.src;
+    link.click();
+    notify("Annotated image downloaded.", "success");
+}
+
+export function saveImageToServer() {
+    if (state.isLocalImage) {
+        downloadAnnotatedImage();
+        return;
+    }
+    const annotated = document.getElementById("annotated-image");
+    if (!annotated || !annotated.src) {
+        notify("Annotated image not found. Calculate RF values first.", "error");
+        return;
+    }
+    const sourceImage = new Image();
+    sourceImage.crossOrigin = "anonymous";
+    sourceImage.onload = function () {
+        const exportCanvas = document.createElement("canvas");
+        exportCanvas.width = sourceImage.naturalWidth;
+        exportCanvas.height = sourceImage.naturalHeight;
+        exportCanvas.getContext("2d").drawImage(sourceImage, 0, 0);
+        exportCanvas.toBlob((blob) => postToEln(blob, timestampedName("png")), "image/png");
+    };
+    sourceImage.onerror = () => notify("Failed to load annotated image.", "error");
+    sourceImage.src = annotated.src;
+}
+
+export function saveCSVToServer() {
+    const csv = buildCsvContent();
+    if (!csv) {
+        notify("No CSV data to save.", "warning");
+        return;
+    }
+    postToEln(new Blob([csv], { type: "text/csv;charset=utf-8;" }), timestampedName("csv"));
+}

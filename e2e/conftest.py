@@ -120,5 +120,22 @@ def browser() -> Iterator[Browser]:
 def page(browser: Browser) -> Iterator[Page]:
     context = browser.new_context(viewport={"width": 1600, "height": 1200})
     pg = context.new_page()
+    # A broken ES-module import fails silently: the page renders but its JS
+    # never initialises, so a narrow assertion can still pass. Fail the test on
+    # any uncaught exception (TDZ / import-cycle bugs) or module-load failure —
+    # cheap insurance for the module refactor. Handled network errors the app
+    # logs deliberately (e.g. a blocked ELN URL) are intentionally ignored.
+    errors: list[str] = []
+    pg.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+
+    def _on_console(msg: object) -> None:
+        text = getattr(msg, "text", "")
+        if getattr(msg, "type", "") == "error" and (
+            "module script" in text or "module specifier" in text
+        ):
+            errors.append(f"module-load error: {text}")
+
+    pg.on("console", _on_console)
     yield pg
     context.close()
+    assert not errors, "Browser reported JS errors:\n" + "\n".join(errors)

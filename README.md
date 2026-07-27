@@ -55,8 +55,8 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
   **SciPy** for spot detection
 - **Gunicorn** + **WhiteNoise** for serving
 - **uv** for dependency management
-- Self-contained frontend: vanilla JS + CSS in `static/`, **no CDN/JS
-  frameworks** (inline SVG icons, system fonts)
+- Self-contained frontend: vanilla JS (native ES modules) + CSS in `static/`,
+  **no CDN/JS frameworks** (inline SVG icons, system fonts)
 
 ## Getting started
 
@@ -191,6 +191,13 @@ The app listens on port `8050` and exposes a health probe at `/healthz`. Static
 files are served by WhiteNoise; user-generated media is served by the app (fine
 for low-traffic internal use — front it with a reverse proxy for higher load).
 
+> **Note:** the frontend entry point (`js/main.js`) is loaded via `{% static %}`
+> and gets a content-hashed filename under `ManifestStaticFilesStorage`, but its
+> relative `import "./sibling.js"` statements are resolved by the browser and are
+> **not** hash-rewritten — so the sibling modules are served unhashed (no
+> cache-busting on them). This is harmless for this app; bump a query string or
+> clear caches if you ship a breaking change to a sibling module.
+
 Gunicorn is configured via [gunicorn.conf.py](gunicorn.conf.py) and tuned with
 environment variables: `GUNICORN_WORKERS` (default 3), `GUNICORN_THREADS`
 (2), `GUNICORN_TIMEOUT` (60s), `GUNICORN_BIND` (`0.0.0.0:8050`).
@@ -228,7 +235,9 @@ tlc/                  the application
   detection.py        assisted spot detection (blob + lane peaks)
   urls.py             app URL routes
   templates/tlc/      annotate.html (the single-page annotation UI)
-  static/tlc/         app.css, app.js (self-contained frontend)
+  static/tlc/         app.css + js/ ES modules (self-contained frontend)
+    js/               state, ui-kit, theme, ui, canvas, annotations,
+                      interaction, results, sources, main (entry)
   management/         cleanup_media command
   tests.py            RF calc, detection, and endpoint security tests
 e2e/                  Playwright regression suite (vs. the original frontend)
