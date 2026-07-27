@@ -335,13 +335,23 @@ function showPopup(x, y) {
     setTimeout(() => input.focus(), 100);
 }
 
+function hidePopup() {
+    const popup = document.getElementById("line-popup");
+    if (popup) popup.style.display = "none";
+    const input = document.getElementById("line-text");
+    if (input) input.value = "";
+    currentLine = null;
+}
+
 function submitAnnotation() {
-    const text = document.getElementById("line-text").value;
-    if (text.trim() === "" || !currentLine) return;
-    currentLine.text = text;
-    document.getElementById("line-text").value = "";
-    document.getElementById("line-popup").style.display = "none";
+    const text = document.getElementById("line-text").value.trim();
+    if (currentLine && text !== "") currentLine.text = text;
+    hidePopup();
     redrawCanvas();
+}
+
+function cancelAnnotation() {
+    hidePopup();
 }
 
 function addDeleteIcon(line, x, y) {
@@ -359,6 +369,8 @@ function deleteLine(id) {
     const index = lines.findIndex((l) => l.id === id);
     if (index === -1) return;
     if (lines[index].deleteIcon) lines[index].deleteIcon.remove();
+    // If the annotation popup is open for this line, close it too.
+    if (currentLine && currentLine.id === id) hidePopup();
     lines.splice(index, 1);
     redrawCanvas();
 }
@@ -884,6 +896,7 @@ const ACTIONS = {
     saveImageToServer,
     saveCSVToServer,
     submitAnnotation,
+    cancelAnnotation,
 };
 
 function handleAction(event) {
@@ -942,7 +955,7 @@ function init() {
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
             disableOtherActions();
-            document.getElementById("line-popup").style.display = "none";
+            hidePopup();
         }
     });
 

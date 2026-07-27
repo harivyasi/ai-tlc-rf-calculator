@@ -136,7 +136,7 @@ def test_vertical_label_flows_to_solvent_column(page, servers, test_image_path, 
     page.click("button:has-text('V-Line')")
     canvas.click(position={"x": 120, "y": 150})
     page.fill("#line-text", "LaneA")
-    page.click("#line-popup button")
+    page.click("#line-popup button:has-text('Submit')")
 
     page.click("button:has-text('Add Spots')")
     canvas.click(position={"x": 260, "y": 150})
@@ -252,6 +252,28 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
     rows = page.locator("#values-table tbody tr").count()
     assert rows == 2, f"expected 2 spots within the region, table had {rows}"
+
+
+def test_deleting_vline_closes_annotation_popup(page, servers, test_image_path):
+    """Deleting a just-drawn V-Line must also dismiss its annotation popup."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(
+        "() => { const h = document.getElementById('annotated-heading');"
+        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
+    )
+
+    page.click("button:has-text('V-Line')")
+    page.locator("#image-canvas").click(position={"x": 150, "y": 150})
+    # The annotation popup opens for the new line.
+    page.wait_for_selector("#line-popup", state="visible")
+
+    # Delete the line via its delete icon; the popup must close.
+    page.locator(".delete-icon").first.click()
+    page.wait_for_selector("#line-popup", state="hidden")
+    assert page.locator(".delete-icon").count() == 0
 
 
 def test_theme_toggle_switches_and_persists(page, servers):
