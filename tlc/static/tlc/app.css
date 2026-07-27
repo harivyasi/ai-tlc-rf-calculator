@@ -24,8 +24,12 @@
     --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* Dark palette. Applied when the OS prefers dark and the user hasn't chosen
+   explicitly, OR when explicitly selected via the toggle (data-theme="dark").
+   The media query excludes an explicit "light" choice so the toggle always
+   wins over the system preference. */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --primary-soft: #16233b;
         --bg: #0f141b;
         --surface: #161c24;
@@ -37,6 +41,18 @@
         --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
         --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
     }
+}
+:root[data-theme="dark"] {
+    --primary-soft: #16233b;
+    --bg: #0f141b;
+    --surface: #161c24;
+    --surface-2: #1b222c;
+    --border: #2a333f;
+    --text: #e6ebf2;
+    --text-muted: #98a2b3;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
 }
 
 * { box-sizing: border-box; }
@@ -69,10 +85,15 @@ body {
 }
 .header h1 { margin: 0; font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; }
 .header p { margin: 0.25rem 0 0; opacity: 0.85; font-size: 0.9rem; }
-.version-badge {
+.header-actions {
     position: absolute;
     top: 1rem;
     right: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.version-badge {
     font-size: 0.75rem;
     font-weight: 600;
     padding: 0.15rem 0.5rem;
@@ -80,6 +101,22 @@ body {
     background: rgba(255, 255, 255, 0.18);
     color: #fff;
 }
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.theme-toggle:hover { background: rgba(255, 255, 255, 0.3); }
+.theme-toggle .icon { width: 18px; height: 18px; }
 
 .content-wrapper { padding: 1.5rem; }
 
@@ -300,7 +337,7 @@ body {
 .status-active { background: rgba(47, 158, 87, 0.15); color: var(--green); }
 
 /* Floating action buttons */
-.fab-container { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: 0.6rem; z-index: 900; }
+.fab-container { position: fixed; bottom: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: 0.6rem; z-index: 900; }
 .lab-fab {
     width: 46px;
     height: 46px;

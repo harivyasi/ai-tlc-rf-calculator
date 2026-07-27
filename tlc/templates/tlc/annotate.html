@@ -29,6 +29,8 @@
             <symbol id="i-cloud-up" viewBox="0 0 24 24"><path d="M16 16l-4-4-4 4M12 12v9M20.4 14.5A5 5 0 0 0 18 5h-1.26A8 8 0 1 0 3 15.3"/></symbol>
             <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h0"/></symbol>
             <symbol id="i-play" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></symbol>
+            <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+            <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
         </g>
     </defs>
 </svg>
@@ -37,7 +39,14 @@
     <div class="header">
         <h1>TLC RF Calculator</h1>
         <p>Thin Layer Chromatography — retention factor analysis</p>
-        {% if version %}<span class="version-badge">v{{ version }}</span>{% endif %}
+        <div class="header-actions">
+            {% if version %}<span class="version-badge">v{{ version }}</span>{% endif %}
+            <button type="button" id="theme-toggle" class="theme-toggle"
+                    data-action="toggleTheme" title="Toggle light/dark theme"
+                    aria-label="Toggle light/dark theme">
+                <svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg>
+            </button>
+        </div>
     </div>
 
     <div class="content-wrapper">

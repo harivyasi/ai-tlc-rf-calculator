@@ -254,6 +254,27 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
     assert rows == 2, f"expected 2 spots within the region, table had {rows}"
 
 
+def test_theme_toggle_switches_and_persists(page, servers):
+    """The theme button flips light/dark, overrides the OS default, and persists."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.wait_for_selector("#theme-toggle")
+
+    page.click("#theme-toggle")
+    first = page.evaluate("() => document.documentElement.getAttribute('data-theme')")
+    assert first in ("light", "dark")
+
+    page.click("#theme-toggle")
+    second = page.evaluate("() => document.documentElement.getAttribute('data-theme')")
+    assert second in ("light", "dark") and second != first, "toggle did not flip the theme"
+
+    # Persisted across a reload.
+    page.reload()
+    page.wait_for_selector("#theme-toggle")
+    after = page.evaluate("() => document.documentElement.getAttribute('data-theme')")
+    assert after == second, f"theme not persisted: {after!r} != {second!r}"
+
+
 def test_plate_region_suggests_reference_lines(page, servers, blob_image_path):
     """Drawing a plate area suggests Min/Max lines, so RF computes without them."""
     _stub_cdn(page)
