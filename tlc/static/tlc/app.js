@@ -344,8 +344,9 @@ function addHorizontalLine(event) { startLine("horizontal", true, event); }
 function addVerticalLine(event) { startLine("vertical", false, event); }
 
 function drawLine(event) {
-    const x = event.offsetX;
-    const y = event.offsetY;
+    const p = pointerCanvas(event);
+    const x = p.x;
+    const y = p.y;
 
     if (isHorizontal) {
         if (lineType === "min" || lineType === "max") {
@@ -449,24 +450,36 @@ function addSpot(origX, origY) {
 
 function drawSpot(event) {
     if (!addingSpots || isDragging || justDragged) return;
-    if (!addSpot(event.offsetX * window.scaleFactor, event.offsetY * window.scaleFactor)) {
+    const p = pointerCanvas(event);
+    if (!addSpot(p.x * window.scaleFactor, p.y * window.scaleFactor)) {
         notify("Spot already exists here.", "warning");
         return;
     }
     redrawCanvas();
 }
 
+// Map a pointer event to canvas *bitmap* coordinates. Using the rendered rect
+// (not event.offsetX) keeps clicks aligned with the image even when the canvas
+// is CSS-scaled by max-width — the cause of the fresh-load misalignment.
+function pointerCanvas(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = rect.width ? canvas.width / rect.width : 1;
+    const sy = rect.height ? canvas.height / rect.height : 1;
+    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+}
+
 // --- Mouse interaction (drag / double-click delete) -----------------------
 function handleMouseDown(e) {
     if (e.target.classList.contains("delete-icon")) return;
+    const p = pointerCanvas(e);
     if (selectingRegion) {
         draggingRegion = true;
-        regionStart = { x: e.offsetX, y: e.offsetY };
-        regionCurrent = { x: e.offsetX, y: e.offsetY };
+        regionStart = { x: p.x, y: p.y };
+        regionCurrent = { x: p.x, y: p.y };
         return;
     }
-    const x = e.offsetX;
-    const y = e.offsetY;
+    const x = p.x;
+    const y = p.y;
 
     for (const spot of spots) {
         const dx = x - spot.x / window.scaleFactor;
@@ -500,29 +513,30 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
+    const p = pointerCanvas(e);
     if (draggingRegion) {
-        regionCurrent = { x: e.offsetX, y: e.offsetY };
+        regionCurrent = { x: p.x, y: p.y };
         redrawCanvas();
         return;
     }
     if (!isDragging) {
         let over = false;
         for (const spot of spots) {
-            const dx = e.offsetX - spot.x / window.scaleFactor;
-            const dy = e.offsetY - spot.y / window.scaleFactor;
+            const dx = p.x - spot.x / window.scaleFactor;
+            const dy = p.y - spot.y / window.scaleFactor;
             if (Math.sqrt(dx * dx + dy * dy) < 12) { over = true; break; }
         }
         canvas.style.cursor = over ? "pointer" : "default";
         return;
     }
     if (draggingSpot) {
-        draggingSpot.x = (e.offsetX - dragOffsetX) * window.scaleFactor;
-        draggingSpot.y = (e.offsetY - dragOffsetY) * window.scaleFactor;
+        draggingSpot.x = (p.x - dragOffsetX) * window.scaleFactor;
+        draggingSpot.y = (p.y - dragOffsetY) * window.scaleFactor;
     } else if (draggingLine) {
         if (isHorizontalLine(draggingLine)) {
-            draggingLine.y = (e.offsetY - lineDragOffsetY) * window.scaleFactor;
+            draggingLine.y = (p.y - lineDragOffsetY) * window.scaleFactor;
         } else {
-            draggingLine.x = (e.offsetX - lineDragOffsetX) * window.scaleFactor;
+            draggingLine.x = (p.x - lineDragOffsetX) * window.scaleFactor;
         }
     }
     redrawCanvas();
@@ -565,9 +579,10 @@ function handleMouseUp() {
 }
 
 function handleDoubleClick(e) {
+    const p = pointerCanvas(e);
     for (const spot of spots) {
-        const dx = e.offsetX - spot.x / window.scaleFactor;
-        const dy = e.offsetY - spot.y / window.scaleFactor;
+        const dx = p.x - spot.x / window.scaleFactor;
+        const dy = p.y - spot.y / window.scaleFactor;
         if (Math.sqrt(dx * dx + dy * dy) < 12) {
             deleteSpot(spot.id);
             notify("Spot deleted.", "info");
