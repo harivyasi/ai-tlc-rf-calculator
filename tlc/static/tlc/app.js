@@ -17,8 +17,9 @@ let image = new Image();
 const pageUrl = new URL(window.location.href);
 const encodedUrl = pageUrl.searchParams.get("url");
 // The ELN passes the image URL (also used as the upload target) via "url".
-const decodedImageUrl = encodedUrl ? decodeURIComponent(encodedUrl) : null;
-const decodedPostUrl = decodedImageUrl;
+const elnImageUrl = encodedUrl ? decodeURIComponent(encodedUrl) : null;
+// The ELN reuses the image URL as the results upload target.
+const elnPostUrl = elnImageUrl;
 
 let canvas;
 let ctx;
@@ -503,7 +504,7 @@ function tableToCsvRows() {
         .map((row) => Array.from(row.cells).map((c) => c.textContent.trim()));
 }
 
-function getCSVData() {
+function buildCsvContent() {
     let csv = "Measurement type;thin layer chromatography (TLC);CHMO:0001007\n\n";
     csv += "mixture_label (X axis),substance_label (Y axis),RF value\n";
     const inline = [];
@@ -516,7 +517,7 @@ function getCSVData() {
 }
 
 function saveCSV() {
-    const uri = encodeURI("data:text/csv;charset=utf-8," + getCSVData());
+    const uri = encodeURI("data:text/csv;charset=utf-8," + buildCsvContent());
     const link = document.createElement("a");
     link.href = uri;
     link.download = "rf_values.csv";
@@ -528,13 +529,13 @@ function saveCSV() {
 
 // --- Save back to the ELN -------------------------------------------------
 function postToEln(blob, filename) {
-    if (!decodedPostUrl) {
+    if (!elnPostUrl) {
         notify("No ELN target configured.", "warning");
         return;
     }
     const formData = new FormData();
     formData.append("file", blob, filename);
-    fetch(decodedPostUrl, {
+    fetch(elnPostUrl, {
         method: "POST",
         body: formData,
         headers: { "X-CSRFToken": getCookie("csrftoken") },
@@ -570,21 +571,21 @@ function saveImageToServer() {
         notify("Annotated image not found. Calculate RF values first.", "error");
         return;
     }
-    const source = new Image();
-    source.crossOrigin = "anonymous";
-    source.onload = function () {
-        const tmp = document.createElement("canvas");
-        tmp.width = source.naturalWidth;
-        tmp.height = source.naturalHeight;
-        tmp.getContext("2d").drawImage(source, 0, 0);
-        tmp.toBlob((blob) => postToEln(blob, timestampedName("png")), "image/png");
+    const sourceImage = new Image();
+    sourceImage.crossOrigin = "anonymous";
+    sourceImage.onload = function () {
+        const exportCanvas = document.createElement("canvas");
+        exportCanvas.width = sourceImage.naturalWidth;
+        exportCanvas.height = sourceImage.naturalHeight;
+        exportCanvas.getContext("2d").drawImage(sourceImage, 0, 0);
+        exportCanvas.toBlob((blob) => postToEln(blob, timestampedName("png")), "image/png");
     };
-    source.onerror = () => notify("Failed to load annotated image.", "error");
-    source.src = annotated.src;
+    sourceImage.onerror = () => notify("Failed to load annotated image.", "error");
+    sourceImage.src = annotated.src;
 }
 
 function saveCSVToServer() {
-    const csv = getCSVData();
+    const csv = buildCsvContent();
     if (!csv) {
         notify("No CSV data to save.", "warning");
         return;
@@ -686,8 +687,8 @@ function loadLocalImage(dataURL, fileName) {
 }
 
 function loadELNImage() {
-    if (!decodedImageUrl) return;
-    fetch("/fetch-image/?url=" + encodeURIComponent(decodedImageUrl))
+    if (!elnImageUrl) return;
+    fetch("/fetch-image/?url=" + encodeURIComponent(elnImageUrl))
         .then((response) => response.json())
         .then((data) => {
             if (!data.imagePath) {

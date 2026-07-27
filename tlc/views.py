@@ -36,7 +36,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 
 from config.env import env_list
 
-from .detection import detect_spots as _detect_spots
+from . import detection
 
 logger = logging.getLogger(__name__)
 
@@ -368,7 +368,7 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
         return error
     assert image is not None  # guaranteed when error is None
 
-    spots = _detect_spots(image)
+    spots = detection.detect_spots(image)
     return JsonResponse({"spots": spots, "count": len(spots)})
 
 
