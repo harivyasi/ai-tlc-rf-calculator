@@ -254,6 +254,32 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
     assert rows == 2, f"expected 2 spots within the region, table had {rows}"
 
 
+def test_plate_region_suggests_reference_lines(page, servers, blob_image_path):
+    """Drawing a plate area suggests Min/Max lines, so RF computes without them."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(
+        "() => { const h = document.getElementById('annotated-heading');"
+        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
+    )
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Plate Area')")
+    box = canvas.bounding_box()
+    page.mouse.move(box["x"] + 30, box["y"] + 30)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 380, box["y"] + 270, steps=8)
+    page.mouse.up()
+
+    # No manual Min/Max lines: they were suggested from the region edges.
+    page.click("button:has-text('Auto-detect')")
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert page.locator("#values-table tbody tr").count() == 3
+
+
 @pytest.mark.parametrize("frontend,expected", [("new", 1), ("legacy", 2)])
 def test_eln_load_fetch_count(page, servers, test_image_path, frontend, expected):
     """ELN-load path: the refactor fetches once; the original fetched twice.

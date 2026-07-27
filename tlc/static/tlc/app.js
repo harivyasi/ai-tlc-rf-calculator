@@ -26,6 +26,7 @@ let ctx;
 let lines = [];
 let spots = [];
 let spotSeq = 0;
+let lineSeq = 0;
 
 let currentLine = null;
 let isHorizontal = true;
@@ -211,6 +212,27 @@ function selectPlateArea(event) {
     updateAnnotatedHeading("editing");
     if (event && event.currentTarget) setActiveButton(event.currentTarget);
     notify("Drag a box around the plate, then Auto-detect. Click once to clear.", "info");
+}
+
+// Suggest Min (baseline, bottom edge) and Max (solvent front, top edge) lines
+// from the plate region. Only fills in a line the user hasn't already placed;
+// the suggestions are ordinary lines, so they can be dragged or deleted.
+function suggestReferenceLines() {
+    if (!plateRegion) return;
+    let added = false;
+    if (!lines.some((l) => l.type === "max")) {
+        lines.push({ id: Date.now() + lineSeq++, type: "max", y: plateRegion.y, text: "max" });
+        added = true;
+    }
+    if (!lines.some((l) => l.type === "min")) {
+        const bottom = plateRegion.y + plateRegion.height;
+        lines.push({ id: Date.now() + lineSeq++, type: "min", y: bottom, text: "min" });
+        added = true;
+    }
+    if (added) {
+        redrawCanvas();
+        notify("Suggested Min/Max lines — drag to adjust or delete.", "info");
+    }
 }
 
 function startLine(type, horizontal, event) {
@@ -422,6 +444,7 @@ function handleMouseUp() {
                 height: Math.round(h * sf),
             };
             notify("Plate area set — Auto-detect will use it.", "success");
+            suggestReferenceLines();
         }
         redrawCanvas();
         return;

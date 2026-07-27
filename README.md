@@ -28,7 +28,8 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 - **Assisted spot detection** ("Auto-detect"): scikit-image Laplacian-of-Gaussian
   blobs + lane-profile peak finding, shape-gated to suppress lines/labels.
   Detected spots are editable suggestions. Optionally draw a **Plate Area** box
-  first to confine detection to the plate.
+  first to confine detection to the plate; it also suggests Min/Max reference
+  lines from its edges, which remain draggable/deletable.
 - CSV export (download locally or POST back to an ELN).
 
 ## Tech stack
