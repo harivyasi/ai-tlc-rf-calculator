@@ -16,10 +16,9 @@ let image = new Image();
 
 const pageUrl = new URL(window.location.href);
 const encodedUrl = pageUrl.searchParams.get("url");
-// The ELN passes the image URL (also used as the upload target) via "url".
-const elnImageUrl = encodedUrl ? decodeURIComponent(encodedUrl) : null;
-// The ELN reuses the image URL as the results upload target.
-const elnPostUrl = elnImageUrl;
+// Chemotion passes one signed URL (via ?url=) that serves the source image on
+// GET and accepts the annotated results on POST — the same endpoint for both.
+const elnUrl = encodedUrl ? decodeURIComponent(encodedUrl) : null;
 
 let canvas;
 let ctx;
@@ -529,13 +528,13 @@ function saveCSV() {
 
 // --- Save back to the ELN -------------------------------------------------
 function postToEln(blob, filename) {
-    if (!elnPostUrl) {
+    if (!elnUrl) {
         notify("No ELN target configured.", "warning");
         return;
     }
     const formData = new FormData();
     formData.append("file", blob, filename);
-    fetch(elnPostUrl, {
+    fetch(elnUrl, {
         method: "POST",
         body: formData,
         headers: { "X-CSRFToken": getCookie("csrftoken") },
@@ -687,8 +686,8 @@ function loadLocalImage(dataURL, fileName) {
 }
 
 function loadELNImage() {
-    if (!elnImageUrl) return;
-    fetch("/fetch-image/?url=" + encodeURIComponent(elnImageUrl))
+    if (!elnUrl) return;
+    fetch("/fetch-image/?url=" + encodeURIComponent(elnUrl))
         .then((response) => response.json())
         .then((data) => {
             if (!data.imagePath) {

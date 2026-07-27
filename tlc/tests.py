@@ -5,12 +5,23 @@ from __future__ import annotations
 import base64
 import glob
 import os
+from unittest import mock
 
 import cv2
 import numpy as np
 from django.conf import settings
 from django.test import Client, SimpleTestCase
 from django.urls import reverse
+
+
+def _fake_response(status: int, headers: dict | None = None, body: bytes = b"") -> mock.Mock:
+    """Build a minimal stand-in for a streamed ``requests.Response``."""
+    response = mock.Mock()
+    response.status_code = status
+    response.headers = headers or {}
+    response.iter_content = lambda chunk_size=65536: iter([body] if body else [])
+    response.close = lambda: None
+    return response
 
 
 def _png_data_url(width: int = 300, height: int = 300) -> str:
@@ -212,3 +223,24 @@ class FetchImageSecurityTests(SimpleTestCase):
     def test_non_http_scheme_is_rejected(self) -> None:
         response = self.client.get(reverse("fetch_image"), {"url": "file:///etc/passwd"})
         self.assertEqual(response.status_code, 400)
+
+    def test_redirect_to_private_ip_is_rejected(self) -> None:
+        # A public URL that redirects to a private address must not be followed.
+        with mock.patch("tlc.views.requests.get") as mock_get:
+            mock_get.return_value = _fake_response(302, {"Location": "http://10.0.0.1/x.png"})
+            response = self.client.get(reverse("fetch_image"), {"url": "http://93.184.216.34/a"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(mock_get.call_count, 1)  # private target never fetched
+
+    def test_public_redirect_is_followed(self) -> None:
+        ok, buf = cv2.imencode(".png", np.zeros((8, 8, 3), np.uint8))
+        assert ok
+        with mock.patch("tlc.views.requests.get") as mock_get:
+            mock_get.side_effect = [
+                _fake_response(302, {"Location": "http://93.184.216.34/final.png"}),
+                _fake_response(200, body=buf.tobytes()),
+            ]
+            response = self.client.get(reverse("fetch_image"), {"url": "http://93.184.216.34/a"})
+        self.assertEqual(response.status_code, 200)
+        name = response.json()["imagePath"]
+        os.remove(os.path.join(settings.MEDIA_ROOT, name))

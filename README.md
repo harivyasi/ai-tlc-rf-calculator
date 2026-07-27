@@ -111,8 +111,10 @@ uv run python manage.py check --deploy
 
 - **Image fetching (`/fetch-image/`)** validates URLs against SSRF: only
   `http(s)` is allowed, the host must resolve to a public address, and an
-  optional `ELN_ALLOWED_HOSTS` allowlist can restrict it further. Downloads are
-  bounded by a timeout and a 25 MB size cap, and redirects are not followed.
+  optional `ELN_ALLOWED_HOSTS` allowlist can restrict it further. Redirects are
+  followed (ELN attachment URLs often redirect to storage) but every hop is
+  re-validated against the same policy. Downloads are bounded by a timeout and a
+  25 MB size cap.
 - **Image serving (`/serve-image/`)** is confined to `MEDIA_ROOT`; path
   traversal is not possible.
 - CSRF protection is enforced on the calculation endpoint.
@@ -130,8 +132,23 @@ docker run --rm -p 8050:8050 \
   -e SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \
   -e ALLOWED_HOSTS="tlc.example.org" \
   -e CSRF_TRUSTED_ORIGINS="https://tlc.example.org" \
+  -e CSP_CONNECT_SRC="https://eln.example.org" \
   tlc-rf-calculator
 ```
+
+### ELN (Chemotion) integration
+
+Chemotion opens the tool with a single signed URL that both serves the plate
+image (GET) and receives the annotated results (POST):
+
+```text
+https://tlc.example.org/?url=https%3A%2F%2Feln.example.org%2Fapi%2Fv1%2Fpublic%2Fthird_party_apps%2F<jwt>
+```
+
+For that flow, set `CSP_CONNECT_SRC` to the ELN origin (so the browser may POST
+results back), e.g. `CSP_CONNECT_SRC="https://eln.example.org"`, and optionally
+`ELN_ALLOWED_HOSTS="eln.example.org"` to restrict which hosts the server will
+fetch images from.
 
 The app listens on port `8050` and exposes a health probe at `/healthz`. Static
 files are served by WhiteNoise; user-generated media is served by the app (fine

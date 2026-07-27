@@ -24,7 +24,7 @@ import os
 import socket
 import uuid
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import cv2
 import numpy as np
@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 # Limits applied when fetching a remote (ELN) image.
 FETCH_TIMEOUT_SECONDS = 10
 MAX_IMAGE_BYTES = 25 * 1024 * 1024  # 25 MB
+MAX_REDIRECTS = 3  # ELN attachment URLs often redirect to storage
 
 
 def healthz(request: HttpRequest) -> JsonResponse:
@@ -142,6 +143,37 @@ def _is_safe_remote_url(url: str) -> bool:
         ):
             return False
     return True
+
+
+def _fetch_following_safe_redirects(url: str) -> requests.Response | None:
+    """GET ``url``, following redirects while re-validating each hop for SSRF.
+
+    The initial URL must already have passed :func:`_is_safe_remote_url`. Each
+    redirect ``Location`` is resolved and re-validated before it is followed, so
+    an ELN endpoint that redirects to storage works without opening an SSRF hole.
+
+    Args:
+        url: The (already validated) URL to fetch.
+
+    Returns:
+        The final non-redirect streamed response, or ``None`` if a redirect
+        target is unsafe or missing, or the redirect limit is exceeded.
+    """
+    for _ in range(MAX_REDIRECTS + 1):
+        response = requests.get(
+            url, timeout=FETCH_TIMEOUT_SECONDS, stream=True, allow_redirects=False
+        )
+        if response.status_code not in (301, 302, 303, 307, 308):
+            return response
+        location = response.headers.get("Location")
+        response.close()
+        if not location:
+            return None
+        url = urljoin(url, location)
+        if not _is_safe_remote_url(url):
+            logger.warning("Refused unsafe redirect target: %r", url)
+            return None
+    return None
 
 
 def _load_annotation_image(
@@ -380,10 +412,12 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
 def fetch_and_save_image(request: HttpRequest) -> JsonResponse:
     """Fetch an ELN image from a remote URL and store it under ``MEDIA_ROOT``.
 
-    The URL is validated against SSRF (see :func:`_is_safe_remote_url`), the
-    download is bounded by a timeout and a maximum size, and the file is saved
-    under a random name. Only that name (not a filesystem path) is returned, so
-    the client cannot influence where subsequent reads occur.
+    The URL is validated against SSRF (see :func:`_is_safe_remote_url`);
+    redirects are followed but each hop is re-validated
+    (:func:`_fetch_following_safe_redirects`). The download is bounded by a
+    timeout and a maximum size, and the file is saved under a random name. Only
+    that name (not a filesystem path) is returned, so the client cannot
+    influence where subsequent reads occur.
 
     Args:
         request: The HTTP request; expects a ``url`` query parameter.
@@ -400,14 +434,12 @@ def fetch_and_save_image(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "The provided URL is not allowed."}, status=400)
 
     try:
-        response = requests.get(
-            image_url, timeout=FETCH_TIMEOUT_SECONDS, stream=True, allow_redirects=False
-        )
+        response = _fetch_following_safe_redirects(image_url)
     except requests.RequestException:
         logger.warning("Error fetching remote image", exc_info=True)
         return JsonResponse({"error": "Failed to fetch image"}, status=400)
 
-    if response.status_code != 200:
+    if response is None or response.status_code != 200:
         return JsonResponse({"error": "Failed to fetch image"}, status=400)
 
     chunks: list[bytes] = []
