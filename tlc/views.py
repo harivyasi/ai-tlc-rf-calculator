@@ -36,6 +36,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from config import __version__
 from config.env import env_list
 
 from . import detection
@@ -58,9 +59,9 @@ def healthz(request: HttpRequest) -> JsonResponse:
         request: The incoming HTTP request.
 
     Returns:
-        A small JSON body indicating the service is up.
+        A small JSON body indicating the service is up, with the app version.
     """
-    return JsonResponse({"status": "ok"})
+    return JsonResponse({"status": "ok", "version": __version__})
 
 
 @ensure_csrf_cookie
@@ -76,7 +77,7 @@ def upload_image(request: HttpRequest) -> HttpResponse:
     Returns:
         The rendered annotation page.
     """
-    return render(request, "tlc/annotate.html")
+    return render(request, "tlc/annotate.html", {"version": __version__})
 
 
 # ---------------------------------------------------------------------------

@@ -62,12 +62,24 @@ body {
 }
 
 .header {
+    position: relative;
     background: linear-gradient(135deg, var(--primary), var(--primary-dark));
     color: #fff;
     padding: 1.5rem 2rem;
 }
 .header h1 { margin: 0; font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; }
 .header p { margin: 0.25rem 0 0; opacity: 0.85; font-size: 0.9rem; }
+.version-badge {
+    position: absolute;
+    top: 1rem;
+    right: 1.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+}
 
 .content-wrapper { padding: 1.5rem; }
 

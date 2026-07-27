@@ -1,6 +1,6 @@
 [project]
 name = "tlc-rf-calculator"
-version = "0.1.0"
+version = "2.0.0"
 description = "Web tool for computing retention factor (RF) values from annotated Thin Layer Chromatography (TLC) plate images."
 readme = "README.md"
 requires-python = ">=3.14"

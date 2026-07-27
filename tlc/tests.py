@@ -170,10 +170,25 @@ def _blobs_data_url(centers: list[tuple[int, int]], size: int = 500) -> str:
 
 
 class HealthzTests(SimpleTestCase):
-    def test_healthz_returns_ok(self) -> None:
+    def test_healthz_returns_ok_with_version(self) -> None:
+        from config import __version__
+
         response = Client().get(reverse("healthz"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+        self.assertEqual(response.json()["version"], __version__)
+
+
+class VersionTests(SimpleTestCase):
+    def test_pyproject_and_package_versions_match(self) -> None:
+        import tomllib
+        from pathlib import Path
+
+        from config import __version__
+
+        pyproject = Path(settings.BASE_DIR) / "pyproject.toml"
+        data = tomllib.loads(pyproject.read_text())
+        self.assertEqual(data["project"]["version"], __version__)
 
 
 class SecurityHeaderTests(SimpleTestCase):
