@@ -501,6 +501,24 @@ body {
 .help-drawer.open { display: flex; }
 .help-card { width: 100%; max-width: 560px; max-height: 85vh; overflow: auto; padding: 1.25rem 1.5rem; background: var(--surface); color: var(--text); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
 .help-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+/* Visible on the light help card (unlike the header's white-on-blue toggle). */
+.help-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.help-close:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.help-close .icon { width: 18px; height: 18px; }
 
 @media (max-width: 760px) {
     .work-area.layout-columns { grid-template-columns: 1fr; }

@@ -171,10 +171,15 @@ function init() {
     state.canvas.addEventListener("dblclick", handleDoubleClick);
 
     document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-            disableOtherActions();
-            hidePopup();
+        if (e.key !== "Escape") return;
+        // Escape closes the help drawer first if it's open (it's a modal).
+        const drawer = document.getElementById("help-drawer");
+        if (drawer && drawer.classList.contains("open")) {
+            drawer.classList.remove("open");
+            return;
         }
+        disableOtherActions();
+        hidePopup();
     });
 
     // Default to ELN when a url param is present, otherwise local upload.

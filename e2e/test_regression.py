@@ -576,15 +576,32 @@ def test_calculate_button_gates_on_required_annotations(page, servers, test_imag
 
 
 def test_help_drawer_toggles_open_and_closed(page, servers, test_image_path):
-    """The Help button opens and closes the help drawer."""
+    """The Help button opens and closes the help drawer via its visible close button."""
     _stub_cdn(page)
     page.goto(servers["new"] + "/")
     page.locator("[data-action='toggleHelp']").first.click()  # toolbar Help button
     page.wait_for_function(
         "() => document.getElementById('help-drawer').classList.contains('open')"
     )
-    # Close via the drawer's own button (the toolbar one is now covered by the drawer).
-    page.click("#help-drawer [data-action='toggleHelp']")
+    # The close button must be a visible control (regression: it was white-on-white,
+    # so the user got stuck with no way out).
+    close_btn = page.locator("#help-drawer .help-close")
+    assert close_btn.is_visible(), "help drawer has no visible close button"
+    close_btn.click()
+    page.wait_for_function(
+        "() => !document.getElementById('help-drawer').classList.contains('open')"
+    )
+
+
+def test_escape_closes_help_drawer(page, servers, test_image_path):
+    """Pressing Escape closes the help drawer (it was previously inescapable)."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.locator("[data-action='toggleHelp']").first.click()
+    page.wait_for_function(
+        "() => document.getElementById('help-drawer').classList.contains('open')"
+    )
+    page.keyboard.press("Escape")
     page.wait_for_function(
         "() => !document.getElementById('help-drawer').classList.contains('open')"
     )
