@@ -86,11 +86,14 @@ Optionally restrict which hosts the server will fetch images from:
 ELN_ALLOWED_HOSTS="<eln-host>"
 ```
 
-### Worked example (KIT deployment)
+### Worked example
+
+Given the tool at `tlc.example.org` and a Chemotion instance at
+`eln.example.org`:
 
 ```bash
-ALLOWED_HOSTS="tlc.chemserv.scc.kit.edu"
-CSRF_TRUSTED_ORIGINS="https://tlc.chemserv.scc.kit.edu"
-CSP_CONNECT_SRC="https://workshop.chemotion.scc.kit.edu"
-ELN_ALLOWED_HOSTS="workshop.chemotion.scc.kit.edu"
+ALLOWED_HOSTS="tlc.example.org"
+CSRF_TRUSTED_ORIGINS="https://tlc.example.org"
+CSP_CONNECT_SRC="https://eln.example.org"
+ELN_ALLOWED_HOSTS="eln.example.org"
 ```
