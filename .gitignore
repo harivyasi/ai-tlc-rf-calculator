@@ -35,3 +35,5 @@ eln_related_docs/
 # Stray test photos pasted into the repo root
 /*.jpg
 /*.jpeg
+.coverage
+htmlcov/

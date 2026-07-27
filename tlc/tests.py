@@ -9,10 +9,12 @@ import os
 import shutil
 import tempfile
 import time
+from typing import Any
 from unittest import mock
 
 import cv2
 import numpy as np
+import requests
 from django.conf import settings
 from django.core.management import call_command
 from django.test import Client, SimpleTestCase
@@ -21,7 +23,12 @@ from PIL import Image
 
 from config.env import env_bool, env_int, env_list
 from tlc.detection import detect_spots
-from tlc.views import _decode_data_url, _draw_annotations, _parse_text_scale
+from tlc.views import (
+    _decode_data_url,
+    _draw_annotations,
+    _parse_region,
+    _parse_text_scale,
+)
 
 
 def _fake_response(status: int, headers: dict | None = None, body: bytes = b"") -> mock.Mock:
@@ -467,3 +474,193 @@ class TextScaleTests(SimpleTestCase):
             return int(np.all(img == (0, 0, 255), axis=2).sum())
 
         self.assertGreater(red_label_pixels(3.0), red_label_pixels(1.0))
+
+
+class CalculateRfValidationTests(SimpleTestCase):
+    """Request-validation and image-loading error branches of calculate_rf."""
+
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def tearDown(self) -> None:
+        for pattern in ("annotated_*.png", "rf_values_*.csv"):
+            for path in glob.glob(os.path.join(settings.MEDIA_ROOT, pattern)):
+                os.remove(path)
+
+    def _post(self, payload: dict) -> Any:
+        return self.client.post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        )
+
+    def test_get_is_rejected(self) -> None:
+        self.assertEqual(self.client.get(reverse("calculate_rf")).status_code, 405)
+
+    def test_invalid_json_is_rejected(self) -> None:
+        response = self.client.post(
+            reverse("calculate_rf"), data="{not json", content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_missing_lines_is_rejected(self) -> None:
+        self.assertEqual(self._post({"spots": [{"x": 1, "y": 2}]}).status_code, 400)
+
+    def test_missing_spots_is_rejected(self) -> None:
+        self.assertEqual(self._post({"lines": [{"type": "min", "y": 1}]}).status_code, 400)
+
+    def test_equal_min_max_is_rejected(self) -> None:
+        payload = _valid_payload()
+        payload["lines"] = [{"type": "min", "y": 100}, {"type": "max", "y": 100}]
+        self.assertEqual(self._post(payload).status_code, 400)
+
+    def test_undecodable_local_image_is_rejected(self) -> None:
+        payload = _valid_payload()
+        payload["imageData"] = "data:image/png;base64,@@notbase64@@"
+        self.assertEqual(self._post(payload).status_code, 400)
+
+    def test_missing_eln_image_src_is_rejected(self) -> None:
+        payload = _valid_payload()
+        payload["isLocalImage"] = False
+        payload.pop("imageSrc")
+        payload.pop("imageData")
+        self.assertEqual(self._post(payload).status_code, 400)
+
+    def test_unknown_eln_image_is_rejected(self) -> None:
+        payload = _valid_payload()
+        payload["isLocalImage"] = False
+        payload["imageSrc"] = "does_not_exist.png"
+        payload.pop("imageData")
+        self.assertEqual(self._post(payload).status_code, 400)
+
+    def test_unreadable_media_file_is_rejected(self) -> None:
+        # A file that exists under MEDIA_ROOT but isn't a decodable image.
+        os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+        junk = os.path.join(settings.MEDIA_ROOT, "not_an_image_test.png")
+        with open(junk, "wb") as fh:
+            fh.write(b"this is not a PNG")
+        try:
+            payload = _valid_payload()
+            payload["isLocalImage"] = False
+            payload["imageSrc"] = "not_an_image_test.png"
+            payload.pop("imageData")
+            self.assertEqual(self._post(payload).status_code, 400)
+        finally:
+            os.remove(junk)
+
+    def test_oversized_image_is_rejected(self) -> None:
+        with mock.patch("tlc.views.MAX_IMAGE_PIXELS", 1000):  # 300x300 exceeds this
+            self.assertEqual(self._post(_valid_payload()).status_code, 400)
+
+    def test_rf_outside_zero_to_one_is_skipped(self) -> None:
+        payload = _valid_payload()
+        payload["lines"] = [{"type": "min", "y": 200}, {"type": "max", "y": 0}]
+        payload["spots"] = [{"x": 150, "y": 200}]  # rf == 0 -> filtered out
+        response = self._post(payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["rf_values"], [])
+
+    def test_rotation_180_swaps_nothing_270_swaps_dims(self) -> None:
+        # 180° keeps WxH; 270° swaps them. Exercises both _rotate_image branches.
+        for rotation, expected in ((180, (600, 400)), (270, (400, 600))):
+            payload = _valid_payload()
+            payload["imageData"] = _png_data_url(width=400, height=600)
+            payload["rotation"] = rotation
+            response = self._post(payload)
+            self.assertEqual(response.status_code, 200)
+            name = response.json()["annotated_image_url"].split("/")[-1]
+            annotated = cv2.imread(os.path.join(settings.MEDIA_ROOT, name))
+            assert annotated is not None
+            self.assertEqual(annotated.shape[:2], expected)
+
+    def test_eln_media_image_is_loaded_and_computed(self) -> None:
+        # The ELN branch: a real image already under MEDIA_ROOT is read,
+        # rotated, and used for the RF calculation (not just e2e-tested).
+        os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+        name = "eln_source_test.png"
+        path = os.path.join(settings.MEDIA_ROOT, name)
+        cv2.imwrite(path, np.full((300, 300, 3), 255, dtype=np.uint8))
+        try:
+            payload = _valid_payload()
+            payload["isLocalImage"] = False
+            payload["imageSrc"] = name
+            payload.pop("imageData")
+            response = self._post(payload)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["rf_values"][0]["rf"], 0.5)
+        finally:
+            os.remove(path)
+
+
+class DetectSpotsErrorTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_get_is_rejected(self) -> None:
+        self.assertEqual(self.client.get(reverse("detect_spots")).status_code, 405)
+
+    def test_invalid_json_is_rejected(self) -> None:
+        response = self.client.post(
+            reverse("detect_spots"), data="nope", content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_image_load_error_is_propagated(self) -> None:
+        response = self.client.post(
+            reverse("detect_spots"),
+            data={"isLocalImage": False},  # no imageSrc
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+
+class FetchImageErrorTests(SimpleTestCase):
+    """Remote-fetch failure branches (SSRF is covered separately)."""
+
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_network_error_returns_400(self) -> None:
+        with mock.patch("tlc.views.requests.get", side_effect=requests.RequestException("boom")):
+            response = self.client.get(reverse("fetch_image"), {"url": "http://93.184.216.34/a"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_oversized_remote_image_is_rejected(self) -> None:
+        with (
+            mock.patch("tlc.views.MAX_IMAGE_BYTES", 4),
+            mock.patch("tlc.views.requests.get") as mock_get,
+        ):
+            mock_get.return_value = _fake_response(200, body=b"0123456789")  # 10 > 4
+            response = self.client.get(reverse("fetch_image"), {"url": "http://93.184.216.34/a"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_image_content_is_rejected(self) -> None:
+        with mock.patch("tlc.views.requests.get") as mock_get:
+            mock_get.return_value = _fake_response(200, body=b"definitely not an image")
+            response = self.client.get(reverse("fetch_image"), {"url": "http://93.184.216.34/a"})
+        self.assertEqual(response.status_code, 400)
+
+
+class ParseRegionTests(SimpleTestCase):
+    def test_non_dict_is_none(self) -> None:
+        self.assertIsNone(_parse_region(None))
+        self.assertIsNone(_parse_region("x"))
+
+    def test_missing_or_bad_keys_is_none(self) -> None:
+        self.assertIsNone(_parse_region({"x": 1, "y": 2}))  # no width/height
+        self.assertIsNone(_parse_region({"x": "a", "y": 2, "width": 3, "height": 4}))
+
+    def test_non_positive_size_is_none(self) -> None:
+        self.assertIsNone(_parse_region({"x": 0, "y": 0, "width": 0, "height": 5}))
+
+    def test_valid_region_is_parsed(self) -> None:
+        self.assertEqual(_parse_region({"x": 1, "y": 2, "width": 3, "height": 4}), (1, 2, 3, 4))
+
+
+class DecodeDataUrlBranchTests(SimpleTestCase):
+    def test_valid_base64_that_is_not_an_image_returns_none(self) -> None:
+        payload = base64.b64encode(b"hello, not an image").decode()
+        self.assertIsNone(_decode_data_url("data:image/png;base64," + payload))
+
+    def test_payload_over_size_cap_returns_none(self) -> None:
+        payload = base64.b64encode(b"0123456789").decode()  # 10 raw bytes
+        with mock.patch("tlc.views.MAX_IMAGE_BYTES", 4):
+            self.assertIsNone(_decode_data_url("data:image/png;base64," + payload))
