@@ -1,61 +1,195 @@
 """Assisted spot detection for TLC plate images.
 
-Uses an OpenCV blob detector to locate dark, roughly circular UV-quenching
-spots on a bright plate. The results are deliberately conservative
-(few false positives) because they are *suggestions*: the user reviews the
-detected spots in the browser and adds or removes them before calculating RF.
+Detection runs on a background-subtracted "darkness" map (bright where the plate
+is locally darker than its surroundings — i.e. where UV-quenching spots and
+pencil marks are), confined to the plate interior:
+
+- ``blob`` — scikit-image Laplacian-of-Gaussian blob detection
+  (:func:`skimage.feature.blob_log`).
+- ``lane`` — locate sample lanes by a vertical intensity projection, then find
+  2-D peaks (:func:`skimage.feature.peak_local_max`) within each lane. This
+  models the column layout of a TLC plate.
+
+Both are precision-limited on their own (a raw photo also contains the baseline,
+edges, and lane labels), so candidates are gated by a **shape filter**: only
+compact, spot-sized connected components survive. Lines (baseline, plate edges)
+and thin label strokes are rejected. Results are conservative suggestions the
+user reviews before calculating RF.
 """
 
 from __future__ import annotations
 
 import cv2
 import numpy as np
+from scipy.signal import find_peaks
+from skimage.feature import blob_log, peak_local_max
+
+# Spot radius bounds (fraction of the smaller image dimension) and thresholds.
+MIN_RADIUS_FRAC = 0.015
+MAX_RADIUS_FRAC = 0.09
+BLOB_THRESHOLD = 0.08
+LANE_PROMINENCE = 0.20
+PEAK_REL_THRESHOLD = 0.30
+BINARY_THRESHOLD = 0.22  # darkness level that counts as "structure"
+MAX_ASPECT = 2.5  # reject elongated components (lines)
 
 
-def detect_spots(
-    image: np.ndarray,
-    *,
-    min_area_frac: float = 0.0005,
-    max_area_frac: float = 0.05,
-    min_circularity: float = 0.5,
-    min_convexity: float = 0.6,
-) -> list[dict[str, int]]:
-    """Detect candidate TLC spots in an image.
+def _plate_mask(image: np.ndarray, gray: np.ndarray, erode_px: int) -> np.ndarray:
+    """Return a solid boolean mask of the plate interior.
+
+    Prefers segmenting the fluorescent green plate (which cleanly excludes the
+    surrounding background, the metal clip, and any lane labels printed on the
+    white strip below the plate). Falls back to a brightness threshold when the
+    image is not green (e.g. synthetic test images). The chosen region is filled
+    (so interior spots are kept) and eroded by ``erode_px`` to drop the edges.
+    """
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV) if image.ndim == 3 else None
+    base: np.ndarray | None = None
+    if hsv is not None:
+        h, s, v = cv2.split(hsv)
+        green = ((h >= 35) & (h <= 90) & (s >= 40) & (v >= 40)).astype(np.uint8) * 255
+        if int(green.sum()) // 255 > 0.08 * gray.size:
+            base = green
+    if base is None:
+        base = cv2.threshold(gray.astype(np.uint8), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+
+    contours, _ = cv2.findContours(base, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return np.ones(gray.shape[:2], dtype=bool)
+    mask: np.ndarray = np.zeros(gray.shape[:2], dtype=np.uint8)
+    cv2.drawContours(mask, [max(contours, key=cv2.contourArea)], -1, 255, cv2.FILLED)
+    if erode_px > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * erode_px + 1, 2 * erode_px + 1))
+        mask = cv2.erode(mask, kernel)
+    return mask > 0
+
+
+def _darkness_map(image: np.ndarray) -> tuple[np.ndarray, float]:
+    """Return an illumination-flattened map (bright where spots are), plus scale.
+
+    Confined to the plate interior and normalised within it, so plate edges and
+    off-plate clutter neither register nor dominate the normalisation.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    gray = gray.astype(np.float32)
+
+    scale = float(min(gray.shape[:2]))
+    ksize = int(scale // 6) | 1  # background scale, larger than a spot
+    background = cv2.GaussianBlur(gray, (ksize, ksize), 0)
+    darkness: np.ndarray = np.clip(background - gray, 0.0, None)
+    darkness = cv2.GaussianBlur(darkness, (3, 3), 0)
+
+    darkness[~_plate_mask(image, gray, erode_px=int(MAX_RADIUS_FRAC * scale))] = 0.0
+
+    peak = float(darkness.max())
+    if peak > 0:
+        darkness = darkness / peak
+    return darkness, scale
+
+
+def _candidate_points(darkness: np.ndarray, method: str, min_r: float, max_r: float) -> list:
+    """Raw candidate (x, y) points from the requested detector(s)."""
+    points: list[tuple[int, int]] = []
+    if method in ("blob", "combined"):
+        min_sigma = max(1.0, min_r / np.sqrt(2))
+        max_sigma = max(min_sigma + 1.0, max_r / np.sqrt(2))
+        blobs = blob_log(
+            darkness,
+            min_sigma=min_sigma,
+            max_sigma=max_sigma,
+            num_sigma=8,
+            threshold=BLOB_THRESHOLD,
+        )
+        points += [(int(round(x)), int(round(y))) for y, x, _sigma in blobs]
+    if method in ("lane", "combined"):
+        points += _lane_peaks(darkness, min_r)
+    return points
+
+
+def _lane_peaks(darkness: np.ndarray, min_r: float) -> list[tuple[int, int]]:
+    """Locate lanes by column projection, then 2-D peaks within each lane strip."""
+    height, width = darkness.shape
+    spacing = max(1, int(2 * min_r))
+    column = darkness.sum(axis=0)
+    if column.max() <= 0:
+        return []
+    column = cv2.GaussianBlur(column.reshape(1, -1), (spacing | 1, 1), 0).ravel()
+    lane_xs, _ = find_peaks(column, distance=spacing, prominence=column.max() * LANE_PROMINENCE)
+
+    half = max(2, int(1.5 * min_r))
+    points: list[tuple[int, int]] = []
+    for lane_x in lane_xs:
+        x0 = max(0, lane_x - half)
+        strip = darkness[:, x0 : min(width, lane_x + half)]
+        if strip.size == 0 or strip.max() <= 0:
+            continue
+        for y, x_in_strip in peak_local_max(
+            strip, min_distance=spacing, threshold_rel=PEAK_REL_THRESHOLD, exclude_border=False
+        ):
+            points.append((int(x0 + x_in_strip), int(y)))
+    return points
+
+
+def _shape_gated_spots(
+    darkness: np.ndarray, candidates: list, min_r: float, max_r: float
+) -> list[tuple[int, int]]:
+    """Keep candidates that fall on a compact, spot-sized component.
+
+    Rejects lines (baseline, plate edges) and thin label strokes, and snaps each
+    surviving spot to its component centroid.
+    """
+    binary: np.ndarray = (darkness > BINARY_THRESHOLD).astype(np.uint8)
+    close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(3, int(min_r)),) * 2)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, close)
+
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(binary)
+    min_area = 0.3 * np.pi * min_r**2
+    max_area = np.pi * (1.5 * max_r) ** 2
+
+    spots: list[tuple[int, int]] = []
+    for i in range(1, count):
+        x, y, w, h, area = stats[i]
+        if not (min_area <= area <= max_area):
+            continue
+        long_side, short_side = max(w, h), max(1, min(w, h))
+        if long_side > 3 * max_r or long_side / short_side > MAX_ASPECT:
+            continue
+        if any(x <= px < x + w and y <= py < y + h for px, py in candidates):
+            cx, cy = centroids[i]
+            spots.append((int(round(cx)), int(round(cy))))
+    return spots
+
+
+def _dedup(points: list, min_dist: float) -> list:
+    """Drop points closer than ``min_dist`` to an already-kept point."""
+    kept: list[tuple[int, int]] = []
+    min_sq = min_dist * min_dist
+    for x, y in points:
+        if all((x - kx) ** 2 + (y - ky) ** 2 >= min_sq for kx, ky in kept):
+            kept.append((x, y))
+    return kept
+
+
+def detect_spots(image: np.ndarray, *, method: str = "combined") -> list[dict[str, int]]:
+    """Detect candidate TLC spots.
 
     Args:
         image: BGR (or grayscale) image as a NumPy array.
-        min_area_frac: Minimum blob area as a fraction of the image area.
-        max_area_frac: Maximum blob area as a fraction of the image area.
-        min_circularity: Minimum blob circularity (0-1).
-        min_convexity: Minimum blob convexity (0-1).
+        method: ``"blob"``, ``"lane"``, or ``"combined"`` (default; both).
 
     Returns:
-        Spot centres as ``{"x": int, "y": int}`` in original-image
-        coordinates, sorted top-to-bottom then left-to-right. Empty if none
-        are found or the image is empty.
+        Spot centres as ``{"x": int, "y": int}`` in original-image coordinates,
+        sorted top-to-bottom then left-to-right.
     """
     if image is None or image.size == 0:
         return []
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
-    height, width = gray.shape[:2]
-    area = height * width
+    darkness, scale = _darkness_map(image)
+    min_r = max(2.0, MIN_RADIUS_FRAC * scale)
+    max_r = max(min_r + 1.0, MAX_RADIUS_FRAC * scale)
 
-    params = cv2.SimpleBlobDetector_Params()  # type: ignore[attr-defined]
-    params.filterByColor = True
-    params.blobColor = 0  # dark blobs on a bright plate
-    params.filterByArea = True
-    params.minArea = max(1.0, min_area_frac * area)
-    params.maxArea = max_area_frac * area
-    params.filterByCircularity = True
-    params.minCircularity = min_circularity
-    params.filterByConvexity = True
-    params.minConvexity = min_convexity
-    params.filterByInertia = False
-
-    detector = cv2.SimpleBlobDetector_create(params)  # type: ignore[attr-defined]
-    keypoints = detector.detect(gray)
-
-    spots = [{"x": int(round(kp.pt[0])), "y": int(round(kp.pt[1]))} for kp in keypoints]
-    spots.sort(key=lambda s: (s["y"], s["x"]))
-    return spots
+    candidates = _candidate_points(darkness, method, min_r, max_r)
+    spots = _shape_gated_spots(darkness, candidates, min_r, max_r)
+    spots = _dedup(spots, min_dist=1.5 * min_r)
+    spots.sort(key=lambda p: (p[1], p[0]))
+    return [{"x": x, "y": y} for x, y in spots]

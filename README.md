@@ -19,8 +19,10 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 
 - Interactive canvas annotation: min/max reference lines, vertical/horizontal
   label lines, and draggable spots.
-- **Assisted spot detection** — one click finds candidate spots (OpenCV blob
-  detection); results are editable suggestions you review before calculating.
+- **Assisted spot detection** — one click finds candidate spots on the plate
+  interior using scikit-image Laplacian-of-Gaussian blobs plus lane-profile
+  peak detection, shape-gated to reject reference lines and labels; results are
+  editable suggestions you review before calculating.
 - Two image sources: **local upload** or **fetch from an ELN URL**.
 - Server-side RF calculation and image annotation (OpenCV).
 - CSV export (download locally or POST back to an ELN).
@@ -28,7 +30,8 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 ## Tech stack
 
 - **Django 5.2 LTS** (Python 3.14+); minimal app set (no admin/auth — cookie-based CSRF)
-- **OpenCV** (headless) + **NumPy** for image annotation and spot detection
+- **OpenCV** (headless) + **NumPy** for image annotation; **scikit-image** +
+  **SciPy** for spot detection
 - **Gunicorn** + **WhiteNoise** for serving
 - **uv** for dependency management
 - Self-contained frontend: vanilla JS + CSS in `static/`, **no CDN/JS
@@ -201,7 +204,7 @@ config/               Django project configuration
   wsgi.py / asgi.py   server entry points
 tlc/                  the application
   views.py            upload page, RF calc, spot detection, image fetch/serve
-  detection.py        OpenCV assisted spot detection
+  detection.py        assisted spot detection (blob + lane peaks)
   urls.py             app URL routes
   templates/tlc/      annotate.html (the single-page annotation UI)
   static/tlc/         app.css, app.js (self-contained frontend)
