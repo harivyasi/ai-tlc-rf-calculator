@@ -53,6 +53,7 @@ let draggingRegion = false; // a region drag is in progress
 let regionStart = null; // {x, y} in display coordinates
 let regionCurrent = null; // {x, y} in display coordinates
 let highlightedSpot = null; // {x, y} of a result row highlighted on the canvas
+let cropView = null; // when cropped-to-plate: {rcx, rcy, k} in canvas display px
 
 // --- Small UI helpers (replace Materialize toast / SweetAlert) ------------
 function notify(message, type = "info") {
@@ -230,11 +231,12 @@ function redrawCanvas() {
 
     // Rebuild delete icons.
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
+    const fixed = cropView ? 4 : 10; // margin for the line's fixed axis
     lines.forEach((line) => {
         if (isHorizontalLine(line)) {
-            addDeleteIcon(line, 10, line.y / window.scaleFactor);
+            addDeleteIcon(line, fixed, toContainer(0, line.y / window.scaleFactor).y);
         } else {
-            addDeleteIcon(line, line.x / window.scaleFactor, 10);
+            addDeleteIcon(line, toContainer(line.x / window.scaleFactor, 0).x, fixed);
         }
     });
 
@@ -566,7 +568,7 @@ function handleMouseUp() {
             notify("Plate area set — Auto-detect will use it.", "success");
             suggestReferenceLines();
         }
-        redrawCanvas();
+        applyCrop(); // re-fit the crop view to the new/cleared region (redraws)
         return;
     }
     if (!isDragging) return;
@@ -974,6 +976,54 @@ function refreshUI() {
     updateRotateEnabled();
 }
 
+// --- Crop-to-plate view (display only; coordinates and saved image unchanged) --
+function cropEnabled() {
+    const box = document.getElementById("crop-plate");
+    return !!(box && box.checked && plateRegion && hasImage());
+}
+
+// Map canvas-display coordinates to #canvas-container coordinates, accounting
+// for the crop zoom (delete icons live in the container, not on the canvas).
+function toContainer(dx, dy) {
+    if (!cropView) return { x: dx, y: dy };
+    return { x: (dx - cropView.rcx) * cropView.k, y: (dy - cropView.rcy) * cropView.k };
+}
+
+// Apply/clear the crop by CSS-zooming the canvas inside an overflow-hidden
+// container. The bitmap, annotation coordinates, and saved image are untouched;
+// pointer mapping stays correct because it reads getBoundingClientRect().
+function applyCrop() {
+    const container = document.getElementById("canvas-container");
+    const props = ["position", "left", "top", "width", "height", "maxWidth"];
+    if (cropEnabled()) {
+        const sf = window.scaleFactor || 1;
+        const rcx = plateRegion.x / sf;
+        const rcy = plateRegion.y / sf;
+        const rcw = plateRegion.width / sf;
+        const rch = plateRegion.height / sf;
+        const k = rch > 0 ? Math.min(3, 500 / rch) : 1;
+        cropView = { rcx, rcy, k };
+        container.style.overflow = "hidden";
+        container.style.width = Math.round(rcw * k) + "px";
+        container.style.height = Math.round(rch * k) + "px";
+        container.style.margin = "0 auto";
+        canvas.style.position = "absolute";
+        canvas.style.left = Math.round(-rcx * k) + "px";
+        canvas.style.top = Math.round(-rcy * k) + "px";
+        canvas.style.width = Math.round(canvas.width * k) + "px";
+        canvas.style.height = Math.round(canvas.height * k) + "px";
+        canvas.style.maxWidth = "none";
+    } else {
+        cropView = null;
+        container.style.overflow = "";
+        container.style.width = "";
+        container.style.height = "";
+        container.style.margin = "";
+        props.forEach((p) => (canvas.style[p] = ""));
+    }
+    redrawCanvas();
+}
+
 function resetCanvas() {
     lines = [];
     spots = [];
@@ -989,6 +1039,7 @@ function resetCanvas() {
     if (tbody) tbody.innerHTML = "";
     updateAnnotatedHeading("editing");
     setActiveButton(null);
+    applyCrop(); // region cleared -> exit crop view (redraws)
     refreshUI();
     notify("Canvas reset.", "info");
 }
@@ -1047,6 +1098,7 @@ function loadLocalImage(dataURL, fileName) {
         notify('Image "' + fileName + '" loaded.', "success");
         updateAnnotatedHeading("editing");
         collapseImageSource(fileName);
+        applyCrop(); // no region yet -> ensure crop view is reset
         refreshUI();
     };
     image.onerror = () => notify("Failed to load image. Please try again.", "error");
@@ -1069,6 +1121,7 @@ function loadELNImage() {
                     image = new Image();
                     image.onload = () => {
                         fitAndDraw(image);
+                        applyCrop();
                         refreshUI();
                     };
                     image.src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
@@ -1160,6 +1213,24 @@ function init() {
             } catch (err) {
                 /* ignore */
             }
+        });
+    }
+
+    // "Crop view" preference: persisted; re-applies the crop on toggle.
+    const cropToggle = document.getElementById("crop-plate");
+    if (cropToggle) {
+        try {
+            cropToggle.checked = localStorage.getItem("tlc-crop-view") === "1";
+        } catch (err) {
+            /* ignore */
+        }
+        cropToggle.addEventListener("change", () => {
+            try {
+                localStorage.setItem("tlc-crop-view", cropToggle.checked ? "1" : "0");
+            } catch (err) {
+                /* ignore */
+            }
+            applyCrop();
         });
     }
 

@@ -27,7 +27,10 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
   **For accurate detection, first draw a Plate Area** (drag a box around the
   plate): it confines detection to the plate — ignoring edges, the baseline, and
   lane labels — and suggests Min/Max reference lines from the box edges (which
-  remain draggable/deletable).
+  remain draggable/deletable). A **crop view** checkbox zooms the work area to
+  the plate box for easier marking — view-only; the saved image keeps its full
+  original dimensions (including any rotation).
+- **Rotate** the image 90° (on a clean image) to correct orientation.
 - Light/dark theme toggle (overrides the OS preference, remembered per browser).
 - CSV export (download locally or POST back to an ELN).
 

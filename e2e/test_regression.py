@@ -363,6 +363,30 @@ def test_plate_region_suggests_reference_lines(page, servers, blob_image_path):
     assert page.locator("#values-table tbody tr").count() == 3
 
 
+def test_crop_view_zooms_to_plate(page, servers, blob_image_path):
+    """The 'crop view' checkbox zooms the work area to the plate box (view-only)."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    box = canvas.bounding_box()
+    page.click("button:has-text('Plate Area')")
+    page.mouse.move(box["x"] + 40, box["y"] + 40)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 260, box["y"] + 200, steps=8)
+    page.mouse.up()
+
+    container = "() => document.getElementById('canvas-container').style.width"
+    assert not page.evaluate(container), "container should be unconstrained before crop"
+    page.check("#crop-plate")
+    page.wait_for_function(f"{container} !== ''")  # zoomed to region
+    page.uncheck("#crop-plate")
+    page.wait_for_function(f"{container} === ''")  # back to full view
+
+
 @pytest.mark.parametrize("frontend,expected", [("new", 1), ("legacy", 2)])
 def test_eln_load_fetch_count(page, servers, test_image_path, frontend, expected):
     """ELN-load path: the refactor fetches once; the original fetched twice.

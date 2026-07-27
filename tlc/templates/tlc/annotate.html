@@ -96,6 +96,9 @@
                 <button class="lab-btn btn-lab-outline" data-action="selectPlateArea">
                     <svg class="icon"><use href="#i-region"/></svg> Plate Area
                 </button>
+                <label class="check-row" title="Zoom the work area to the plate box. View only — the saved image keeps its full dimensions.">
+                    <input type="checkbox" id="crop-plate"> crop view
+                </label>
             </div>
             <div class="tool-group">
                 <span class="tool-label">Reference lines</span>
@@ -216,6 +219,9 @@
                 </ol>
                 <p class="muted text-sm">Drag spots or lines to reposition; double-click a spot to delete it.
                     RF values fall between 0 and 1.</p>
+                <p class="muted text-sm"><strong>Crop view</strong> zooms the work area to the plate box for
+                    easier marking. It only affects what you see here — the saved image keeps its full
+                    original dimensions (including any rotation).</p>
             </div>
         </div>
     </div>
