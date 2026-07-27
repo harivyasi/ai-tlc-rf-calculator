@@ -97,6 +97,7 @@ All configuration is via environment variables:
 | `CSRF_TRUSTED_ORIGINS` | *(empty)*                   | Comma-separated trusted origins for CSRF (e.g. `https://tlc.example.org`). |
 | `ELN_ALLOWED_HOSTS`    | *(empty = any public host)* | Comma-separated allowlist of hosts the server may fetch ELN images from. |
 | `CSP_CONNECT_SRC`      | *(empty)*                   | Extra origins added to the CSP `connect-src` (e.g. your ELN origin, so "save to ELN" works). |
+| `MAX_UPLOAD_MB`        | `16`                        | Max request-body size (MB). Must exceed the base64-inflated 10 MB image cap. |
 | `SECURE_SSL_REDIRECT`  | `True` (when not DEBUG)     | Redirect HTTP to HTTPS.                                                |
 | `SECURE_HSTS_SECONDS`  | `31536000`                  | HSTS max-age (when not DEBUG).                                         |
 
@@ -123,6 +124,14 @@ uv run python manage.py check --deploy
   `script-src`/`style-src` locked to `'self'` (no `unsafe-inline`). Cross-origin
   browser requests are blocked unless their origin is listed in
   `CSP_CONNECT_SRC` — set it to your ELN origin to allow "save to ELN".
+- **Resource limits**: request bodies are capped (`MAX_UPLOAD_MB`) and images
+  larger than 40 MP are rejected so a single request cannot exhaust CPU/memory
+  in the OpenCV paths. The calculation/detection endpoints are CPU-bound and
+  unauthenticated; if the tool is internet-facing, add **request rate limiting
+  at the reverse proxy** (e.g. nginx `limit_req`) — app-level limiting isn't
+  built in because it has no shared state across workers.
+- **EXIF orientation** is applied to uploaded images so annotations stay aligned
+  with what the browser shows (phone photos often carry rotation metadata).
 
 ## Deployment (Docker)
 

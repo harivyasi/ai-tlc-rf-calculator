@@ -4,14 +4,23 @@ from __future__ import annotations
 
 import base64
 import glob
+import io
 import os
+import shutil
+import tempfile
+import time
 from unittest import mock
 
 import cv2
 import numpy as np
 from django.conf import settings
+from django.core.management import call_command
 from django.test import Client, SimpleTestCase
 from django.urls import reverse
+from PIL import Image
+
+from config.env import env_bool, env_int, env_list
+from tlc.views import _decode_data_url
 
 
 def _fake_response(status: int, headers: dict | None = None, body: bytes = b"") -> mock.Mock:
@@ -87,6 +96,24 @@ class CalculateRfTests(SimpleTestCase):
         self.assertEqual(value["solvent"], "SolventB")
         self.assertEqual(value["compound"], "CompoundX")
 
+    def test_large_local_upload_is_accepted(self) -> None:
+        # A multi-MB image (base64 body > Django's 2.5 MB default) must not be
+        # rejected as RequestDataTooBig.
+        big = np.random.randint(0, 255, (1200, 1200, 3), dtype=np.uint8)
+        ok, buffer = cv2.imencode(".png", big)
+        assert ok and len(buffer) > 2_621_440
+        payload = {
+            "isLocalImage": True,
+            "imageData": "data:image/png;base64," + base64.b64encode(buffer.tobytes()).decode(),
+            "imageSrc": "sample.png",
+            "lines": [{"type": "min", "y": 1000}, {"type": "max", "y": 100}],
+            "spots": [{"x": 600, "y": 550}],
+        }
+        response = self.client.post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+
     def test_missing_min_max_lines_is_rejected(self) -> None:
         payload = {
             "isLocalImage": True,
@@ -155,6 +182,7 @@ class SecurityHeaderTests(SimpleTestCase):
         csp = response.headers.get("Content-Security-Policy", "")
         self.assertIn("default-src 'self'", csp)
         self.assertIn("script-src 'self'", csp)
+        self.assertIn("connect-src 'self'", csp)
         self.assertNotIn("unsafe-inline", csp)
         self.assertNotIn("unsafe-eval", csp)
 
@@ -244,3 +272,80 @@ class FetchImageSecurityTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         name = response.json()["imagePath"]
         os.remove(os.path.join(settings.MEDIA_ROOT, name))
+
+
+class DecodeExifTests(SimpleTestCase):
+    def test_exif_orientation_is_applied(self) -> None:
+        # A 100x50 image tagged orientation=6 (rotate 90° CW on display) must
+        # decode to 50 wide x 100 tall, matching what the browser shows.
+        image = Image.new("RGB", (100, 50), (200, 30, 30))
+        exif = image.getexif()
+        exif[274] = 6  # EXIF Orientation tag
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", exif=exif)
+        data_url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+        decoded = _decode_data_url(data_url)
+        assert decoded is not None
+        self.assertEqual(decoded.shape[0], 100)  # height
+        self.assertEqual(decoded.shape[1], 50)  # width
+
+    def test_invalid_payload_returns_none(self) -> None:
+        self.assertIsNone(_decode_data_url("data:image/png;base64,not-valid-base64!!"))
+
+
+class CleanupMediaCommandTests(SimpleTestCase):
+    def test_removes_old_keeps_new_and_gitkeep(self) -> None:
+        tmp = tempfile.mkdtemp()
+        try:
+            old = os.path.join(tmp, "annotated_old.png")
+            new = os.path.join(tmp, "annotated_new.png")
+            keep = os.path.join(tmp, ".gitkeep")
+            for path in (old, new, keep):
+                open(path, "w").close()
+            stale = time.time() - 3 * 3600
+            os.utime(old, (stale, stale))
+            os.utime(keep, (stale, stale))  # protected despite being old
+
+            with self.settings(MEDIA_ROOT=tmp):
+                call_command("cleanup_media", "--hours", "1")
+
+            self.assertFalse(os.path.exists(old))
+            self.assertTrue(os.path.exists(new))
+            self.assertTrue(os.path.exists(keep))
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_dry_run_deletes_nothing(self) -> None:
+        tmp = tempfile.mkdtemp()
+        try:
+            old = os.path.join(tmp, "annotated_old.png")
+            open(old, "w").close()
+            stale = time.time() - 3 * 3600
+            os.utime(old, (stale, stale))
+            with self.settings(MEDIA_ROOT=tmp):
+                call_command("cleanup_media", "--hours", "1", "--dry-run")
+            self.assertTrue(os.path.exists(old))
+        finally:
+            shutil.rmtree(tmp)
+
+
+class EnvHelperTests(SimpleTestCase):
+    def test_env_bool(self) -> None:
+        with mock.patch.dict(os.environ, {"TLC_X": "yes"}):
+            self.assertTrue(env_bool("TLC_X"))
+        with mock.patch.dict(os.environ, {"TLC_X": "0"}):
+            self.assertFalse(env_bool("TLC_X"))
+        self.assertTrue(env_bool("TLC_MISSING", True))
+
+    def test_env_int(self) -> None:
+        with mock.patch.dict(os.environ, {"TLC_N": "42"}):
+            self.assertEqual(env_int("TLC_N", 1), 42)
+        with mock.patch.dict(os.environ, {"TLC_N": "nope"}):
+            self.assertEqual(env_int("TLC_N", 7), 7)
+        self.assertEqual(env_int("TLC_MISSING", 5), 5)
+
+    def test_env_list(self) -> None:
+        with mock.patch.dict(os.environ, {"TLC_L": "a, b ,,c"}):
+            self.assertEqual(env_list("TLC_L"), ["a", "b", "c"])
+        self.assertEqual(env_list("TLC_MISSING"), [])

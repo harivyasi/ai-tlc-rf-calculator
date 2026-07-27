@@ -23,6 +23,25 @@ def env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in _TRUTHY
 
 
+def env_int(name: str, default: int) -> int:
+    """Return an environment variable parsed as an int, or ``default`` if unset/invalid.
+
+    Args:
+        name: The environment variable name.
+        default: Value to return when the variable is unset or not an integer.
+
+    Returns:
+        The parsed integer, or ``default``.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 def env_list(name: str, default: str = "") -> list[str]:
     """Return a comma-separated environment variable as a list of trimmed items.
 

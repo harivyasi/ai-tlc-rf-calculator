@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import binascii
 import csv
+import io
 import ipaddress
 import json
 import logging
@@ -33,6 +34,7 @@ from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from config.env import env_list
 
@@ -44,6 +46,9 @@ logger = logging.getLogger(__name__)
 FETCH_TIMEOUT_SECONDS = 10
 MAX_IMAGE_BYTES = 25 * 1024 * 1024  # 25 MB
 MAX_REDIRECTS = 3  # ELN attachment URLs often redirect to storage
+# Reject absurdly large images so a single request can't exhaust CPU/memory in
+# the OpenCV paths (decoded to ~3 bytes/pixel).
+MAX_IMAGE_PIXELS = 40_000_000  # 40 MP
 
 
 def healthz(request: HttpRequest) -> JsonResponse:
@@ -199,7 +204,8 @@ def _load_annotation_image(
                 "",
                 JsonResponse({"error": "Could not decode the uploaded image."}, status=400),
             )
-        return image, os.path.basename(data.get("imageSrc") or "local_upload.png"), None
+        base_name = os.path.basename(data.get("imageSrc") or "local_upload.png")
+        return image, base_name, _oversize_error(image)
 
     image_src = data.get("imageSrc")
     if not image_src:
@@ -211,18 +217,22 @@ def _load_annotation_image(
     image = cv2.imread(image_path)
     if image is None:
         return None, "", JsonResponse({"error": "Failed to read the image file."}, status=400)
-    return image, os.path.basename(image_src), None
+    return image, os.path.basename(image_src), _oversize_error(image)
 
 
 def _decode_data_url(data_url: str) -> np.ndarray | None:
     """Decode a base64 ``data:`` URL into an OpenCV image (BGR).
+
+    EXIF orientation is applied so the decoded image matches what the browser
+    displayed on the canvas (browsers auto-orient; ``cv2.imdecode`` does not),
+    keeping annotation coordinates aligned for photos taken on phones.
 
     Args:
         data_url: A ``data:image/...;base64,<payload>`` string, or a bare
             base64 payload.
 
     Returns:
-        The decoded image as a NumPy array, or ``None`` if decoding fails.
+        The decoded BGR image as a NumPy array, or ``None`` if decoding fails.
     """
     payload = data_url.split(",", 1)[1] if "," in data_url else data_url
     try:
@@ -231,8 +241,22 @@ def _decode_data_url(data_url: str) -> np.ndarray | None:
         return None
     if len(raw) > MAX_IMAGE_BYTES:
         return None
-    image = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
-    return image
+    try:
+        with Image.open(io.BytesIO(raw)) as pil_image:
+            oriented = ImageOps.exif_transpose(pil_image).convert("RGB")
+    except UnidentifiedImageError, OSError, ValueError:
+        return None
+    rgb = np.asarray(oriented)
+    return np.ascontiguousarray(rgb[:, :, ::-1])  # RGB -> BGR for OpenCV
+
+
+def _oversize_error(image: np.ndarray) -> JsonResponse | None:
+    """Return a 400 response if the image exceeds ``MAX_IMAGE_PIXELS``, else None."""
+    height, width = image.shape[:2]
+    if height * width > MAX_IMAGE_PIXELS:
+        logger.warning("Refused oversized image: %dx%d", width, height)
+        return JsonResponse({"error": "Image is too large to process."}, status=400)
+    return None
 
 
 # ---------------------------------------------------------------------------

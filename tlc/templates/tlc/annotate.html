@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TLC RF Calculator</title>
+    <link rel="icon" type="image/svg+xml" href="{% static 'tlc/favicon.svg' %}">
     <link rel="stylesheet" href="{% static 'tlc/app.css' %}">
 </head>
 <body>
@@ -165,14 +166,17 @@
 
     <!-- Export actions -->
     <div class="fab-container">
-        <button class="lab-fab fab-lab-primary" data-action="saveCSV" title="Download CSV">
-            <svg class="icon"><use href="#i-download"/></svg>
+        <button type="button" class="lab-fab fab-lab-primary" data-action="saveCSV"
+                title="Download CSV" aria-label="Download CSV">
+            <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>
         </button>
-        <button class="lab-fab fab-lab-secondary" data-action="saveImageToServer" title="Save image">
-            <svg class="icon"><use href="#i-image"/></svg>
+        <button type="button" class="lab-fab fab-lab-secondary" data-action="saveImageToServer"
+                title="Save image" aria-label="Save annotated image">
+            <svg class="icon" aria-hidden="true"><use href="#i-image"/></svg>
         </button>
-        <button class="lab-fab fab-lab-warning" data-action="saveCSVToServer" title="Upload to ELN">
-            <svg class="icon"><use href="#i-cloud-up"/></svg>
+        <button type="button" class="lab-fab fab-lab-warning" data-action="saveCSVToServer"
+                title="Upload to ELN" aria-label="Upload results to ELN">
+            <svg class="icon" aria-hidden="true"><use href="#i-cloud-up"/></svg>
         </button>
     </div>
 
