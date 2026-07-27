@@ -134,11 +134,16 @@
                             </h6>
                             <ol>
                                 <li>Load a plate image from the ELN or by uploading a local file.</li>
-                                <li>Set the <span class="highlight">Min Line</span> (baseline / origin) and the
-                                    <span class="highlight">Max Line</span> (solvent front).</li>
-                                <li>Click <span class="highlight">Add Spots</span> and mark each spot, or use
-                                    <span class="highlight">Auto-detect</span> to find candidates automatically,
-                                    then adjust.</li>
+                                <li><strong>Recommended:</strong> click <span class="highlight">Plate Area</span> and
+                                    drag a box around the plate. This greatly improves
+                                    <span class="highlight">Auto-detect</span> accuracy (it ignores everything outside
+                                    the box) and suggests the Min/Max lines from the box edges.</li>
+                                <li>Check the <span class="highlight">Min Line</span> (baseline / origin) and
+                                    <span class="highlight">Max Line</span> (solvent front) — adjust the suggestions,
+                                    or add them yourself if you skipped the Plate Area.</li>
+                                <li>Click <span class="highlight">Auto-detect</span> to find spots (most reliable
+                                    inside a Plate Area), or <span class="highlight">Add Spots</span> to mark them
+                                    manually. Review and adjust.</li>
                                 <li>Optionally add <span class="highlight">V-Line</span> / <span class="highlight">H-Line</span>
                                     labels to name lanes and compounds.</li>
                                 <li>Click <span class="highlight">Calculate RF</span>. Results appear in the table below;
