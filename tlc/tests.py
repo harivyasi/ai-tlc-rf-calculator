@@ -20,6 +20,7 @@ from django.urls import reverse
 from PIL import Image
 
 from config.env import env_bool, env_int, env_list
+from tlc.detection import detect_spots
 from tlc.views import _decode_data_url
 
 
@@ -114,9 +115,9 @@ class CalculateRfTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 200)
 
-    def test_annotations_render_on_full_resolution_image(self) -> None:
-        # The annotated output must match the input resolution and include the
-        # reference lines (not just spots).
+    def test_saved_image_has_rings_but_not_reference_lines(self) -> None:
+        # Full-resolution output that saves the spot rings/labels but NOT the
+        # transient reference lines used during analysis.
         payload = {
             "isLocalImage": True,
             "imageData": _png_data_url(width=400, height=600),
@@ -135,9 +136,11 @@ class CalculateRfTests(SimpleTestCase):
         annotated = cv2.imread(os.path.join(settings.MEDIA_ROOT, name))
         assert annotated is not None
         self.assertEqual(annotated.shape[:2], (600, 400))  # full input resolution
-        # The max line at y=100 is drawn in red (BGR 0,0,255) across the width.
-        red = np.all(annotated[100] == (0, 0, 255), axis=1)
-        self.assertTrue(red.any(), "reference line was not rendered on the image")
+        # The spot ring (orange) is drawn.
+        self.assertTrue(np.all(annotated == (0, 165, 255), axis=2).any(), "spot ring not drawn")
+        # The max reference line (would span row y=100 in red) is NOT saved.
+        red_line = np.all(annotated[100] == (0, 0, 255), axis=1)
+        self.assertFalse(red_line.any(), "reference lines must not be saved")
 
     def test_missing_min_max_lines_is_rejected(self) -> None:
         payload = {
@@ -254,6 +257,22 @@ class DetectSpotsTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["count"], 0)
+
+    def test_ring_center_beats_centroid_on_open_ring(self) -> None:
+        # An open/gappy ring: its pixel centroid is pulled toward the arc mass,
+        # while the bounding-box centre (ring_center) stays near the true centre.
+        img = np.full((500, 500, 3), 245, np.uint8)
+        cv2.ellipse(img, (250, 250), (60, 60), 0, -60, 240, (40, 40, 40), 4)
+
+        centroid = detect_spots(img, ring_center=False)
+        ring = detect_spots(img, ring_center=True)
+        self.assertEqual(len(centroid), 1)
+        self.assertEqual(len(ring), 1)
+
+        def dist(spots: list) -> float:
+            return ((spots[0]["x"] - 250) ** 2 + (spots[0]["y"] - 250) ** 2) ** 0.5
+
+        self.assertLess(dist(ring), dist(centroid))
 
     def test_region_confines_detection(self) -> None:
         # Three blobs; a region covering only the top two must yield two spots.

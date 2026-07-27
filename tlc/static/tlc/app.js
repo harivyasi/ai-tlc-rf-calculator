@@ -608,6 +608,8 @@ function autoDetectSpots() {
     showOverlay("Detecting spots…");
     const payload = getImagePayload();
     if (plateRegion) payload.region = plateRegion;
+    const ringToggle = document.getElementById("ring-center");
+    if (ringToggle) payload.ringCenter = ringToggle.checked;
     fetch("/detect-spots/", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
@@ -926,6 +928,24 @@ function init() {
     });
 
     initTheme();
+
+    // Persist the "center on ring marks" detection preference.
+    const ringToggle = document.getElementById("ring-center");
+    if (ringToggle) {
+        try {
+            ringToggle.checked = localStorage.getItem("tlc-ring-center") === "1";
+        } catch (err) {
+            /* localStorage unavailable */
+        }
+        ringToggle.addEventListener("change", () => {
+            try {
+                localStorage.setItem("tlc-ring-center", ringToggle.checked ? "1" : "0");
+            } catch (err) {
+                /* ignore */
+            }
+        });
+    }
+
     updateAnnotatedHeading("instructions");
 
     const fileInput = document.getElementById("local-image-input");

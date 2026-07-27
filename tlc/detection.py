@@ -136,12 +136,18 @@ def _lane_peaks(darkness: np.ndarray, min_r: float) -> list[tuple[int, int]]:
 
 
 def _shape_gated_spots(
-    darkness: np.ndarray, candidates: list, min_r: float, max_r: float
+    darkness: np.ndarray,
+    candidates: list,
+    min_r: float,
+    max_r: float,
+    ring_center: bool = False,
 ) -> list[tuple[int, int]]:
     """Keep candidates that fall on a compact, spot-sized component.
 
     Rejects lines (baseline, plate edges) and thin label strokes, and snaps each
-    surviving spot to its component centroid.
+    surviving spot to a centre. With ``ring_center`` the bounding-box centre is
+    used (best for hollow / hand-drawn ring marks, robust to gaps and tails);
+    otherwise the pixel centroid is used (best for filled spots).
     """
     binary: np.ndarray = (darkness > BINARY_THRESHOLD).astype(np.uint8)
     close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(3, int(min_r)),) * 2)
@@ -160,7 +166,10 @@ def _shape_gated_spots(
         if long_side > 3 * max_r or long_side / short_side > MAX_ASPECT:
             continue
         if any(x <= px < x + w and y <= py < y + h for px, py in candidates):
-            cx, cy = centroids[i]
+            if ring_center:
+                cx, cy = x + w / 2.0, y + h / 2.0
+            else:
+                cx, cy = centroids[i]
             spots.append((int(round(cx)), int(round(cy))))
     return spots
 
@@ -180,12 +189,15 @@ def detect_spots(
     *,
     method: str = "combined",
     region: tuple[int, int, int, int] | None = None,
+    ring_center: bool = False,
 ) -> list[dict[str, int]]:
     """Detect candidate TLC spots.
 
     Args:
         image: BGR (or grayscale) image as a NumPy array.
         method: ``"blob"``, ``"lane"``, or ``"combined"`` (default; both).
+        ring_center: Centre each spot on its bounding box rather than its pixel
+            centroid — better for hollow / hand-drawn ring marks.
         region: Optional ``(x, y, width, height)`` in image coordinates to
             confine detection to (e.g. a user-drawn plate area). When given, the
             image is cropped to it and results are offset back to full-image
@@ -226,7 +238,7 @@ def detect_spots(
     darkness = _darkness_map(image, max_r)
 
     candidates = _candidate_points(darkness, method, min_r, max_r)
-    spots = _shape_gated_spots(darkness, candidates, min_r, max_r)
+    spots = _shape_gated_spots(darkness, candidates, min_r, max_r, ring_center=ring_center)
     spots = _dedup(spots, min_dist=1.5 * min_r)
 
     # Map working-resolution coordinates back to the original image.

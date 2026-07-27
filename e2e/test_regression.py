@@ -254,6 +254,19 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
     assert rows == 2, f"expected 2 spots within the region, table had {rows}"
 
 
+def test_ring_center_preference_persists(page, servers):
+    """The 'Center on ring marks' checkbox remembers its state across reloads."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.wait_for_selector("#ring-center")
+    assert not page.is_checked("#ring-center")
+
+    page.check("#ring-center")
+    page.reload()
+    page.wait_for_selector("#ring-center")
+    assert page.is_checked("#ring-center"), "ring-center preference was not persisted"
+
+
 def test_deleting_vline_closes_annotation_popup(page, servers, test_image_path):
     """Deleting a just-drawn V-Line must also dismiss its annotation popup."""
     _stub_cdn(page)

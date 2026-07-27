@@ -269,48 +269,31 @@ _BLUE = (255, 0, 0)
 _ORANGE = (0, 165, 255)
 
 
-def _draw_annotations(
-    image: np.ndarray, lines: list[dict[str, Any]], spots: list[dict[str, Any]]
-) -> None:
-    """Draw reference lines and spots onto ``image`` in place, at full resolution.
+def _draw_annotations(image: np.ndarray, spots: list[dict[str, Any]]) -> None:
+    """Draw the analysis results — spot rings and their labels — onto ``image``.
 
-    Marker/line/text sizes scale with the image so annotations stay legible on
-    both small and multi-megapixel plates.
+    Only the results are burned into the saved image: each spot is marked with a
+    ring and annotated with its RF value, compound, and solvent. The transient
+    reference lines / plate box used during analysis are deliberately not drawn.
+    Marker/text sizes scale with the image so they stay legible on both small
+    and multi-megapixel plates.
 
     Args:
         image: The BGR image to annotate (modified in place).
-        lines: Reference lines (``min``/``max``/``horizontal`` carry ``y``;
-            ``vertical`` carries ``x``); each may have a ``text`` label.
         spots: Spots to mark, each with ``x``, ``y``, ``rf``, ``compound``,
             ``solvent``.
     """
     height, width = image.shape[:2]
     s = max(1.0, min(height, width) / 1000.0)
     thickness = max(1, round(2 * s))
-    radius = max(4, round(6 * s))
+    radius = max(4, round(9 * s))
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.5 * s
-
-    for line in lines:
-        line_type = line.get("type")
-        label = str(line.get("text") or "")
-        if line_type in ("min", "max", "horizontal"):
-            ly = int(line.get("y", 0))
-            cv2.line(image, (0, ly), (width, ly), _RED, thickness)
-            if label:
-                cv2.putText(image, label, (10, max(0, ly) - 8), font, font_scale, _RED, thickness)
-        elif line_type == "vertical":
-            lx = int(line.get("x", 0))
-            cv2.line(image, (lx, 0), (lx, height), _RED, thickness)
-            if label:
-                cv2.putText(
-                    image, label, (lx + 8, round(30 * s)), font, font_scale, _RED, thickness
-                )
 
     offset = round(6 * s)
     for spot in spots:
         x, y = int(spot["x"]), int(spot["y"])
-        cv2.circle(image, (x, y), radius, _ORANGE, -1)
+        cv2.circle(image, (x, y), radius, _ORANGE, thickness)
         cv2.putText(
             image, f"RF={spot['rf']}", (x + offset, y - offset), font, font_scale, _RED, thickness
         )
@@ -410,9 +393,9 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
             {"x": x, "y": y, "rf": rf_value, "compound": compound, "solvent": solvent}
         )
 
-    # Render every annotation (reference lines + spots) onto the full-resolution
-    # image, sized proportionally so it stays legible at any resolution.
-    _draw_annotations(image, lines, drawn_spots)
+    # Burn only the results (spot rings + labels) onto the full-resolution
+    # image — not the transient reference lines / plate box.
+    _draw_annotations(image, drawn_spots)
 
     # Unique output names so concurrent requests never clobber each other.
     token = uuid.uuid4().hex
@@ -488,7 +471,11 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
         return error
     assert image is not None  # guaranteed when error is None
 
-    spots = detection.detect_spots(image, region=_parse_region(data.get("region")))
+    spots = detection.detect_spots(
+        image,
+        region=_parse_region(data.get("region")),
+        ring_center=bool(data.get("ringCenter")),
+    )
     return JsonResponse({"spots": spots, "count": len(spots)})
 
 
