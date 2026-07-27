@@ -248,6 +248,27 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
     assert rows == 2, f"expected 2 spots within the region, table had {rows}"
 
 
+def test_rotate_reorients_and_locks_after_annotation(page, servers, blob_image_path):
+    """Rotate re-orients a clean image (layout flips) and is disabled once annotated."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)  # 400x300 landscape
+    page.wait_for_function(_IMAGE_READY)
+
+    work_area = page.locator("#work-area")
+    assert "layout-rows" in (work_area.get_attribute("class") or "")  # landscape -> rows
+    page.click("[data-action='rotateCW']")
+    page.wait_for_function(
+        "() => document.getElementById('work-area').classList.contains('layout-columns')"
+    )  # rotated to portrait -> columns
+
+    # Annotating locks rotation.
+    page.click("button:has-text('Add Spots')")
+    page.locator("#image-canvas").click(position={"x": 150, "y": 150})
+    page.wait_for_function("() => document.querySelector(\"[data-action='rotateCW']\").disabled")
+
+
 def test_ring_center_preference_persists(page, servers):
     """The 'Center on ring marks' checkbox remembers its state across reloads."""
     _stub_cdn(page)

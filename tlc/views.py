@@ -182,13 +182,35 @@ def _fetch_following_safe_redirects(url: str) -> requests.Response | None:
     return None
 
 
+def _rotate_image(image: np.ndarray, rotation: int) -> np.ndarray:
+    """Rotate ``image`` clockwise by ``rotation`` degrees (0/90/180/270)."""
+    if rotation == 90:
+        return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    if rotation == 180:
+        return cv2.rotate(image, cv2.ROTATE_180)
+    if rotation == 270:
+        return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return image
+
+
+def _parse_rotation(raw: Any) -> int:
+    """Return a valid clockwise rotation (0/90/180/270), else 0."""
+    try:
+        rotation = int(raw) % 360
+    except TypeError, ValueError:
+        return 0
+    return rotation if rotation in (0, 90, 180, 270) else 0
+
+
 def _load_annotation_image(
     data: dict[str, Any],
 ) -> tuple[np.ndarray | None, str, JsonResponse | None]:
     """Load the source image referenced by an annotation payload.
 
     Local uploads carry the image as a base64 ``imageData`` data URL; ELN
-    images are referenced by ``imageSrc`` (a media file name).
+    images are referenced by ``imageSrc`` (a media file name). An optional
+    ``rotation`` (clockwise degrees) is applied so the backend image matches the
+    orientation the user annotated on.
 
     Args:
         data: The parsed JSON request body.
@@ -197,6 +219,8 @@ def _load_annotation_image(
         A ``(image, base_name, error)`` tuple. On success ``error`` is ``None``;
         on failure ``image`` is ``None`` and ``error`` is a ready JsonResponse.
     """
+    rotation = _parse_rotation(data.get("rotation"))
+
     if data.get("isLocalImage") and data.get("imageData"):
         image = _decode_data_url(data["imageData"])
         if image is None:
@@ -206,7 +230,7 @@ def _load_annotation_image(
                 JsonResponse({"error": "Could not decode the uploaded image."}, status=400),
             )
         base_name = os.path.basename(data.get("imageSrc") or "local_upload.png")
-        return image, base_name, _oversize_error(image)
+        return _rotate_image(image, rotation), base_name, _oversize_error(image)
 
     image_src = data.get("imageSrc")
     if not image_src:
@@ -218,7 +242,7 @@ def _load_annotation_image(
     image = cv2.imread(image_path)
     if image is None:
         return None, "", JsonResponse({"error": "Failed to read the image file."}, status=400)
-    return image, os.path.basename(image_src), _oversize_error(image)
+    return _rotate_image(image, rotation), os.path.basename(image_src), _oversize_error(image)
 
 
 def _decode_data_url(data_url: str) -> np.ndarray | None:

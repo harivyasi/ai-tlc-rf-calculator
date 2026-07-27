@@ -24,6 +24,8 @@
             <symbol id="i-region" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></symbol>
             <symbol id="i-calc" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h2M12 10h2M16 10h0M8 14h2M12 14h2M8 18h6"/></symbol>
             <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
+            <symbol id="i-rotate-cw" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></symbol>
+            <symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
             <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
             <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
             <symbol id="i-cloud-up" viewBox="0 0 24 24"><path d="M16 16l-4-4-4 4M12 12v9M20.4 14.5A5 5 0 0 0 18 5h-1.26A8 8 0 1 0 3 15.3"/></symbol>
@@ -121,6 +123,15 @@
                 <label class="check-row" title="Center detected spots on the ring outline instead of its filled area — best for hand-drawn circles.">
                     <input type="checkbox" id="ring-center"> ring marks
                 </label>
+            </div>
+            <div class="tool-group">
+                <span class="tool-label">Image</span>
+                <button class="lab-btn btn-lab-outline" data-action="rotateCCW" title="Rotate 90° left" aria-label="Rotate left">
+                    <svg class="icon"><use href="#i-rotate-ccw"/></svg>
+                </button>
+                <button class="lab-btn btn-lab-outline" data-action="rotateCW" title="Rotate 90° right" aria-label="Rotate right">
+                    <svg class="icon"><use href="#i-rotate-cw"/></svg>
+                </button>
             </div>
             <div class="tool-group tool-group--actions">
                 <button id="calculate-btn" class="lab-btn btn-lab-success" data-action="calculateRF">

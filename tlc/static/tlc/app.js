@@ -27,6 +27,7 @@ let lines = [];
 let spots = [];
 let spotSeq = 0;
 let lineSeq = 0;
+let rotation = 0; // clockwise degrees the image is displayed at (0/90/180/270)
 
 let currentLine = null;
 let isHorizontal = true;
@@ -147,10 +148,35 @@ function isHorizontalLine(line) {
 }
 
 // --- Canvas drawing -------------------------------------------------------
+// Draw an image into the canvas frame applying the current clockwise rotation.
+function drawImageRotated(context, img, rot, w, h) {
+    context.save();
+    if (rot === 90) {
+        context.translate(w, 0);
+        context.rotate(Math.PI / 2);
+        context.drawImage(img, 0, 0, h, w);
+    } else if (rot === 180) {
+        context.translate(w, h);
+        context.rotate(Math.PI);
+        context.drawImage(img, 0, 0, w, h);
+    } else if (rot === 270) {
+        context.translate(0, h);
+        context.rotate(-Math.PI / 2);
+        context.drawImage(img, 0, 0, h, w);
+    } else {
+        context.drawImage(img, 0, 0, w, h);
+    }
+    context.restore();
+}
+
 function fitAndDraw(img) {
     const maxHeight = 500;
-    const naturalW = img.naturalWidth || img.width;
-    const naturalH = img.naturalHeight || img.height;
+    const natW0 = img.naturalWidth || img.width;
+    const natH0 = img.naturalHeight || img.height;
+    // For 90/270 the displayed image's width/height are swapped.
+    const swap = rotation === 90 || rotation === 270;
+    const naturalW = swap ? natH0 : natW0;
+    const naturalH = swap ? natW0 : natH0;
     let dispW = naturalW;
     let dispH = naturalH;
     if (naturalH > maxHeight) {
@@ -159,7 +185,7 @@ function fitAndDraw(img) {
     }
     canvas.width = dispW;
     canvas.height = dispH;
-    ctx.drawImage(img, 0, 0, dispW, dispH);
+    drawImageRotated(ctx, img, rotation, dispW, dispH);
     window.scaleFactor = naturalH / dispH;
 
     const annotated = document.getElementById("annotated-image");
@@ -176,7 +202,7 @@ image.onload = function () {
 
 function redrawCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    drawImageRotated(ctx, image, rotation, canvas.width, canvas.height);
 
     ctx.font = "16px sans-serif";
     ctx.lineWidth = 2;
@@ -534,24 +560,28 @@ function handleDoubleClick(e) {
 
 // --- Image payload (shared by calculate + auto-detect) --------------------
 function getImagePayload() {
+    let payload;
     if (isLocalImage) {
-        return {
+        payload = {
             imageSrc: window.currentImageFileName || "local_upload.png",
             isLocalImage: true,
             imageData: image.src,
         };
+    } else {
+        try {
+            const parsed = new URL(image.src);
+            const filePath = parsed.searchParams.get("file_path");
+            payload = {
+                imageSrc: decodeURIComponent(filePath).split("/").pop(),
+                isLocalImage: false,
+                imageData: null,
+            };
+        } catch (err) {
+            payload = { imageSrc: "unknown_image.png", isLocalImage: false, imageData: null };
+        }
     }
-    try {
-        const parsed = new URL(image.src);
-        const filePath = parsed.searchParams.get("file_path");
-        return {
-            imageSrc: decodeURIComponent(filePath).split("/").pop(),
-            isLocalImage: false,
-            imageData: null,
-        };
-    } catch (err) {
-        return { imageSrc: "unknown_image.png", isLocalImage: false, imageData: null };
-    }
+    payload.rotation = rotation; // backend re-orients to match the displayed image
+    return payload;
 }
 
 function hasImage() {
@@ -793,9 +823,13 @@ function toggleHelp() {
 
 function updateWorkAreaLayout() {
     const area = document.getElementById("work-area");
-    if (!area) return;
+    if (!area || !image) return;
+    // Use the displayed (rotation-adjusted) dimensions.
+    const swap = rotation === 90 || rotation === 270;
+    const w = swap ? image.naturalHeight : image.naturalWidth;
+    const h = swap ? image.naturalWidth : image.naturalHeight;
     // Portrait (tall) -> side-by-side columns; landscape (wide) -> stacked rows.
-    const landscape = !!(image && image.naturalWidth > image.naturalHeight);
+    const landscape = w > h;
     area.classList.toggle("layout-rows", landscape);
     area.classList.toggle("layout-columns", !landscape);
 }
@@ -830,10 +864,41 @@ function updateCalculateEnabled() {
     btn.disabled = !ready;
 }
 
+// Rotation is only allowed on a clean image (no annotations to invalidate),
+// so the reference-line / RF axis never has to change.
+function hasAnnotations() {
+    return spots.length > 0 || lines.length > 0 || !!plateRegion;
+}
+
+function updateRotateEnabled() {
+    const locked = hasAnnotations();
+    document
+        .querySelectorAll('[data-action="rotateCW"], [data-action="rotateCCW"]')
+        .forEach((btn) => {
+            btn.disabled = locked || !hasImage();
+        });
+}
+
+function rotateImage(deg) {
+    if (!hasImage() || hasAnnotations()) return;
+    rotation = (rotation + deg + 360) % 360;
+    fitAndDraw(image);
+    refreshUI();
+}
+
+function rotateCW() {
+    rotateImage(90);
+}
+
+function rotateCCW() {
+    rotateImage(-90);
+}
+
 // Refresh contextual UI after any annotation change.
 function refreshUI() {
     updateHint();
     updateCalculateEnabled();
+    updateRotateEnabled();
 }
 
 function resetCanvas() {
@@ -893,6 +958,7 @@ function handleLocalImageFile(file) {
 }
 
 function loadLocalImage(dataURL, fileName) {
+    rotation = 0;
     image = new Image();
     image.onload = function () {
         fitAndDraw(image);
@@ -925,6 +991,7 @@ function loadELNImage() {
             fetch("/serve-image/?file_path=" + encodeURIComponent(data.imagePath)).then((response) => {
                 if (response.ok) {
                     isLocalImage = false;
+                    rotation = 0;
                     image = new Image();
                     image.onload = () => {
                         fitAndDraw(image);
@@ -961,6 +1028,8 @@ const ACTIONS = {
     addSpots,
     autoDetectSpots,
     selectPlateArea,
+    rotateCW,
+    rotateCCW,
     addMinLine,
     addMaxLine,
     addHorizontalLine,

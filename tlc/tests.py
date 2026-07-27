@@ -142,6 +142,27 @@ class CalculateRfTests(SimpleTestCase):
         red_line = np.all(annotated[100] == (0, 0, 255), axis=1)
         self.assertFalse(red_line.any(), "reference lines must not be saved")
 
+    def test_rotation_is_applied_to_output(self) -> None:
+        # A 400x600 image rotated 90° must produce a 600x400 annotated output.
+        payload = {
+            "isLocalImage": True,
+            "imageData": _png_data_url(width=400, height=600),
+            "imageSrc": "sample.png",
+            "rotation": 90,
+            "lines": [{"type": "min", "y": 350}, {"type": "max", "y": 50}],
+            "spots": [{"x": 300, "y": 200}],  # in rotated (600x400) space -> RF 0.5
+        }
+        response = self.client.post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["rf_values"][0]["rf"], 0.5)
+        name = body["annotated_image_url"].split("/")[-1]
+        annotated = cv2.imread(os.path.join(settings.MEDIA_ROOT, name))
+        assert annotated is not None
+        self.assertEqual(annotated.shape[:2], (400, 600))  # rotated dimensions
+
     def test_missing_min_max_lines_is_rejected(self) -> None:
         payload = {
             "isLocalImage": True,
