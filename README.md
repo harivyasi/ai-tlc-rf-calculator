@@ -150,6 +150,10 @@ results back), e.g. `CSP_CONNECT_SRC="https://eln.example.org"`, and optionally
 `ELN_ALLOWED_HOSTS="eln.example.org"` to restrict which hosts the server will
 fetch images from.
 
+See [docs/eln-integration.md](docs/eln-integration.md) for the full contract
+(the signed URL, its JWT fields, the shared GET/POST endpoint, redirect
+handling, and CORS/CSP requirements).
+
 The app listens on port `8050` and exposes a health probe at `/healthz`. Static
 files are served by WhiteNoise; user-generated media is served by the app (fine
 for low-traffic internal use — front it with a reverse proxy for higher load).

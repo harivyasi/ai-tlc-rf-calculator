@@ -6,8 +6,9 @@ from . import views
 urlpatterns = [
     # URL for the image upload page
     path("", views.upload_image, name="upload_image"),
-    # Health-check endpoint for orchestration probes
-    path("healthz/", views.healthz, name="healthz"),
+    # Health-check endpoint for orchestration probes (no trailing slash so a
+    # probe hitting /healthz gets 200, not an APPEND_SLASH 301).
+    path("healthz", views.healthz, name="healthz"),
     # URL for calculating RF values based on image data and user annotations
     path("calculate_rf/", views.calculate_rf, name="calculate_rf"),
     # URL for assisted spot detection (returns candidate spots to annotate)

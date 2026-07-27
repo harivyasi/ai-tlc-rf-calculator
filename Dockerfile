@@ -1,35 +1,61 @@
 # syntax=docker/dockerfile:1
-FROM python:3.14-slim
 
-# Faster, cleaner Python in containers.
+# ---------------------------------------------------------------------------
+# Builder: resolve dependencies into a venv and collect static assets.
+# ---------------------------------------------------------------------------
+FROM python:3.14-slim AS builder
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PROJECT_ENVIRONMENT=/usr/local
+    UV_PROJECT_ENVIRONMENT=/opt/venv
 
-# opencv-python-headless needs libglib2.0 at runtime (no OpenGL required).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv (copied from its official image).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# uv is copied from its official image (pinned by tag).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /code
 
-# Install dependencies first for better layer caching.
+# Install dependencies first (cached until the lockfile changes).
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-install-project
 
-# Copy the project.
-COPY . /code/
+# Copy the app and collect static files. A throwaway key is fine here;
+# collectstatic reads no secrets and DEBUG stays off (production settings).
+COPY . .
+RUN SECRET_KEY=build-only-key /opt/venv/bin/python manage.py collectstatic --noinput
 
-# Collect static files. A throwaway key is fine here; collectstatic reads no
-# secrets. DEBUG stays off so production settings are exercised.
-RUN SECRET_KEY=build-only-key python manage.py collectstatic --noinput
+# ---------------------------------------------------------------------------
+# Runtime: slim image with only the venv, the app, and runtime libs.
+# ---------------------------------------------------------------------------
+FROM python:3.14-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+# opencv-python-headless needs libglib2.0 at runtime (no OpenGL required).
+# Create an unprivileged user to run the app.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home --uid 10001 appuser
+
+WORKDIR /code
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder --chown=appuser:appuser /code /code
+
+USER appuser
 
 EXPOSE 8050
+
+# Liveness probe: check gunicorn is accepting connections. (A TCP check avoids
+# Django's ALLOWED_HOSTS validation; use GET /healthz for readiness probes in
+# orchestration, adding the probe host to ALLOWED_HOSTS.)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8050), 2).close()"]
 
 # SECRET_KEY, ALLOWED_HOSTS, etc. must be provided at runtime (see README).
 # Worker/threads/timeout are configurable via GUNICORN_* env vars.

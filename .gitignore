@@ -28,3 +28,6 @@ test-results/
 .DS_Store
 .idea/
 .vscode/
+
+# Local reference copies of upstream ELN docs (may contain third-party PII)
+eln_related_docs/
