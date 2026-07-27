@@ -32,6 +32,7 @@ LANE_PROMINENCE = 0.20
 PEAK_REL_THRESHOLD = 0.30
 BINARY_THRESHOLD = 0.22  # darkness level that counts as "structure"
 MAX_ASPECT = 2.5  # reject elongated components (lines)
+PROCESS_MAX_DIM = 1200  # cap the working resolution for detection (speed)
 
 
 def _plate_mask(image: np.ndarray, gray: np.ndarray, erode_px: int) -> np.ndarray:
@@ -197,15 +198,24 @@ def detect_spots(
     if image is None or image.size == 0:
         return []
 
-    # Spot radii are absolute, so derive them from the full image — not the
-    # (possibly small) cropped region.
-    scale = float(min(image.shape[:2]))
+    # Work at a bounded resolution: LoG blob detection is very expensive at the
+    # large sigmas a multi-megapixel image implies. Downscale for processing and
+    # map results back. Radii stay tied to the full-image spot size (scaled by
+    # the same factor), so detection behaves the same, just faster.
+    orig_h, orig_w = image.shape[:2]
+    factor = min(1.0, PROCESS_MAX_DIM / max(orig_h, orig_w))
+    if factor < 1.0:
+        image = cv2.resize(
+            image, (round(orig_w * factor), round(orig_h * factor)), interpolation=cv2.INTER_AREA
+        )
+
+    scale = min(orig_h, orig_w) * factor
     min_r = max(2.0, MIN_RADIUS_FRAC * scale)
     max_r = max(min_r + 1.0, MAX_RADIUS_FRAC * scale)
 
     offset_x = offset_y = 0
     if region is not None:
-        rx, ry, rw, rh = (int(v) for v in region)
+        rx, ry, rw, rh = (round(v * factor) for v in region)
         x0, y0 = max(0, rx), max(0, ry)
         x1, y1 = min(image.shape[1], rx + rw), min(image.shape[0], ry + rh)
         if x1 - x0 < 2 or y1 - y0 < 2:
@@ -218,5 +228,9 @@ def detect_spots(
     candidates = _candidate_points(darkness, method, min_r, max_r)
     spots = _shape_gated_spots(darkness, candidates, min_r, max_r)
     spots = _dedup(spots, min_dist=1.5 * min_r)
-    spots.sort(key=lambda p: (p[1], p[0]))
-    return [{"x": x + offset_x, "y": y + offset_y} for x, y in spots]
+
+    # Map working-resolution coordinates back to the original image.
+    inv = 1.0 / factor
+    scaled = [(round((offset_x + x) * inv), round((offset_y + y) * inv)) for x, y in spots]
+    scaled.sort(key=lambda p: (p[1], p[0]))
+    return [{"x": x, "y": y} for x, y in scaled]
