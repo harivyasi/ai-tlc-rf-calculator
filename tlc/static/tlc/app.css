@@ -489,3 +489,14 @@ body {
     .tool-group { border-right: none; padding-right: 0; }
     .tool-group--actions { margin-left: 0; }
 }
+
+/* Results table row interactions */
+#values-table tbody tr.clickable { cursor: pointer; }
+#values-table tbody tr.active { background: var(--primary-soft); }
+.row-del {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; padding: 0; border: none; border-radius: 6px;
+    background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.row-del:hover { background: var(--surface-2); color: var(--red); }
+.row-del .icon { width: 15px; height: 15px; }

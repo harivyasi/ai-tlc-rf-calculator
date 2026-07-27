@@ -198,6 +198,24 @@ def test_double_click_deletes_spot(page, servers, test_image_path):
     assert rows == 1, f"expected 1 row after deleting one of two spots, got {rows}"
 
 
+def test_result_row_highlight_and_delete(page, servers, test_image_path):
+    """A result row highlights its spot on click and removes it on delete."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 110, "y": 150})
+    canvas.click(position={"x": 210, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr")
+    assert page.locator("#values-table tbody tr").count() == 2
+
+    first = page.locator("#values-table tbody tr").first
+    first.click()
+    assert "active" in (first.get_attribute("class") or ""), "row did not highlight"
+
+    first.locator(".row-del").click()
+    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 1")
+
+
 def test_auto_detect_populates_spots(page, servers, blob_image_path):
     """New feature: Auto-detect finds the drawn spots and they flow into RF calc."""
     _stub_cdn(page)

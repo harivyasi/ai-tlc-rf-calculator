@@ -389,7 +389,6 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     assert image is not None  # guaranteed when error is None
 
     rf_values: list[dict[str, Any]] = []
-    drawn_spots: list[dict[str, Any]] = []
     for spot in spots:
         x = spot["x"]
         y = spot["y"]
@@ -412,14 +411,12 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         solvent = closest_vertical["text"] if closest_vertical else "Unknown"
         compound = closest_horizontal["text"] if closest_horizontal else "Unknown"
 
-        rf_values.append({"compound": compound, "solvent": solvent, "rf": rf_value})
-        drawn_spots.append(
-            {"x": x, "y": y, "rf": rf_value, "compound": compound, "solvent": solvent}
-        )
+        # x/y are echoed so the frontend can map each result row to its spot.
+        rf_values.append({"compound": compound, "solvent": solvent, "rf": rf_value, "x": x, "y": y})
 
     # Burn only the results (spot rings + labels) onto the full-resolution
     # image — not the transient reference lines / plate box.
-    _draw_annotations(image, drawn_spots)
+    _draw_annotations(image, rf_values)
 
     # Unique output names so concurrent requests never clobber each other.
     token = uuid.uuid4().hex

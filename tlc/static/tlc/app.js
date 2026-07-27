@@ -52,6 +52,7 @@ let selectingRegion = false; // the "Plate Area" tool is armed
 let draggingRegion = false; // a region drag is in progress
 let regionStart = null; // {x, y} in display coordinates
 let regionCurrent = null; // {x, y} in display coordinates
+let highlightedSpot = null; // {x, y} of a result row highlighted on the canvas
 
 // --- Small UI helpers (replace Materialize toast / SweetAlert) ------------
 function notify(message, type = "info") {
@@ -244,6 +245,23 @@ function redrawCanvas() {
         ctx.arc(spot.x / window.scaleFactor, spot.y / window.scaleFactor, 10, 0, 2 * Math.PI);
         ctx.stroke();
     });
+
+    // Highlight the spot for the selected result row.
+    if (highlightedSpot) {
+        ctx.save();
+        ctx.strokeStyle = "#2f6fed";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(
+            highlightedSpot.x / window.scaleFactor,
+            highlightedSpot.y / window.scaleFactor,
+            15,
+            0,
+            2 * Math.PI
+        );
+        ctx.stroke();
+        ctx.restore();
+    }
 
     // Optional plate region (dashed): in-progress drag or a stored region.
     const sf = window.scaleFactor || 1;
@@ -678,13 +696,53 @@ function autoDetectSpots() {
 function populateTable(rfValues) {
     const tbody = document.getElementById("values-table").getElementsByTagName("tbody")[0];
     tbody.innerHTML = "";
+    highlightedSpot = null;
     rfValues.forEach((value, index) => {
         const row = tbody.insertRow();
+        if (typeof value.x === "number" && typeof value.y === "number") {
+            row.dataset.x = value.x;
+            row.dataset.y = value.y;
+            row.classList.add("clickable");
+            row.addEventListener("click", () => highlightSpotFromRow(row));
+        }
         row.insertCell(0).textContent = value.solvent || "Lane " + (index + 1);
         row.insertCell(1).textContent = value.compound || "Spot " + (index + 1);
         row.insertCell(2).textContent = typeof value.rf !== "undefined" ? value.rf : value.rf_value;
-        row.insertCell(3).innerHTML = '<span class="status-badge status-active">Calculated</span>';
+        const actions = row.insertCell(3);
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "row-del";
+        del.setAttribute("aria-label", "Delete this spot");
+        del.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>';
+        del.addEventListener("click", (e) => {
+            e.stopPropagation();
+            deleteResultRow(row);
+        });
+        actions.appendChild(del);
     });
+}
+
+function highlightSpotFromRow(row) {
+    if (row.dataset.x === undefined) return;
+    highlightedSpot = { x: Number(row.dataset.x), y: Number(row.dataset.y) };
+    document
+        .querySelectorAll("#values-table tbody tr.active")
+        .forEach((r) => r.classList.remove("active"));
+    row.classList.add("active");
+    redrawCanvas();
+}
+
+function deleteResultRow(row) {
+    if (row.dataset.x !== undefined) {
+        const rx = Number(row.dataset.x);
+        const ry = Number(row.dataset.y);
+        spots = spots.filter((s) => Math.abs(s.x - rx) > 1 || Math.abs(s.y - ry) > 1);
+        if (highlightedSpot && Math.abs(highlightedSpot.x - rx) < 2 && Math.abs(highlightedSpot.y - ry) < 2) {
+            highlightedSpot = null;
+        }
+    }
+    row.remove();
+    redrawCanvas();
 }
 
 // --- CSV export -----------------------------------------------------------
@@ -906,6 +964,7 @@ function resetCanvas() {
     spots = [];
     plateRegion = null;
     selectingRegion = false;
+    highlightedSpot = null;
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
     if (image && image.complete) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
