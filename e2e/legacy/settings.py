@@ -16,3 +16,8 @@ from config.settings import *  # noqa: F401,F403
 from config.settings import TEMPLATES
 
 TEMPLATES[0]["DIRS"] = [Path(__file__).resolve().parent / "templates"]
+
+# The original frontend uses inline scripts and external CDNs. This comparison
+# server exists only to reproduce that old behaviour, so CSP is disabled here;
+# production (config.settings) keeps the strict policy.
+CONTENT_SECURITY_POLICY = ""

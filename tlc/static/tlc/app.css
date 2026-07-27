@@ -358,3 +358,13 @@ body {
     .content-wrapper { padding: 1rem; }
     .fab-container { top: auto; bottom: 1rem; right: 1rem; }
 }
+
+/* --- Utility classes (replace former inline style attributes; CSP-strict) - */
+.icon-sprite { position: absolute; }
+.button-group--row { flex-direction: row; }
+.flex-1 { flex: 1; }
+.hidden { display: none; }
+.text-sm { font-size: 0.85rem; }
+.center-mt { text-align: center; margin-top: 1rem; }
+.full-width { width: 100%; }
+#local-upload-section { margin-top: 1.25rem; }

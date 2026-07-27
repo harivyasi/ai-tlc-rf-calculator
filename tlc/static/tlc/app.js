@@ -713,6 +713,43 @@ function loadELNImage() {
         });
 }
 
+// --- Action dispatch (data-action -> handler; no inline JS, CSP-friendly) --
+function triggerFileInput() {
+    document.getElementById("local-image-input").click();
+}
+
+// Maps the `data-action` attribute on a control to its handler. Handlers that
+// need the originating button receive the click event; those that take a value
+// receive the element's `data-arg`.
+const ACTIONS = {
+    selectImageSource,
+    triggerFileInput,
+    addSpots,
+    autoDetectSpots,
+    addMinLine,
+    addMaxLine,
+    addHorizontalLine,
+    addVerticalLine,
+    calculateRF,
+    resetCanvas,
+    updateAnnotatedHeading,
+    saveCSV,
+    saveImageToServer,
+    saveCSVToServer,
+    submitAnnotation,
+};
+
+function handleAction(event) {
+    const el = event.currentTarget;
+    const fn = ACTIONS[el.dataset.action];
+    if (!fn) return;
+    if (el.dataset.arg !== undefined) {
+        fn(el.dataset.arg);
+    } else {
+        fn(event);
+    }
+}
+
 // --- Init -----------------------------------------------------------------
 function preventDefaults(e) {
     e.preventDefault();
@@ -722,6 +759,11 @@ function preventDefaults(e) {
 function init() {
     canvas = document.getElementById("image-canvas");
     ctx = canvas.getContext("2d");
+
+    // Bind all declarative controls (replaces inline onclick handlers).
+    document.querySelectorAll("[data-action]").forEach((el) => {
+        el.addEventListener("click", handleAction);
+    });
 
     updateAnnotatedHeading("instructions");
 

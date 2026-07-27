@@ -56,10 +56,30 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "config.middleware.ContentSecurityPolicyMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# Content-Security-Policy. The frontend is fully self-hosted with no inline
+# scripts, inline styles, or inline event handlers, so scripts and styles are
+# locked to 'self'. Cross-origin fetches (e.g. saving results back to an ELN)
+# are blocked unless their origins are listed in CSP_CONNECT_SRC.
+_csp_connect = " ".join(["'self'", *env_list("CSP_CONNECT_SRC")])
+CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self' data:",
+        f"connect-src {_csp_connect}",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+    ]
+)
 
 # Use WhiteNoise's compressed/hashed manifest storage only in production;
 # in DEBUG, plain storage serves via finders so no collectstatic run is needed

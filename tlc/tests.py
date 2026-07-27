@@ -138,6 +138,16 @@ class HealthzTests(SimpleTestCase):
         self.assertEqual(response.json()["status"], "ok")
 
 
+class SecurityHeaderTests(SimpleTestCase):
+    def test_csp_header_locks_scripts_without_unsafe_inline(self) -> None:
+        response = Client().get(reverse("upload_image"))
+        csp = response.headers.get("Content-Security-Policy", "")
+        self.assertIn("default-src 'self'", csp)
+        self.assertIn("script-src 'self'", csp)
+        self.assertNotIn("unsafe-inline", csp)
+        self.assertNotIn("unsafe-eval", csp)
+
+
 class DetectSpotsTests(SimpleTestCase):
     def setUp(self) -> None:
         self.client = Client()

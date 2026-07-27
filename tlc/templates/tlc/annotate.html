@@ -10,7 +10,7 @@
 <body>
 
 <!-- Icon sprite (Feather-style, stroked with currentColor) -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<svg width="0" height="0" class="icon-sprite" aria-hidden="true">
     <defs>
         <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></symbol>
@@ -42,25 +42,24 @@
         <div class="lab-card">
             <div class="card-header"><h2 class="card-title">Image source</h2></div>
             <div class="card-content">
-                <div class="button-group" style="flex-direction: row;">
-                    <button id="eln-source-btn" class="lab-btn btn-lab-primary active" style="flex:1"
-                            onclick="selectImageSource('eln')">
+                <div class="button-group button-group--row">
+                    <button id="eln-source-btn" class="lab-btn btn-lab-primary active flex-1"
+                            data-action="selectImageSource" data-arg="eln">
                         <svg class="icon"><use href="#i-cloud"/></svg> From ELN
                     </button>
-                    <button id="local-source-btn" class="lab-btn btn-lab-outline" style="flex:1"
-                            onclick="selectImageSource('local')">
+                    <button id="local-source-btn" class="lab-btn btn-lab-outline flex-1"
+                            data-action="selectImageSource" data-arg="local">
                         <svg class="icon"><use href="#i-upload"/></svg> Upload local
                     </button>
                 </div>
 
-                <div id="local-upload-section" style="display:none; margin-top:1.25rem;">
+                <div id="local-upload-section" class="hidden">
                     <div class="upload-area">
                         <svg class="icon icon-lg muted"><use href="#i-cloud-up"/></svg>
                         <h6>Upload TLC image</h6>
                         <p>Drag &amp; drop your image here, or choose a file</p>
-                        <input type="file" id="local-image-input" accept="image/*" style="display:none;">
-                        <button class="lab-btn btn-lab-primary"
-                                onclick="document.getElementById('local-image-input').click()">
+                        <input type="file" id="local-image-input" accept="image/*" class="hidden">
+                        <button class="lab-btn btn-lab-primary" data-action="triggerFileInput">
                             <svg class="icon"><use href="#i-folder"/></svg> Choose file
                         </button>
                     </div>
@@ -82,30 +81,30 @@
                     <div class="controls-panel">
                         <h6 class="controls-title">Annotation tools</h6>
                         <div class="button-group">
-                            <button class="lab-btn btn-lab-primary" onclick="addSpots(event)">
+                            <button class="lab-btn btn-lab-primary" data-action="addSpots">
                                 <svg class="icon"><use href="#i-target"/></svg> Add Spots
                             </button>
-                            <button class="lab-btn btn-lab-secondary" onclick="autoDetectSpots()">
+                            <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots">
                                 <svg class="icon"><use href="#i-wand"/></svg> Auto-detect
                             </button>
-                            <button class="lab-btn btn-lab-secondary" onclick="addMinLine(event)">
+                            <button class="lab-btn btn-lab-secondary" data-action="addMinLine">
                                 <svg class="icon"><use href="#i-hline"/></svg> Min Line
                             </button>
-                            <button class="lab-btn btn-lab-secondary" onclick="addMaxLine(event)">
+                            <button class="lab-btn btn-lab-secondary" data-action="addMaxLine">
                                 <svg class="icon"><use href="#i-hline"/></svg> Max Line
                             </button>
-                            <button class="lab-btn btn-lab-outline" onclick="addHorizontalLine(event)">
+                            <button class="lab-btn btn-lab-outline" data-action="addHorizontalLine">
                                 <svg class="icon"><use href="#i-hline"/></svg> H-Line
                             </button>
-                            <button class="lab-btn btn-lab-outline" onclick="addVerticalLine(event)">
+                            <button class="lab-btn btn-lab-outline" data-action="addVerticalLine">
                                 <svg class="icon"><use href="#i-vline"/></svg> V-Line
                             </button>
                         </div>
                         <div class="button-group">
-                            <button class="lab-btn btn-lab-success" onclick="calculateRF()">
+                            <button class="lab-btn btn-lab-success" data-action="calculateRF">
                                 <svg class="icon"><use href="#i-calc"/></svg> Calculate RF
                             </button>
-                            <button class="lab-btn btn-lab-danger" onclick="resetCanvas()">
+                            <button class="lab-btn btn-lab-danger" data-action="resetCanvas">
                                 <svg class="icon"><use href="#i-reset"/></svg> Reset
                             </button>
                         </div>
@@ -130,17 +129,18 @@
                                 <li>Click <span class="highlight">Calculate RF</span>. Results appear in the table below;
                                     export as CSV or send back to the ELN.</li>
                             </ol>
-                            <p class="muted" style="font-size:0.85rem;">
+                            <p class="muted text-sm">
                                 Tip: drag spots or lines to reposition, and double-click a spot to delete it.
                                 RF values should fall between 0 and 1.
                             </p>
-                            <div style="text-align:center; margin-top:1rem;">
-                                <button class="lab-btn btn-lab-warning" onclick="updateAnnotatedHeading('editing')">
+                            <div class="center-mt">
+                                <button class="lab-btn btn-lab-warning"
+                                        data-action="updateAnnotatedHeading" data-arg="editing">
                                     <svg class="icon"><use href="#i-play"/></svg> Start analysis
                                 </button>
                             </div>
                         </div>
-                        <img id="annotated-image" style="display:none;" alt="Annotated result">
+                        <img id="annotated-image" class="hidden" alt="Annotated result">
                     </div>
                 </div>
             </div>
@@ -165,13 +165,13 @@
 
     <!-- Export actions -->
     <div class="fab-container">
-        <button class="lab-fab fab-lab-primary" onclick="saveCSV()" title="Download CSV">
+        <button class="lab-fab fab-lab-primary" data-action="saveCSV" title="Download CSV">
             <svg class="icon"><use href="#i-download"/></svg>
         </button>
-        <button class="lab-fab fab-lab-secondary" onclick="saveImageToServer()" title="Save image">
+        <button class="lab-fab fab-lab-secondary" data-action="saveImageToServer" title="Save image">
             <svg class="icon"><use href="#i-image"/></svg>
         </button>
-        <button class="lab-fab fab-lab-warning" onclick="saveCSVToServer()" title="Upload to ELN">
+        <button class="lab-fab fab-lab-warning" data-action="saveCSVToServer" title="Upload to ELN">
             <svg class="icon"><use href="#i-cloud-up"/></svg>
         </button>
     </div>
@@ -179,7 +179,7 @@
     <!-- Line label popup -->
     <div id="line-popup" class="popup">
         <input type="text" id="line-text" placeholder="Enter annotation text">
-        <button class="lab-btn btn-lab-primary" style="width:100%" onclick="submitAnnotation()">Submit</button>
+        <button class="lab-btn btn-lab-primary full-width" data-action="submitAnnotation">Submit</button>
     </div>
 </div>
 

@@ -96,6 +96,7 @@ All configuration is via environment variables:
 | `ALLOWED_HOSTS`        | `localhost,127.0.0.1`       | Comma-separated allowed hosts.                                         |
 | `CSRF_TRUSTED_ORIGINS` | *(empty)*                   | Comma-separated trusted origins for CSRF (e.g. `https://tlc.example.org`). |
 | `ELN_ALLOWED_HOSTS`    | *(empty = any public host)* | Comma-separated allowlist of hosts the server may fetch ELN images from. |
+| `CSP_CONNECT_SRC`      | *(empty)*                   | Extra origins added to the CSP `connect-src` (e.g. your ELN origin, so "save to ELN" works). |
 | `SECURE_SSL_REDIRECT`  | `True` (when not DEBUG)     | Redirect HTTP to HTTPS.                                                |
 | `SECURE_HSTS_SECONDS`  | `31536000`                  | HSTS max-age (when not DEBUG).                                         |
 
@@ -115,6 +116,11 @@ uv run python manage.py check --deploy
 - **Image serving (`/serve-image/`)** is confined to `MEDIA_ROOT`; path
   traversal is not possible.
 - CSRF protection is enforced on the calculation endpoint.
+- **Content-Security-Policy**: the frontend is fully self-hosted with no inline
+  scripts, styles, or event handlers, so the CSP is `default-src 'self'` with
+  `script-src`/`style-src` locked to `'self'` (no `unsafe-inline`). Cross-origin
+  browser requests are blocked unless their origin is listed in
+  `CSP_CONNECT_SRC` — set it to your ELN origin to allow "save to ELN".
 
 ## Deployment (Docker)
 
