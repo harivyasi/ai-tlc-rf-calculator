@@ -114,6 +114,31 @@ class CalculateRfTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 200)
 
+    def test_annotations_render_on_full_resolution_image(self) -> None:
+        # The annotated output must match the input resolution and include the
+        # reference lines (not just spots).
+        payload = {
+            "isLocalImage": True,
+            "imageData": _png_data_url(width=400, height=600),
+            "imageSrc": "sample.png",
+            "lines": [
+                {"type": "min", "y": 500, "text": "min"},
+                {"type": "max", "y": 100, "text": "max"},
+            ],
+            "spots": [{"x": 200, "y": 300}],
+        }
+        response = self.client.post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        name = response.json()["annotated_image_url"].split("/")[-1]
+        annotated = cv2.imread(os.path.join(settings.MEDIA_ROOT, name))
+        assert annotated is not None
+        self.assertEqual(annotated.shape[:2], (600, 400))  # full input resolution
+        # The max line at y=100 is drawn in red (BGR 0,0,255) across the width.
+        red = np.all(annotated[100] == (0, 0, 255), axis=1)
+        self.assertTrue(red.any(), "reference line was not rendered on the image")
+
     def test_missing_min_max_lines_is_rejected(self) -> None:
         payload = {
             "isLocalImage": True,

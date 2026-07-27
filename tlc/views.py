@@ -264,6 +264,75 @@ def _oversize_error(image: np.ndarray) -> JsonResponse | None:
 # RF calculation
 # ---------------------------------------------------------------------------
 
+_RED = (0, 0, 255)
+_BLUE = (255, 0, 0)
+_ORANGE = (0, 165, 255)
+
+
+def _draw_annotations(
+    image: np.ndarray, lines: list[dict[str, Any]], spots: list[dict[str, Any]]
+) -> None:
+    """Draw reference lines and spots onto ``image`` in place, at full resolution.
+
+    Marker/line/text sizes scale with the image so annotations stay legible on
+    both small and multi-megapixel plates.
+
+    Args:
+        image: The BGR image to annotate (modified in place).
+        lines: Reference lines (``min``/``max``/``horizontal`` carry ``y``;
+            ``vertical`` carries ``x``); each may have a ``text`` label.
+        spots: Spots to mark, each with ``x``, ``y``, ``rf``, ``compound``,
+            ``solvent``.
+    """
+    height, width = image.shape[:2]
+    s = max(1.0, min(height, width) / 1000.0)
+    thickness = max(1, round(2 * s))
+    radius = max(4, round(6 * s))
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5 * s
+
+    for line in lines:
+        line_type = line.get("type")
+        label = str(line.get("text") or "")
+        if line_type in ("min", "max", "horizontal"):
+            ly = int(line.get("y", 0))
+            cv2.line(image, (0, ly), (width, ly), _RED, thickness)
+            if label:
+                cv2.putText(image, label, (10, max(0, ly) - 8), font, font_scale, _RED, thickness)
+        elif line_type == "vertical":
+            lx = int(line.get("x", 0))
+            cv2.line(image, (lx, 0), (lx, height), _RED, thickness)
+            if label:
+                cv2.putText(
+                    image, label, (lx + 8, round(30 * s)), font, font_scale, _RED, thickness
+                )
+
+    offset = round(6 * s)
+    for spot in spots:
+        x, y = int(spot["x"]), int(spot["y"])
+        cv2.circle(image, (x, y), radius, _ORANGE, -1)
+        cv2.putText(
+            image, f"RF={spot['rf']}", (x + offset, y - offset), font, font_scale, _RED, thickness
+        )
+        cv2.putText(
+            image,
+            spot["compound"],
+            (x + offset, y + round(20 * s)),
+            font,
+            font_scale,
+            _BLUE,
+            thickness,
+        )
+        cv2.putText(
+            image,
+            spot["solvent"],
+            (x + offset, y + round(40 * s)),
+            font,
+            font_scale,
+            _BLUE,
+            thickness,
+        )
+
 
 def calculate_rf(request: HttpRequest) -> JsonResponse:
     """Compute RF values from annotation data and render an annotated image.
@@ -313,6 +382,7 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     assert image is not None  # guaranteed when error is None
 
     rf_values: list[dict[str, Any]] = []
+    drawn_spots: list[dict[str, Any]] = []
     for spot in spots:
         x = spot["x"]
         y = spot["y"]
@@ -336,35 +406,13 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         compound = closest_horizontal["text"] if closest_horizontal else "Unknown"
 
         rf_values.append({"compound": compound, "solvent": solvent, "rf": rf_value})
+        drawn_spots.append(
+            {"x": x, "y": y, "rf": rf_value, "compound": compound, "solvent": solvent}
+        )
 
-        cv2.circle(image, (int(x), int(y)), 10, (0, 165, 255), -1)
-        cv2.putText(
-            image,
-            f"RF={rf_value}",
-            (int(x) + 5, int(y) - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 255),
-            1,
-        )
-        cv2.putText(
-            image,
-            f"{compound}",
-            (int(x) + 5, int(y) + 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 0, 0),
-            1,
-        )
-        cv2.putText(
-            image,
-            f"{solvent}",
-            (int(x) + 5, int(y) + 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 0, 0),
-            1,
-        )
+    # Render every annotation (reference lines + spots) onto the full-resolution
+    # image, sized proportionally so it stays legible at any resolution.
+    _draw_annotations(image, lines, drawn_spots)
 
     # Unique output names so concurrent requests never clobber each other.
     token = uuid.uuid4().hex
