@@ -21,7 +21,7 @@ from PIL import Image
 
 from config.env import env_bool, env_int, env_list
 from tlc.detection import detect_spots
-from tlc.views import _decode_data_url
+from tlc.views import _decode_data_url, _draw_annotations, _parse_text_scale
 
 
 def _fake_response(status: int, headers: dict | None = None, body: bytes = b"") -> mock.Mock:
@@ -445,3 +445,25 @@ class EnvHelperTests(SimpleTestCase):
         with mock.patch.dict(os.environ, {"TLC_L": "a, b ,,c"}):
             self.assertEqual(env_list("TLC_L"), ["a", "b", "c"])
         self.assertEqual(env_list("TLC_MISSING"), [])
+
+
+class TextScaleTests(SimpleTestCase):
+    """Annotation text-size multiplier: parsing/clamping and its effect."""
+
+    def test_parse_text_scale_clamps_and_defaults(self) -> None:
+        self.assertEqual(_parse_text_scale(None), 1.0)  # missing -> 100%
+        self.assertEqual(_parse_text_scale("not a number"), 1.0)  # malformed -> 100%
+        self.assertEqual(_parse_text_scale(2.5), 2.5)  # in range, passes through
+        self.assertEqual(_parse_text_scale(100), 5.0)  # above cap -> clamped to 500%
+        self.assertEqual(_parse_text_scale(-3), 0.1)  # below floor -> clamped to 10%
+
+    def test_larger_text_scale_draws_more_label_pixels(self) -> None:
+        spot = {"x": 200, "y": 200, "rf": 0.5, "compound": "Aspirin", "solvent": "EtOAc"}
+
+        def red_label_pixels(scale: float) -> int:
+            img = np.full((400, 400, 3), 255, dtype=np.uint8)
+            _draw_annotations(img, [dict(spot)], text_scale=scale)
+            # _RED (0, 0, 255) is used only for the "RF=" label text.
+            return int(np.all(img == (0, 0, 255), axis=2).sum())
+
+        self.assertGreater(red_label_pixels(3.0), red_label_pixels(1.0))

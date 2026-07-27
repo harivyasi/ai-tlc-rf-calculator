@@ -191,6 +191,23 @@ body {
 }
 .check-row input { cursor: pointer; }
 
+.num-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+.num-row input {
+    width: 4.5rem;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+}
+
 /* Upload area */
 .upload-area {
     border: 2px dashed var(--border);

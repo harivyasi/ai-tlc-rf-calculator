@@ -31,6 +31,8 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
   the plate box for easier marking — view-only; the saved image keeps its full
   original dimensions (including any rotation).
 - **Rotate** the image 90° (on a clean image) to correct orientation.
+- **Annotation text size** (10–500%): scales the result labels in both the
+  live preview and the saved image, relative to the auto-computed size.
 - Light/dark theme toggle (overrides the OS preference, remembered per browser).
 - CSV export (download locally or POST back to an ELN).
 

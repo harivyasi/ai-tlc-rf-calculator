@@ -136,6 +136,14 @@
                     <svg class="icon"><use href="#i-rotate-cw"/></svg>
                 </button>
             </div>
+            <div class="tool-group">
+                <span class="tool-label">Labels</span>
+                <label class="num-row" for="text-scale" title="Annotation text size, 10–500% of the auto-computed size. Applies to the preview and the saved image.">
+                    text size
+                    <input type="number" id="text-scale" min="10" max="500" step="10" value="100" inputmode="numeric" aria-label="Annotation text size (percent)">
+                    <span aria-hidden="true">%</span>
+                </label>
+            </div>
             <div class="tool-group tool-group--actions">
                 <button id="calculate-btn" class="lab-btn btn-lab-success" data-action="calculateRF">
                     <svg class="icon"><use href="#i-calc"/></svg> Calculate RF
@@ -222,6 +230,9 @@
                 <p class="muted text-sm"><strong>Crop view</strong> zooms the work area to the plate box for
                     easier marking. It only affects what you see here — the saved image keeps its full
                     original dimensions (including any rotation).</p>
+                <p class="muted text-sm"><strong>Text size</strong> (10–500%) scales the annotation labels in
+                    both the preview and the saved image, relative to the size auto-computed from the plate
+                    resolution.</p>
             </div>
         </div>
     </div>

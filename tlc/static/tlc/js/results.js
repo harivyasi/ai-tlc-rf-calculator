@@ -8,7 +8,7 @@
 
 import { elnUrl, state } from "./state.js";
 import { getCookie, hideOverlay, notify, showOverlay, timestampedName } from "./ui-kit.js";
-import { hasImage, updateAnnotatedHeading } from "./ui.js";
+import { hasImage, textScale, updateAnnotatedHeading } from "./ui.js";
 import { addSpot } from "./annotations.js";
 import { redrawCanvas } from "./canvas.js";
 
@@ -35,6 +35,7 @@ export function getImagePayload() {
         }
     }
     payload.rotation = state.rotation; // backend re-orients to match the displayed image
+    payload.textScale = textScale(); // label text-size multiplier for the saved image
     return payload;
 }
 

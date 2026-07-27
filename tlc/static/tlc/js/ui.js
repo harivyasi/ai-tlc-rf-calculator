@@ -11,6 +11,15 @@
 
 import { state } from "./state.js";
 
+// Annotation text-size multiplier from the toolbar input, as a fraction
+// (100% -> 1.0), clamped to [0.1, 5.0] to match the server-side clamp.
+export function textScale() {
+    const el = document.getElementById("text-scale");
+    const pct = el ? Number(el.value) : 100;
+    if (!Number.isFinite(pct)) return 1;
+    return Math.max(0.1, Math.min(5, pct / 100));
+}
+
 export function hasImage() {
     const img = state.image;
     return img && img.src && (img.complete ? img.naturalWidth > 0 : true);

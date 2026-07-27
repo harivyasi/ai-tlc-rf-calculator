@@ -12,6 +12,7 @@ import {
     hasAnnotations,
     hasImage,
     refreshUI,
+    textScale,
     updateAnnotatedHeading,
     updateWorkAreaLayout,
 } from "./ui.js";
@@ -71,7 +72,7 @@ export function redrawCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawImageRotated(ctx, state.image, state.rotation, canvas.width, canvas.height);
 
-    ctx.font = "16px sans-serif";
+    ctx.font = Math.round(16 * textScale()) + "px sans-serif";
     ctx.lineWidth = 2;
 
     // Lines.

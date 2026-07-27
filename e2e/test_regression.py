@@ -485,3 +485,26 @@ def test_touch_drag_moves_spot(browser, servers, test_image_path):
         assert not errors, f"JS errors: {errors}"
     finally:
         context.close()
+
+
+def test_text_scale_is_sent_in_payload_and_persists(page, servers, test_image_path):
+    """The annotation text-size % flows into the calculate_rf payload (as a
+    fraction) and the preference survives a reload."""
+    sent: list[str | None] = []
+    page.on(
+        "request",
+        lambda r: sent.append(r.post_data) if r.url.endswith("/calculate_rf/") else None,
+    )
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.fill("#text-scale", "250")
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+
+    bodies = [b.replace(" ", "") for b in sent if b]
+    assert any('"textScale":2.5' in b for b in bodies), f"textScale missing/wrong: {bodies}"
+
+    page.reload()
+    page.wait_for_selector("#text-scale")
+    assert page.locator("#text-scale").input_value() == "250", "text-size preference not persisted"

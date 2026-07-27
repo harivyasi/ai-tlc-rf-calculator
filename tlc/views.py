@@ -293,7 +293,23 @@ _BLUE = (255, 0, 0)
 _ORANGE = (0, 165, 255)
 
 
-def _draw_annotations(image: np.ndarray, spots: list[dict[str, Any]]) -> None:
+def _parse_text_scale(raw: Any) -> float:
+    """Return the annotation text-size multiplier, clamped to [0.1, 5.0].
+
+    The frontend sends a fraction (e.g. ``1.0`` for 100%, ``2.5`` for 250%);
+    anything missing or malformed falls back to 1.0. Clamped server-side so a
+    crafted request cannot render absurdly large text.
+    """
+    try:
+        scale = float(raw)
+    except TypeError, ValueError:
+        return 1.0
+    return max(0.1, min(5.0, scale))
+
+
+def _draw_annotations(
+    image: np.ndarray, spots: list[dict[str, Any]], text_scale: float = 1.0
+) -> None:
     """Draw the analysis results — spot rings and their labels — onto ``image``.
 
     Only the results are burned into the saved image: each spot is marked with a
@@ -306,38 +322,50 @@ def _draw_annotations(image: np.ndarray, spots: list[dict[str, Any]]) -> None:
         image: The BGR image to annotate (modified in place).
         spots: Spots to mark, each with ``x``, ``y``, ``rf``, ``compound``,
             ``solvent``.
+        text_scale: User multiplier on the label text size (1.0 == 100%). Only
+            the text (font, its stroke, and the label row spacing) scales; the
+            ring markers keep their image-derived size.
     """
+    text_scale = max(0.1, min(5.0, text_scale))
     height, width = image.shape[:2]
     s = max(1.0, min(height, width) / 1000.0)
     thickness = max(1, round(2 * s))
     radius = max(4, round(9 * s))
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.5 * s
+    font_scale = 0.5 * s * text_scale
+    text_thickness = max(1, round(2 * s * text_scale))
+    line_gap = 20 * s * text_scale  # vertical spacing between label rows
 
     offset = round(6 * s)
     for spot in spots:
         x, y = int(spot["x"]), int(spot["y"])
         cv2.circle(image, (x, y), radius, _ORANGE, thickness)
         cv2.putText(
-            image, f"RF={spot['rf']}", (x + offset, y - offset), font, font_scale, _RED, thickness
+            image,
+            f"RF={spot['rf']}",
+            (x + offset, y - offset),
+            font,
+            font_scale,
+            _RED,
+            text_thickness,
         )
         cv2.putText(
             image,
             spot["compound"],
-            (x + offset, y + round(20 * s)),
+            (x + offset, y + round(line_gap)),
             font,
             font_scale,
             _BLUE,
-            thickness,
+            text_thickness,
         )
         cv2.putText(
             image,
             spot["solvent"],
-            (x + offset, y + round(40 * s)),
+            (x + offset, y + round(2 * line_gap)),
             font,
             font_scale,
             _BLUE,
-            thickness,
+            text_thickness,
         )
 
 
@@ -416,7 +444,7 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
 
     # Burn only the results (spot rings + labels) onto the full-resolution
     # image — not the transient reference lines / plate box.
-    _draw_annotations(image, rf_values)
+    _draw_annotations(image, rf_values, _parse_text_scale(data.get("textScale")))
 
     # Unique output names so concurrent requests never clobber each other.
     token = uuid.uuid4().hex

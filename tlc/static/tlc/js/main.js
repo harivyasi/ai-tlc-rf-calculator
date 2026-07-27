@@ -14,8 +14,8 @@
 import { pageUrl, state } from "./state.js";
 import { preventDefaults } from "./ui-kit.js";
 import { initTheme, toggleTheme } from "./theme.js";
-import { refreshUI, toggleHelp, toggleImageSource, updateAnnotatedHeading } from "./ui.js";
-import { applyCrop, rotateCCW, rotateCW, resetCanvas } from "./canvas.js";
+import { hasImage, refreshUI, toggleHelp, toggleImageSource, updateAnnotatedHeading } from "./ui.js";
+import { applyCrop, redrawCanvas, rotateCCW, rotateCW, resetCanvas } from "./canvas.js";
 import {
     addHorizontalLine,
     addMaxLine,
@@ -120,6 +120,26 @@ function init() {
                 /* ignore */
             }
             applyCrop();
+        });
+    }
+
+    // Annotation text size (%): persisted, and redraws the preview live so it
+    // matches the size that will be burned into the saved image.
+    const textScaleInput = document.getElementById("text-scale");
+    if (textScaleInput) {
+        try {
+            const saved = localStorage.getItem("tlc-text-scale");
+            if (saved) textScaleInput.value = saved;
+        } catch (err) {
+            /* localStorage unavailable */
+        }
+        textScaleInput.addEventListener("input", () => {
+            try {
+                localStorage.setItem("tlc-text-scale", textScaleInput.value);
+            } catch (err) {
+                /* ignore */
+            }
+            if (hasImage()) redrawCanvas();
         });
     }
 
