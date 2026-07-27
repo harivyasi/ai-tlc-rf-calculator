@@ -46,9 +46,9 @@ not a bug:
 - **POST** (`multipart/form-data`, field `file`) → uploads a result file
   (annotated PNG or CSV) back onto the same attachment/app.
 
-In the frontend this is a single `elnUrl` (`tlc/static/tlc/app.js`):
-`loadELNImage()` GETs it (via the server-side proxy below) and `postToEln()`
-POSTs results to it directly from the browser.
+In the frontend this is a single `elnUrl` (`tlc/static/tlc/js/state.js`):
+`loadELNImage()` (`js/sources.js`) GETs it via the server-side proxy below, and
+`postToEln()` (`js/results.js`) POSTs results to it directly from the browser.
 
 ## How the tool handles it
 
