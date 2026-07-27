@@ -165,6 +165,9 @@ function fitAndDraw(img) {
     const annotated = document.getElementById("annotated-image");
     annotated.style.width = dispW + "px";
     annotated.style.height = dispH + "px";
+
+    updateWorkAreaLayout();
+    document.body.dataset.imageReady = "1"; // readiness signal (used by tests)
 }
 
 image.onload = function () {
@@ -236,6 +239,8 @@ function redrawCanvas() {
         ctx.strokeRect(rect[0], rect[1], rect[2], rect[3]);
         ctx.restore();
     }
+
+    refreshUI();
 }
 
 // --- Annotation tools -----------------------------------------------------
@@ -753,22 +758,82 @@ function saveCSVToServer() {
 function updateAnnotatedHeading(state) {
     const heading = document.getElementById("annotated-heading");
     const annotated = document.getElementById("annotated-image");
-    const instructions = document.getElementById("instructions-box");
+    const placeholder = document.getElementById("result-placeholder");
     if (!heading) return;
-
-    if (state === "instructions") {
-        heading.textContent = "Instructions";
-        instructions.style.display = "block";
-        annotated.style.display = "none";
-    } else if (state === "editing") {
-        heading.textContent = "Prepare Annotations";
-        instructions.style.display = "none";
-        annotated.style.display = "none";
-    } else if (state === "annotated") {
-        heading.textContent = "Annotated Image";
-        instructions.style.display = "none";
+    if (state === "annotated") {
+        heading.textContent = "Annotated image";
         annotated.style.display = "block";
+        if (placeholder) placeholder.style.display = "none";
+    } else {
+        heading.textContent = "Result";
+        annotated.style.display = "none";
+        if (placeholder) placeholder.style.display = "";
     }
+}
+
+// --- Redesigned UI behaviour ----------------------------------------------
+function toggleImageSource() {
+    const body = document.getElementById("source-body");
+    const summary = document.getElementById("source-summary");
+    const collapsed = body.classList.toggle("hidden");
+    summary.setAttribute("aria-expanded", String(!collapsed));
+}
+
+function collapseImageSource(name) {
+    document.getElementById("source-body").classList.add("hidden");
+    const summary = document.getElementById("source-summary");
+    summary.classList.add("shown");
+    summary.setAttribute("aria-expanded", "false");
+    document.getElementById("source-name").textContent = name;
+}
+
+function toggleHelp() {
+    document.getElementById("help-drawer").classList.toggle("open");
+}
+
+function updateWorkAreaLayout() {
+    const area = document.getElementById("work-area");
+    if (!area) return;
+    // Portrait (tall) -> side-by-side columns; landscape (wide) -> stacked rows.
+    const landscape = !!(image && image.naturalWidth > image.naturalHeight);
+    area.classList.toggle("layout-rows", landscape);
+    area.classList.toggle("layout-columns", !landscape);
+}
+
+function updateHint() {
+    const hint = document.getElementById("hint");
+    if (!hint) return;
+    let msg = "";
+    if (!hasImage()) {
+        msg = "";
+    } else if (!plateRegion) {
+        msg = "Tip: click Plate Area and drag a box around the plate — this makes Auto-detect far more reliable.";
+    } else if (spots.length === 0) {
+        msg = "Now click Auto-detect to find spots automatically (or Add Spots to place them yourself).";
+    } else if (!lines.some((l) => l.type === "min") || !lines.some((l) => l.type === "max")) {
+        msg = "Add Min and Max reference lines, then Calculate RF.";
+    } else {
+        msg = "Ready — click Calculate RF.";
+    }
+    hint.textContent = msg;
+    hint.classList.toggle("show", msg !== "");
+}
+
+function updateCalculateEnabled() {
+    const btn = document.getElementById("calculate-btn");
+    if (!btn) return;
+    const ready =
+        hasImage() &&
+        lines.some((l) => l.type === "min") &&
+        lines.some((l) => l.type === "max") &&
+        spots.length > 0;
+    btn.disabled = !ready;
+}
+
+// Refresh contextual UI after any annotation change.
+function refreshUI() {
+    updateHint();
+    updateCalculateEnabled();
 }
 
 function resetCanvas() {
@@ -785,6 +850,7 @@ function resetCanvas() {
     if (tbody) tbody.innerHTML = "";
     updateAnnotatedHeading("editing");
     setActiveButton(null);
+    refreshUI();
     notify("Canvas reset.", "info");
 }
 
@@ -840,6 +906,8 @@ function loadLocalImage(dataURL, fileName) {
         if (tbody) tbody.innerHTML = "";
         notify('Image "' + fileName + '" loaded.', "success");
         updateAnnotatedHeading("editing");
+        collapseImageSource(fileName);
+        refreshUI();
     };
     image.onerror = () => notify("Failed to load image. Please try again.", "error");
     image.src = dataURL;
@@ -858,9 +926,13 @@ function loadELNImage() {
                 if (response.ok) {
                     isLocalImage = false;
                     image = new Image();
-                    image.onload = () => fitAndDraw(image);
+                    image.onload = () => {
+                        fitAndDraw(image);
+                        refreshUI();
+                    };
                     image.src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
                     updateAnnotatedHeading("editing");
+                    collapseImageSource("ELN image");
                 } else {
                     notify("Error loading ELN image.", "error");
                 }
@@ -882,6 +954,8 @@ function triggerFileInput() {
 // receive the element's `data-arg`.
 const ACTIONS = {
     toggleTheme,
+    toggleImageSource,
+    toggleHelp,
     selectImageSource,
     triggerFileInput,
     addSpots,
@@ -946,7 +1020,7 @@ function init() {
         });
     }
 
-    updateAnnotatedHeading("instructions");
+    refreshUI();
 
     const fileInput = document.getElementById("local-image-input");
     if (fileInput) fileInput.addEventListener("change", handleLocalImageUpload);

@@ -234,7 +234,7 @@ body {
     max-width: 100%;
     box-shadow: var(--shadow-sm);
 }
-#annotated-image { display: block; margin: 0 auto; }
+#annotated-image { margin: 0 auto; }
 
 .controls-panel {
     background: var(--surface);
@@ -429,3 +429,63 @@ body {
 .center-mt { text-align: center; margin-top: 1rem; }
 .full-width { width: 100%; }
 #local-upload-section { margin-top: 1.25rem; }
+
+/* ===== Redesigned layout (v2 UI) ===================================== */
+
+/* Collapsible image source */
+.source-summary {
+    display: none; align-items: center; justify-content: space-between;
+    width: 100%; padding: 0.85rem 1.25rem;
+    background: var(--surface); color: var(--text);
+    border: none; border-radius: var(--radius); font: inherit; cursor: pointer;
+}
+.source-summary.shown { display: flex; }
+.source-summary-change { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--primary); font-weight: 600; font-size: 0.85rem; }
+.source-summary .icon { width: 16px; height: 16px; }
+
+/* Toolbar */
+.toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.9rem;
+    padding: 0.7rem 0.9rem; margin-bottom: 1rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-sm);
+    position: sticky; top: 0; z-index: 50;
+}
+.tool-group { display: flex; align-items: center; gap: 0.4rem; padding-right: 0.9rem; border-right: 1px solid var(--border); }
+.tool-group:last-child, .tool-group--actions { border-right: none; }
+.tool-group--actions { margin-left: auto; }
+.tool-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.toolbar .lab-btn { padding: 0.42rem 0.7rem; font-size: 0.8rem; }
+.toolbar .lab-btn .icon { width: 15px; height: 15px; }
+.lab-btn[disabled] { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+/* Contextual hint */
+.hint {
+    display: none; margin-bottom: 1rem; padding: 0.6rem 0.9rem;
+    background: var(--primary-soft); color: var(--primary-dark);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.88rem;
+}
+.hint.show { display: block; }
+
+/* Work area (orientation-aware) */
+.work-area { display: grid; gap: 1.25rem; align-items: start; }
+.work-area.layout-columns { grid-template-columns: 1fr 1fr; }
+.work-area.layout-rows { grid-template-columns: 1fr; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow-sm); }
+.panel-title { margin: 0 0 0.75rem; font-size: 1rem; font-weight: 600; text-align: center; }
+.table-scroll { overflow-x: auto; }
+.export-row { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.export-row .lab-btn { flex: 1; }
+
+/* Help drawer (modal overlay) */
+.help-drawer { position: fixed; inset: 0; z-index: 1200; display: none; align-items: center; justify-content: center; padding: 1rem; background: rgba(0, 0, 0, 0.45); }
+.help-drawer.open { display: flex; }
+.help-card { width: 100%; max-width: 560px; max-height: 85vh; overflow: auto; padding: 1.25rem 1.5rem; background: var(--surface); color: var(--text); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+.help-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+
+@media (max-width: 760px) {
+    .work-area.layout-columns { grid-template-columns: 1fr; }
+    .toolbar { position: static; }
+    .tool-group { border-right: none; padding-right: 0; }
+    .tool-group--actions { margin-left: 0; }
+}

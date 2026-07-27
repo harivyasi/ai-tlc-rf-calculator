@@ -28,7 +28,9 @@
             <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
             <symbol id="i-cloud-up" viewBox="0 0 24 24"><path d="M16 16l-4-4-4 4M12 12v9M20.4 14.5A5 5 0 0 0 18 5h-1.26A8 8 0 1 0 3 15.3"/></symbol>
             <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h0"/></symbol>
-            <symbol id="i-play" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></symbol>
+            <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h0"/></symbol>
+            <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+            <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
             <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
             <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
         </g>
@@ -50,156 +52,161 @@
     </div>
 
     <div class="content-wrapper">
-        <!-- Image source -->
-        <div class="lab-card">
-            <div class="card-header"><h2 class="card-title">Image source</h2></div>
-            <div class="card-content">
-                <div class="button-group button-group--row">
-                    <button id="eln-source-btn" class="lab-btn btn-lab-primary active flex-1"
-                            data-action="selectImageSource" data-arg="eln">
-                        <svg class="icon"><use href="#i-cloud"/></svg> From ELN
-                    </button>
-                    <button id="local-source-btn" class="lab-btn btn-lab-outline flex-1"
-                            data-action="selectImageSource" data-arg="local">
-                        <svg class="icon"><use href="#i-upload"/></svg> Upload local
-                    </button>
-                </div>
-
-                <div id="local-upload-section" class="hidden">
-                    <div class="upload-area">
-                        <svg class="icon icon-lg muted"><use href="#i-cloud-up"/></svg>
-                        <h6>Upload TLC image</h6>
-                        <p>Drag &amp; drop your image here, or choose a file</p>
-                        <input type="file" id="local-image-input" accept="image/*" class="hidden">
-                        <button class="lab-btn btn-lab-primary" data-action="triggerFileInput">
-                            <svg class="icon"><use href="#i-folder"/></svg> Choose file
+        <!-- Image source (collapses once an image is loaded) -->
+        <div class="lab-card source-card" id="source-card">
+            <button type="button" id="source-summary" class="source-summary"
+                    data-action="toggleImageSource" aria-expanded="true">
+                <span class="source-summary-text"><strong>Image:</strong> <span id="source-name">none</span></span>
+                <span class="source-summary-change"><svg class="icon"><use href="#i-chevron"/></svg> Change</span>
+            </button>
+            <div id="source-body" class="source-body">
+                <div class="card-header"><h2 class="card-title">Image source</h2></div>
+                <div class="card-content">
+                    <div class="button-group button-group--row">
+                        <button id="eln-source-btn" class="lab-btn btn-lab-primary active flex-1"
+                                data-action="selectImageSource" data-arg="eln">
+                            <svg class="icon"><use href="#i-cloud"/></svg> From ELN
+                        </button>
+                        <button id="local-source-btn" class="lab-btn btn-lab-outline flex-1"
+                                data-action="selectImageSource" data-arg="local">
+                            <svg class="icon"><use href="#i-upload"/></svg> Upload local
                         </button>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Workspace -->
-        <div class="lab-card">
-            <div class="card-content">
-                <div class="images-grid">
-                    <!-- Original -->
-                    <div class="image-panel">
-                        <h5 class="image-title">Original image</h5>
-                        <div id="canvas-container"><canvas id="image-canvas"></canvas></div>
-                    </div>
-
-                    <!-- Controls -->
-                    <div class="controls-panel">
-                        <h6 class="controls-title">Annotation tools</h6>
-                        <div class="button-group">
-                            <button class="lab-btn btn-lab-primary" data-action="addSpots">
-                                <svg class="icon"><use href="#i-target"/></svg> Add Spots
-                            </button>
-                            <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots">
-                                <svg class="icon"><use href="#i-wand"/></svg> Auto-detect
-                            </button>
-                            <button class="lab-btn btn-lab-outline" data-action="selectPlateArea">
-                                <svg class="icon"><use href="#i-region"/></svg> Plate Area
-                            </button>
-                            <button class="lab-btn btn-lab-secondary" data-action="addMinLine">
-                                <svg class="icon"><use href="#i-hline"/></svg> Min Line
-                            </button>
-                            <button class="lab-btn btn-lab-secondary" data-action="addMaxLine">
-                                <svg class="icon"><use href="#i-hline"/></svg> Max Line
-                            </button>
-                            <button class="lab-btn btn-lab-outline" data-action="addHorizontalLine">
-                                <svg class="icon"><use href="#i-hline"/></svg> H-Line
-                            </button>
-                            <button class="lab-btn btn-lab-outline" data-action="addVerticalLine">
-                                <svg class="icon"><use href="#i-vline"/></svg> V-Line
+                    <div id="local-upload-section" class="hidden">
+                        <div class="upload-area">
+                            <svg class="icon icon-lg muted"><use href="#i-cloud-up"/></svg>
+                            <h6>Upload TLC image</h6>
+                            <p>Drag &amp; drop your image here, or choose a file</p>
+                            <input type="file" id="local-image-input" accept="image/*" class="hidden">
+                            <button class="lab-btn btn-lab-primary" data-action="triggerFileInput">
+                                <svg class="icon"><use href="#i-folder"/></svg> Choose file
                             </button>
                         </div>
-                        <label class="check-row" title="Center detected spots on the ring outline instead of its filled area — best for hand-drawn circles.">
-                            <input type="checkbox" id="ring-center"> Center on ring marks
-                        </label>
-                        <div class="button-group">
-                            <button class="lab-btn btn-lab-success" data-action="calculateRF">
-                                <svg class="icon"><use href="#i-calc"/></svg> Calculate RF
-                            </button>
-                            <button class="lab-btn btn-lab-danger" data-action="resetCanvas">
-                                <svg class="icon"><use href="#i-reset"/></svg> Reset
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Result / instructions -->
-                    <div class="image-panel">
-                        <h5 class="image-title" id="annotated-heading">Instructions</h5>
-                        <div id="instructions-box" class="instructions-panel">
-                            <h6 class="instructions-title">
-                                <svg class="icon"><use href="#i-info"/></svg> How to analyse your plate
-                            </h6>
-                            <ol>
-                                <li>Load a plate image from the ELN or by uploading a local file.</li>
-                                <li><strong>Recommended:</strong> click <span class="highlight">Plate Area</span> and
-                                    drag a box around the plate. This greatly improves
-                                    <span class="highlight">Auto-detect</span> accuracy (it ignores everything outside
-                                    the box) and suggests the Min/Max lines from the box edges.</li>
-                                <li>Check the <span class="highlight">Min Line</span> (baseline / origin) and
-                                    <span class="highlight">Max Line</span> (solvent front) — adjust the suggestions,
-                                    or add them yourself if you skipped the Plate Area.</li>
-                                <li>Click <span class="highlight">Auto-detect</span> to find spots (most reliable
-                                    inside a Plate Area), or <span class="highlight">Add Spots</span> to mark them
-                                    manually. Review and adjust.</li>
-                                <li>Optionally add <span class="highlight">V-Line</span> / <span class="highlight">H-Line</span>
-                                    labels to name lanes and compounds.</li>
-                                <li>Click <span class="highlight">Calculate RF</span>. Results appear in the table below;
-                                    export as CSV or send back to the ELN.</li>
-                            </ol>
-                            <p class="muted text-sm">
-                                Tip: drag spots or lines to reposition, and double-click a spot to delete it.
-                                RF values should fall between 0 and 1.
-                            </p>
-                            <div class="center-mt">
-                                <button class="lab-btn btn-lab-warning"
-                                        data-action="updateAnnotatedHeading" data-arg="editing">
-                                    <svg class="icon"><use href="#i-play"/></svg> Start analysis
-                                </button>
-                            </div>
-                        </div>
-                        <img id="annotated-image" class="hidden" alt="Annotated result">
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Results -->
-        <div class="table-container">
-            <div class="table-header"><h5 class="table-title">RF values</h5></div>
-            <table id="values-table">
-                <thead>
-                    <tr>
-                        <th>Mixture label (X axis)</th>
-                        <th>Substance label (Y axis)</th>
-                        <th>RF value</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+        <!-- Annotation toolbar -->
+        <div class="toolbar" id="toolbar" role="toolbar" aria-label="Annotation tools">
+            <div class="tool-group">
+                <span class="tool-label">Plate</span>
+                <button class="lab-btn btn-lab-outline" data-action="selectPlateArea">
+                    <svg class="icon"><use href="#i-region"/></svg> Plate Area
+                </button>
+            </div>
+            <div class="tool-group">
+                <span class="tool-label">Reference lines</span>
+                <button class="lab-btn btn-lab-secondary" data-action="addMinLine">
+                    <svg class="icon"><use href="#i-hline"/></svg> Min Line
+                </button>
+                <button class="lab-btn btn-lab-secondary" data-action="addMaxLine">
+                    <svg class="icon"><use href="#i-hline"/></svg> Max Line
+                </button>
+                <button class="lab-btn btn-lab-outline" data-action="addHorizontalLine">
+                    <svg class="icon"><use href="#i-hline"/></svg> H-Line
+                </button>
+                <button class="lab-btn btn-lab-outline" data-action="addVerticalLine">
+                    <svg class="icon"><use href="#i-vline"/></svg> V-Line
+                </button>
+            </div>
+            <div class="tool-group">
+                <span class="tool-label">Spots</span>
+                <button class="lab-btn btn-lab-primary" data-action="addSpots">
+                    <svg class="icon"><use href="#i-target"/></svg> Add Spots
+                </button>
+                <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots">
+                    <svg class="icon"><use href="#i-wand"/></svg> Auto-detect
+                </button>
+                <label class="check-row" title="Center detected spots on the ring outline instead of its filled area — best for hand-drawn circles.">
+                    <input type="checkbox" id="ring-center"> ring marks
+                </label>
+            </div>
+            <div class="tool-group tool-group--actions">
+                <button id="calculate-btn" class="lab-btn btn-lab-success" data-action="calculateRF">
+                    <svg class="icon"><use href="#i-calc"/></svg> Calculate RF
+                </button>
+                <button class="lab-btn btn-lab-danger" data-action="resetCanvas">
+                    <svg class="icon"><use href="#i-reset"/></svg> Reset
+                </button>
+                <button class="lab-btn btn-lab-outline" data-action="toggleHelp" aria-label="Help">
+                    <svg class="icon"><use href="#i-help"/></svg> Help
+                </button>
+            </div>
+        </div>
+
+        <!-- Contextual hint (prioritises Plate Area, then Auto-detect). -->
+        <div id="hint" class="hint" role="status"></div>
+
+        <!-- Work area: canvas + result. Layout adapts to image orientation. -->
+        <div class="work-area layout-columns" id="work-area">
+            <div class="panel panel-canvas">
+                <h5 class="panel-title">Original image</h5>
+                <div id="canvas-container"><canvas id="image-canvas"></canvas></div>
+            </div>
+
+            <div class="panel panel-result">
+                <h5 class="panel-title" id="annotated-heading">Result</h5>
+                <img id="annotated-image" class="hidden" alt="Annotated result">
+                <p id="result-placeholder" class="muted text-sm">
+                    Set the reference lines and spots, then <strong>Calculate RF</strong> —
+                    the annotated image and values appear here.
+                </p>
+                <div class="table-scroll">
+                    <table id="values-table">
+                        <thead>
+                            <tr>
+                                <th>Mixture (X)</th>
+                                <th>Substance (Y)</th>
+                                <th>RF</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="export-row" id="export-row">
+                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveCSV">
+                        <svg class="icon"><use href="#i-download"/></svg> CSV
+                    </button>
+                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveImageToServer">
+                        <svg class="icon"><use href="#i-image"/></svg> Image
+                    </button>
+                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveCSVToServer">
+                        <svg class="icon"><use href="#i-cloud-up"/></svg> To ELN
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Export actions -->
-    <div class="fab-container">
-        <button type="button" class="lab-fab fab-lab-primary" data-action="saveCSV"
-                title="Download CSV" aria-label="Download CSV">
-            <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>
-        </button>
-        <button type="button" class="lab-fab fab-lab-secondary" data-action="saveImageToServer"
-                title="Save image" aria-label="Save annotated image">
-            <svg class="icon" aria-hidden="true"><use href="#i-image"/></svg>
-        </button>
-        <button type="button" class="lab-fab fab-lab-warning" data-action="saveCSVToServer"
-                title="Upload to ELN" aria-label="Upload results to ELN">
-            <svg class="icon" aria-hidden="true"><use href="#i-cloud-up"/></svg>
-        </button>
+    <!-- Help drawer -->
+    <div id="help-drawer" class="help-drawer">
+        <div class="help-card">
+            <div class="help-head">
+                <h6 class="instructions-title"><svg class="icon"><use href="#i-info"/></svg> How to analyse your plate</h6>
+                <button type="button" class="theme-toggle" data-action="toggleHelp" aria-label="Close help">
+                    <svg class="icon"><use href="#i-close"/></svg>
+                </button>
+            </div>
+            <div id="instructions-box" class="instructions-panel">
+                <ol>
+                    <li>Load a plate image from the ELN or by uploading a local file.</li>
+                    <li><strong>Recommended:</strong> click <span class="highlight">Plate Area</span> and drag a
+                        box around the plate. This greatly improves <span class="highlight">Auto-detect</span>
+                        accuracy (it ignores everything outside the box) and suggests the Min/Max lines.</li>
+                    <li>Check the <span class="highlight">Min Line</span> (baseline) and
+                        <span class="highlight">Max Line</span> (solvent front) — adjust or add them.</li>
+                    <li>Click <span class="highlight">Auto-detect</span> (best inside a Plate Area) or
+                        <span class="highlight">Add Spots</span> to mark spots. Review and adjust.</li>
+                    <li>Optionally add <span class="highlight">V-Line</span> / <span class="highlight">H-Line</span>
+                        labels to name lanes and compounds.</li>
+                    <li>Click <span class="highlight">Calculate RF</span>, then export as CSV / image or send to the ELN.</li>
+                </ol>
+                <p class="muted text-sm">Drag spots or lines to reposition; double-click a spot to delete it.
+                    RF values fall between 0 and 1.</p>
+            </div>
+        </div>
     </div>
 
     <!-- Line label popup -->

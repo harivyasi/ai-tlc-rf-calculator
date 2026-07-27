@@ -33,6 +33,15 @@ window.Swal = window.Swal || {
 """
 
 
+# Readiness: the new frontend sets body.dataset.imageReady; the legacy frontend
+# flips the result heading to "Prepare Annotations".
+_IMAGE_READY = (
+    "() => document.body.dataset.imageReady === '1' || "
+    "(document.getElementById('annotated-heading') || {})"
+    ".textContent === 'Prepare Annotations'"
+)
+
+
 def _stub_cdn(page: Page) -> None:
     """Fulfil external CDN/font requests locally so tests need no network."""
 
@@ -65,10 +74,7 @@ def _load_local_image_and_calculate(page: Page, base_url: str, image_path: str) 
     page.set_input_files("#local-image-input", image_path)
 
     # loadLocalImage() flips the heading to "Prepare Annotations" once ready.
-    page.wait_for_function(
-        "() => { const h = document.getElementById('annotated-heading');"
-        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
-    )
+    page.wait_for_function(_IMAGE_READY)
 
     canvas = page.locator("#image-canvas")
     page.click("button:has-text('Min Line')")
@@ -121,10 +127,7 @@ def test_vertical_label_flows_to_solvent_column(page, servers, test_image_path, 
     page.goto(servers[frontend] + "/")
     page.click("#local-source-btn")
     page.set_input_files("#local-image-input", test_image_path)
-    page.wait_for_function(
-        "() => { const h = document.getElementById('annotated-heading');"
-        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
-    )
+    page.wait_for_function(_IMAGE_READY)
 
     canvas = page.locator("#image-canvas")
     page.click("button:has-text('Min Line')")
@@ -153,10 +156,7 @@ def _load_with_min_max(page, base_url, image_path):
     page.goto(base_url + "/")
     page.click("#local-source-btn")
     page.set_input_files("#local-image-input", image_path)
-    page.wait_for_function(
-        "() => { const h = document.getElementById('annotated-heading');"
-        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
-    )
+    page.wait_for_function(_IMAGE_READY)
     canvas = page.locator("#image-canvas")
     page.click("button:has-text('Min Line')")
     canvas.click(position={"x": 150, "y": 250})
@@ -204,10 +204,7 @@ def test_auto_detect_populates_spots(page, servers, blob_image_path):
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
     page.set_input_files("#local-image-input", blob_image_path)
-    page.wait_for_function(
-        "() => { const h = document.getElementById('annotated-heading');"
-        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
-    )
+    page.wait_for_function(_IMAGE_READY)
 
     canvas = page.locator("#image-canvas")
     page.click("button:has-text('Min Line')")
@@ -228,10 +225,7 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
     page.set_input_files("#local-image-input", blob_image_path)
-    page.wait_for_function(
-        "() => { const h = document.getElementById('annotated-heading');"
-        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
-    )
+    page.wait_for_function(_IMAGE_READY)
 
     canvas = page.locator("#image-canvas")
     page.click("button:has-text('Min Line')")
@@ -273,10 +267,7 @@ def test_deleting_vline_closes_annotation_popup(page, servers, test_image_path):
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
     page.set_input_files("#local-image-input", test_image_path)
-    page.wait_for_function(
-        "() => { const h = document.getElementById('annotated-heading');"
-        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
-    )
+    page.wait_for_function(_IMAGE_READY)
 
     page.click("button:has-text('V-Line')")
     page.locator("#image-canvas").click(position={"x": 150, "y": 150})
@@ -316,10 +307,7 @@ def test_plate_region_suggests_reference_lines(page, servers, blob_image_path):
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
     page.set_input_files("#local-image-input", blob_image_path)
-    page.wait_for_function(
-        "() => { const h = document.getElementById('annotated-heading');"
-        " return h && h.textContent.trim() === 'Prepare Annotations'; }"
-    )
+    page.wait_for_function(_IMAGE_READY)
 
     canvas = page.locator("#image-canvas")
     page.click("button:has-text('Plate Area')")
