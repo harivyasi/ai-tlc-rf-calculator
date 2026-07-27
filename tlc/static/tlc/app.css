@@ -235,6 +235,8 @@ body {
     box-shadow: var(--shadow-sm);
 }
 #annotated-image { margin: 0 auto; }
+/* Let pointer drags reach the canvas on touch devices (no scroll/zoom steal). */
+#image-canvas { touch-action: none; }
 
 .controls-panel {
     background: var(--surface);

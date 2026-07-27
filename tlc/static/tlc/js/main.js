@@ -28,7 +28,13 @@ import {
     selectPlateArea,
     submitAnnotation,
 } from "./annotations.js";
-import { handleDoubleClick, handleMouseDown, handleMouseMove, handleMouseUp } from "./interaction.js";
+import {
+    handleDoubleClick,
+    handlePointerCancel,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+} from "./interaction.js";
 import { autoDetectSpots, calculateRF, saveCSV, saveCSVToServer, saveImageToServer } from "./results.js";
 import { handleLocalImageFile, handleLocalImageUpload, selectImageSource, triggerFileInput } from "./sources.js";
 
@@ -138,9 +144,10 @@ function init() {
         });
     }
 
-    state.canvas.addEventListener("mousedown", handleMouseDown);
-    state.canvas.addEventListener("mousemove", handleMouseMove);
-    state.canvas.addEventListener("mouseup", handleMouseUp);
+    state.canvas.addEventListener("pointerdown", handlePointerDown);
+    state.canvas.addEventListener("pointermove", handlePointerMove);
+    state.canvas.addEventListener("pointerup", handlePointerUp);
+    state.canvas.addEventListener("pointercancel", handlePointerCancel);
     state.canvas.addEventListener("dblclick", handleDoubleClick);
 
     document.addEventListener("keydown", (e) => {

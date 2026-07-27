@@ -43,7 +43,8 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 3. Check the **Min Line** (baseline / origin) and **Max Line** (solvent front) —
    adjust the suggestions, or add them yourself if you skipped the Plate Area.
 4. Click **Auto-detect** to find spots (most reliable inside a Plate Area), or
-   **Add Spots** to place them manually. Drag to reposition; double-click to delete.
+   **Add Spots** to place them manually. Drag to reposition; double-click
+   (double-tap on touch devices) to delete. Mouse, touch, and pen are all supported.
 5. Optionally add **V-Line** / **H-Line** labels to name lanes and compounds.
 6. Click **Calculate RF**, then export as CSV / annotated image, or send back to
    the ELN.

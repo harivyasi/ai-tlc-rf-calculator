@@ -416,3 +416,72 @@ def test_eln_load_fetch_count(page, servers, test_image_path, frontend, expected
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(500)
     assert len(calls) == expected, f"{frontend}: fetch-image calls={len(calls)} (want {expected})"
+
+
+# --- Touch / pointer support ------------------------------------------------
+# These use a touch-enabled browser context (the default `page` fixture has
+# none). They exercise the Pointer Events path: a tap adds a spot, a touch drag
+# moves one, and a double-tap deletes one.
+
+
+def _touch_page(browser, servers, image_path):
+    """A touch-enabled page loaded with an image and min/max lines."""
+    context = browser.new_context(viewport={"width": 1600, "height": 1200}, has_touch=True)
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    canvas = _load_with_min_max(page, servers["new"], image_path)
+    return context, page, canvas, errors
+
+
+def test_touch_tap_adds_and_double_tap_deletes_spot(browser, servers, test_image_path):
+    """Touch: two taps add two spots; a double-tap removes one (1 row remains)."""
+    context, page, canvas, errors = _touch_page(browser, servers, test_image_path)
+    try:
+        box = canvas.bounding_box()
+        page.click("button:has-text('Add Spots')")
+        page.touchscreen.tap(box["x"] + 110, box["y"] + 150)  # add spot A
+        page.touchscreen.tap(box["x"] + 210, box["y"] + 150)  # add spot B
+        page.touchscreen.tap(box["x"] + 110, box["y"] + 150)  # 1st tap on A
+        page.touchscreen.tap(box["x"] + 110, box["y"] + 150)  # 2nd tap -> delete A
+
+        page.click("button:has-text('Calculate RF')")
+        page.wait_for_selector("#values-table tbody tr", timeout=20000)
+        rows = page.locator("#values-table tbody tr").count()
+        assert rows == 1, f"expected 1 spot after tap-add x2 + double-tap delete, got {rows}"
+        assert not errors, f"JS errors: {errors}"
+    finally:
+        context.close()
+
+
+def test_touch_drag_moves_spot(browser, servers, test_image_path):
+    """Touch drag (synthetic touch PointerEvents) raises a spot's RF 0.5 -> ~0.75."""
+    context, page, canvas, errors = _touch_page(browser, servers, test_image_path)
+    try:
+        page.click("button:has-text('Add Spots')")
+        page.touchscreen.tap(canvas.bounding_box()["x"] + 150, canvas.bounding_box()["y"] + 150)
+
+        # A touch drag from y=150 up to y=100 via the pointer handlers directly.
+        page.evaluate(
+            """({y0, y1}) => {
+                const c = document.getElementById('image-canvas');
+                const r = c.getBoundingClientRect();
+                const pe = (t, cy) => new PointerEvent(t, {
+                    pointerId: 1, pointerType: 'touch', bubbles: true,
+                    clientX: r.left + 150, clientY: r.top + cy,
+                });
+                c.dispatchEvent(pe('pointerdown', y0));
+                c.dispatchEvent(pe('pointermove', (y0 + y1) / 2));
+                c.dispatchEvent(pe('pointermove', y1));
+                c.dispatchEvent(pe('pointerup', y1));
+            }""",
+            {"y0": 150, "y1": 100},
+        )
+
+        page.click("button:has-text('Calculate RF')")
+        page.wait_for_selector("#values-table tbody tr", timeout=20000)
+        rf = float(page.locator("#values-table tbody tr").first.locator("td").nth(2).inner_text())
+        assert 0.70 <= rf <= 0.80, f"RF after touch drag was {rf} (expected ~0.75)"
+        assert not errors, f"JS errors: {errors}"
+    finally:
+        context.close()
