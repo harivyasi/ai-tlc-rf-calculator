@@ -508,3 +508,110 @@ def test_text_scale_is_sent_in_payload_and_persists(page, servers, test_image_pa
     page.reload()
     page.wait_for_selector("#text-scale")
     assert page.locator("#text-scale").input_value() == "250", "text-size preference not persisted"
+
+
+# --- Additional UI-behaviour coverage --------------------------------------
+
+
+def test_reset_clears_annotations_and_disables_calculate(page, servers, test_image_path):
+    """Reset empties the results table and re-disables Calculate RF."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+
+    page.click("button:has-text('Reset')")
+    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 0")
+    assert page.locator("#calculate-btn").is_disabled(), "Calculate should be disabled after reset"
+
+
+def test_horizontal_label_flows_to_compound_column(page, servers, test_image_path):
+    """An H-Line label reaches the compound column (mirrors the V-Line path)."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 50})
+    page.click("button:has-text('H-Line')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.fill("#line-text", "CompoundZ")
+    page.click("#line-popup button:has-text('Submit')")
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 180})  # off the label line so it isn't a line drag
+
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    compound = (
+        page.locator("#values-table tbody tr").first.locator("td").nth(1).inner_text().strip()
+    )
+    assert compound == "CompoundZ", f"compound column was {compound!r}"
+
+
+def test_calculate_button_gates_on_required_annotations(page, servers, test_image_path):
+    """Calculate RF stays disabled until min + max + at least one spot exist."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(_IMAGE_READY)
+    assert page.locator("#calculate-btn").is_disabled(), "disabled with image only"
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 50})
+    assert page.locator("#calculate-btn").is_disabled(), "still disabled without a spot"
+
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.wait_for_function("() => !document.getElementById('calculate-btn').disabled")
+
+
+def test_help_drawer_toggles_open_and_closed(page, servers, test_image_path):
+    """The Help button opens and closes the help drawer."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.locator("[data-action='toggleHelp']").first.click()  # toolbar Help button
+    page.wait_for_function(
+        "() => document.getElementById('help-drawer').classList.contains('open')"
+    )
+    # Close via the drawer's own button (the toolbar one is now covered by the drawer).
+    page.click("#help-drawer [data-action='toggleHelp']")
+    page.wait_for_function(
+        "() => !document.getElementById('help-drawer').classList.contains('open')"
+    )
+
+
+def test_escape_closes_line_popup(page, servers, test_image_path):
+    """Pressing Escape hides the open line-label popup (keydown handler)."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('V-Line')")
+    canvas.click(position={"x": 120, "y": 150})
+    page.wait_for_selector("#line-popup", state="visible")
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#line-popup", state="hidden")
+
+
+def test_image_source_collapses_on_load_and_reexpands(page, servers, test_image_path):
+    """The source card collapses once an image loads and re-expands on click."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(_IMAGE_READY)
+    page.wait_for_function(
+        "() => document.getElementById('source-body').classList.contains('hidden')"
+    )
+
+    page.click("#source-summary")
+    page.wait_for_function(
+        "() => !document.getElementById('source-body').classList.contains('hidden')"
+    )
