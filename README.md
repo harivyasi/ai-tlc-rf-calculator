@@ -19,18 +19,31 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 
 - Interactive canvas annotation: min/max reference lines, vertical/horizontal
   label lines, and draggable spots.
-- **Assisted spot detection** — one click finds candidate spots on the plate
-  interior using scikit-image Laplacian-of-Gaussian blobs plus lane-profile
-  peak detection, shape-gated to reject reference lines and labels; results are
-  editable suggestions you review before calculating.
 - Two image sources: **local upload** or **fetch from an ELN URL**.
 - Server-side RF calculation and image annotation (OpenCV).
 - **Assisted spot detection** ("Auto-detect"): scikit-image Laplacian-of-Gaussian
-  blobs + lane-profile peak finding, shape-gated to suppress lines/labels.
-  Detected spots are editable suggestions. Optionally draw a **Plate Area** box
-  first to confine detection to the plate; it also suggests Min/Max reference
-  lines from its edges, which remain draggable/deletable.
+  blobs + lane-profile peak finding, shape-gated to suppress reference lines and
+  labels. Detected spots are editable suggestions you review before calculating.
+  **For accurate detection, first draw a Plate Area** (drag a box around the
+  plate): it confines detection to the plate — ignoring edges, the baseline, and
+  lane labels — and suggests Min/Max reference lines from the box edges (which
+  remain draggable/deletable).
+- Light/dark theme toggle (overrides the OS preference, remembered per browser).
 - CSV export (download locally or POST back to an ELN).
+
+## Usage
+
+1. Load a plate image — from the ELN, or by uploading a local file.
+2. **Recommended: draw a Plate Area.** Click **Plate Area** and drag a box
+   around the plate. This makes **Auto-detect** far more reliable (it ignores
+   everything outside the box) and suggests the Min/Max lines from the box edges.
+3. Check the **Min Line** (baseline / origin) and **Max Line** (solvent front) —
+   adjust the suggestions, or add them yourself if you skipped the Plate Area.
+4. Click **Auto-detect** to find spots (most reliable inside a Plate Area), or
+   **Add Spots** to place them manually. Drag to reposition; double-click to delete.
+5. Optionally add **V-Line** / **H-Line** labels to name lanes and compounds.
+6. Click **Calculate RF**, then export as CSV / annotated image, or send back to
+   the ELN.
 
 ## Tech stack
 
