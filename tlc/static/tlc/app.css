@@ -481,6 +481,8 @@ body {
 .tool-group:last-child, .tool-group--actions { border-right: none; }
 .tool-group--actions { margin-left: auto; }
 .tool-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+/* Thin sub-divider inside a tool group (e.g. Plate/crop | Min/Max). */
+.tool-divider { align-self: stretch; width: 1px; min-height: 1.4rem; margin: 0 0.2rem; background: var(--border); }
 .toolbar .lab-btn { padding: 0.42rem 0.7rem; font-size: 0.8rem; }
 .toolbar .lab-btn .icon { width: 15px; height: 15px; }
 .lab-btn[disabled] { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
