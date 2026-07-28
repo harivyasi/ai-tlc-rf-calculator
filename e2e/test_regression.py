@@ -835,3 +835,34 @@ def test_redraw_deletes_spots_outside_and_keeps_inside(page, servers, blob_image
     assert page.locator("#values-table tbody tr").count() == 1, (
         "spot outside the redrawn area was not dropped"
     )
+
+
+def test_drag_line_is_clamped_to_plate_area(page, servers, blob_image_path):
+    """Dragging a Min line below the plate area stops it at the bottom edge."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    box = canvas.bounding_box()
+    _draw_region(page, canvas, 0.2, 0.2, 0.8, 0.7)  # region bottom at 0.7 of the canvas
+
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": box["width"] * 0.5, "y": box["height"] * 0.5})  # inside
+
+    # Drag the line well below the plate bottom; it must clamp to the 0.7 edge.
+    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.98, steps=10)
+    page.mouse.up()
+
+    icon = page.locator(".delete-icon").first
+    icon.wait_for(state="visible")
+    ib = icon.bounding_box()
+    icy = ib["y"] + ib["height"] / 2
+    edge = box["y"] + box["height"] * 0.7  # plate-area bottom, in screen px
+    assert abs(icy - edge) < 15, (
+        f"min line not clamped to plate bottom (icon y={icy:.0f}, edge={edge:.0f})"
+    )

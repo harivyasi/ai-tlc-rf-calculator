@@ -7,6 +7,7 @@ import glob
 import io
 import os
 import shutil
+import socket
 import tempfile
 import time
 from typing import Any
@@ -26,8 +27,11 @@ from tlc.detection import detect_spots
 from tlc.views import (
     _decode_data_url,
     _draw_annotations,
+    _fetch_following_safe_redirects,
+    _is_safe_remote_url,
     _parse_region,
     _parse_text_scale,
+    _resolve_within_media,
 )
 
 
@@ -664,3 +668,51 @@ class DecodeDataUrlBranchTests(SimpleTestCase):
         payload = base64.b64encode(b"0123456789").decode()  # 10 raw bytes
         with mock.patch("tlc.views.MAX_IMAGE_BYTES", 4):
             self.assertIsNone(_decode_data_url("data:image/png;base64," + payload))
+
+
+class ResolveWithinMediaTests(SimpleTestCase):
+    """Path confinement helper for serve-image."""
+
+    def test_empty_or_dot_names_are_rejected(self) -> None:
+        self.assertIsNone(_resolve_within_media(""))
+        self.assertIsNone(_resolve_within_media("."))
+        self.assertIsNone(_resolve_within_media(".."))
+
+    def test_traversal_is_stripped_to_basename(self) -> None:
+        # basename() drops the traversal; a bare name resolves inside MEDIA_ROOT.
+        resolved = _resolve_within_media("../../etc/passwd")
+        assert resolved is not None
+        self.assertTrue(resolved.startswith(os.path.realpath(settings.MEDIA_ROOT)))
+        self.assertTrue(resolved.endswith("passwd"))
+
+
+class SafeRemoteUrlTests(SimpleTestCase):
+    """SSRF URL validation branches beyond the endpoint-level tests."""
+
+    def test_allowlist_rejects_unlisted_host(self) -> None:
+        with mock.patch.dict(os.environ, {"ELN_ALLOWED_HOSTS": "eln.example.org"}):
+            self.assertFalse(_is_safe_remote_url("http://93.184.216.34/x.png"))
+
+    def test_allowlist_accepts_listed_host_shape(self) -> None:
+        # A listed public IP passes the allowlist and public-address checks.
+        with mock.patch.dict(os.environ, {"ELN_ALLOWED_HOSTS": "93.184.216.34"}):
+            self.assertTrue(_is_safe_remote_url("http://93.184.216.34/x.png"))
+
+    def test_unresolvable_host_is_rejected(self) -> None:
+        with mock.patch("tlc.views.socket.getaddrinfo", side_effect=socket.gaierror):
+            self.assertFalse(_is_safe_remote_url("http://host.example/x.png"))
+
+
+class FetchRedirectTests(SimpleTestCase):
+    """Redirect-following helper edge branches."""
+
+    def test_redirect_without_location_returns_none(self) -> None:
+        with mock.patch("tlc.views.requests.get") as mock_get:
+            mock_get.return_value = _fake_response(302, {})  # 302 but no Location
+            self.assertIsNone(_fetch_following_safe_redirects("http://93.184.216.34/a"))
+
+    def test_too_many_redirects_returns_none(self) -> None:
+        # Always redirect to a valid public target -> exceeds MAX_REDIRECTS.
+        with mock.patch("tlc.views.requests.get") as mock_get:
+            mock_get.return_value = _fake_response(302, {"Location": "http://93.184.216.34/next"})
+            self.assertIsNone(_fetch_following_safe_redirects("http://93.184.216.34/a"))
