@@ -536,6 +536,16 @@ body {
     .tool-group--actions { margin-left: 0; }
 }
 
+/* Compact toolbar labels on narrow screens: swap long labels for short ones,
+   drop the group headers, and reduce Reset/Help to their icons. */
+.lbl-short { display: none; }
+@media (max-width: 960px) {
+    .toolbar .tool-label { display: none; }
+    .toolbar .lbl-full { display: none; }
+    .toolbar .lbl-short { display: inline; }
+    .toolbar .lbl-hide { display: none; }
+}
+
 /* Results table row interactions */
 #values-table tbody tr.clickable { cursor: pointer; }
 #values-table tbody tr.active { background: var(--primary-soft); }

@@ -105,56 +105,56 @@
         <div class="toolbar" id="toolbar" role="toolbar" aria-label="Annotation tools">
             <div class="tool-group">
                 <span class="tool-label">Bounds</span>
-                <button class="lab-btn btn-lab-outline" data-action="selectPlateArea">
-                    <svg class="icon"><use href="#i-region"/></svg> Plate Area
+                <button class="lab-btn btn-lab-secondary" data-action="selectPlateArea" title="Draw a box around the plate to focus Auto-detect. Detection region only — it does not place the reference lines.">
+                    <svg class="icon"><use href="#i-region"/></svg> <span class="lbl-full">Plate Area</span><span class="lbl-short">Plate</span>
                 </button>
                 <label class="check-row" title="Zoom the work area to the plate box. View only — the saved image keeps its full dimensions.">
-                    <input type="checkbox" id="crop-plate"> crop view
+                    <input type="checkbox" id="crop-plate"> <span class="lbl-full">crop view</span><span class="lbl-short">crop</span>
                 </label>
                 <span class="tool-divider" aria-hidden="true"></span>
-                <button class="lab-btn btn-lab-secondary" data-action="addMinLine">
+                <button class="lab-btn btn-lab-outline" data-action="addMinLine" title="Mark the baseline / origin — the line where the samples were spotted.">
                     <svg class="icon"><use href="#i-hline"/></svg> Min Line
                 </button>
-                <button class="lab-btn btn-lab-secondary" data-action="addMaxLine">
+                <button class="lab-btn btn-lab-outline" data-action="addMaxLine" title="Mark the solvent front — how far the mobile phase travelled.">
                     <svg class="icon"><use href="#i-hline"/></svg> Max Line
                 </button>
             </div>
             <div class="tool-group">
                 <span class="tool-label">Annotate</span>
-                <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots">
+                <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots" title="Automatically find candidate spots. Draw a Plate Area first for the best results; review and adjust the results.">
                     <svg class="icon"><use href="#i-wand"/></svg> Auto-detect
                 </button>
                 <label class="check-row" title="Center detected spots on the ring outline instead of its filled area — best for hand-drawn circles.">
                     <input type="checkbox" id="ring-center"> ring marks
                 </label>
                 <button class="lab-btn btn-lab-primary" data-action="addSpots" title="Click on the plate to place spots. Double-click (double-tap on touch) a spot to delete it.">
-                    <svg class="icon"><use href="#i-target"/></svg> Add Spots
+                    <svg class="icon"><use href="#i-target"/></svg> <span class="lbl-full">Add Spots</span><span class="lbl-short">Spots</span>
                 </button>
                 <span class="tool-divider" aria-hidden="true"></span>
-                <button class="lab-btn btn-lab-outline" data-action="addHorizontalLine">
+                <button class="lab-btn btn-lab-outline" data-action="addHorizontalLine" title="Add a horizontal label line to name a zone or compound.">
                     <svg class="icon"><use href="#i-hline"/></svg> H-Line
                 </button>
-                <button class="lab-btn btn-lab-outline" data-action="addVerticalLine">
+                <button class="lab-btn btn-lab-outline" data-action="addVerticalLine" title="Add a vertical label line to name a lane.">
                     <svg class="icon"><use href="#i-vline"/></svg> V-Line
                 </button>
             </div>
             <div class="tool-group">
                 <span class="tool-label">Labels</span>
                 <label class="num-row" for="text-scale" title="Annotation text size, 10–500% of the auto-computed size. Applies to the preview and the saved image.">
-                    text size
+                    <span class="lbl-full">text size</span><span class="lbl-short">size</span>
                     <input type="number" id="text-scale" min="10" max="500" step="10" value="100" inputmode="numeric" aria-label="Annotation text size (percent)">
                     <span aria-hidden="true">%</span>
                 </label>
             </div>
             <div class="tool-group tool-group--actions">
-                <button id="calculate-btn" class="lab-btn btn-lab-success" data-action="calculateRF">
-                    <svg class="icon"><use href="#i-calc"/></svg> Calculate RF
+                <button id="calculate-btn" class="lab-btn btn-lab-success" data-action="calculateRF" title="Compute RF for each spot and render the annotated image. Needs Min, Max, and at least one spot.">
+                    <svg class="icon"><use href="#i-calc"/></svg> <span class="lbl-full">Calculate RF</span><span class="lbl-short">Calculate</span>
                 </button>
-                <button class="lab-btn btn-lab-danger" data-action="resetCanvas">
-                    <svg class="icon"><use href="#i-reset"/></svg> Reset
+                <button class="lab-btn btn-lab-danger" data-action="resetCanvas" title="Clear all lines, spots, and results and start over.">
+                    <svg class="icon"><use href="#i-reset"/></svg> <span class="lbl-hide">Reset</span>
                 </button>
-                <button class="lab-btn btn-lab-outline" data-action="toggleHelp" aria-label="Help">
-                    <svg class="icon"><use href="#i-help"/></svg> Help
+                <button class="lab-btn btn-lab-outline" data-action="toggleHelp" aria-label="Help" title="Show the step-by-step guide.">
+                    <svg class="icon"><use href="#i-help"/></svg> <span class="lbl-hide">Help</span>
                 </button>
             </div>
         </div>
