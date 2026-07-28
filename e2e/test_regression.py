@@ -403,11 +403,12 @@ def test_plate_area_does_not_create_reference_lines(page, servers, blob_image_pa
         "plate area must not seed Min/Max — Calculate RF should stay disabled"
     )
 
-    # Placing Min/Max by hand enables it and computes normally.
+    # Placing Min/Max by hand enables it and computes normally. (Both clicks must
+    # be inside the plate area, which now confines the reference lines.)
     page.click("button:has-text('Min Line')")
-    canvas.click(position={"x": 200, "y": 280})
+    canvas.click(position={"x": 200, "y": 250})
     page.click("button:has-text('Max Line')")
-    canvas.click(position={"x": 200, "y": 40})
+    canvas.click(position={"x": 200, "y": 45})
     page.wait_for_function("() => !document.getElementById('calculate-btn').disabled")
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
@@ -733,4 +734,104 @@ def test_line_delete_icon_stays_on_scaled_canvas(page, servers, wide_image_path)
     )
     assert abs(icy - expected) < 25, (
         f"delete cross not on the line (icon y={icy:.0f}, line y≈{expected:.0f})"
+    )
+
+
+# --- Confining annotations to the plate area --------------------------------
+
+
+def _draw_region(page, canvas, fx0, fy0, fx1, fy1):
+    """Arm Plate Area and drag a box given as canvas fractions."""
+    box = canvas.bounding_box()
+    page.click("button:has-text('Plate Area')")
+    page.mouse.move(box["x"] + box["width"] * fx0, box["y"] + box["height"] * fy0)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * fx1, box["y"] + box["height"] * fy1, steps=6)
+    page.mouse.up()
+
+
+def test_min_line_click_blocked_outside_plate_area(page, servers, blob_image_path):
+    """With a plate area, a Min-line click above it places nothing; inside works."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    _draw_region(page, canvas, 0.15, 0.30, 0.85, 0.85)  # box in the lower area
+
+    page.click("button:has-text('Min Line')")
+    canvas.click(
+        position={
+            "x": canvas.bounding_box()["width"] * 0.5,
+            "y": canvas.bounding_box()["height"] * 0.05,
+        }
+    )
+    # A line places a .delete-icon; a blocked click places none.
+    assert page.locator(".delete-icon").count() == 0, "min line was placed outside the plate area"
+
+    canvas.click(
+        position={
+            "x": canvas.bounding_box()["width"] * 0.5,
+            "y": canvas.bounding_box()["height"] * 0.6,
+        }
+    )
+    page.wait_for_function("() => document.querySelectorAll('.delete-icon').length === 1")
+
+
+def test_spot_click_blocked_outside_plate_area(page, servers, blob_image_path):
+    """With a plate area, an Add-Spots click outside it adds no spot."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    _draw_region(page, canvas, 0.15, 0.30, 0.85, 0.85)
+    w = canvas.bounding_box()["width"]
+    h = canvas.bounding_box()["height"]
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": w * 0.5, "y": h * 0.8})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": w * 0.5, "y": h * 0.35})
+
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": w * 0.5, "y": h * 0.05})  # above the box -> blocked
+    assert page.locator("#calculate-btn").is_disabled(), "spot was added outside the plate area"
+
+    canvas.click(position={"x": w * 0.5, "y": h * 0.6})  # inside -> added
+    page.wait_for_function("() => !document.getElementById('calculate-btn').disabled")
+
+
+def test_redraw_deletes_spots_outside_and_keeps_inside(page, servers, blob_image_path):
+    """Redrawing a smaller plate area deletes spots outside the new box (lines clamp)."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    w = canvas.bounding_box()["width"]
+    h = canvas.bounding_box()["height"]
+
+    _draw_region(page, canvas, 0.08, 0.08, 0.92, 0.95)  # big box covering everything
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": w * 0.5, "y": h * 0.9})  # baseline near bottom
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": w * 0.5, "y": h * 0.12})  # front near top
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": w * 0.3, "y": h * 0.75})  # lower spot (kept)
+    canvas.click(position={"x": w * 0.7, "y": h * 0.20})  # upper spot (will be dropped)
+
+    # Redraw a smaller box covering only the lower half; the upper spot is dropped,
+    # the Max line clamps down to the new top edge.
+    _draw_region(page, canvas, 0.08, 0.50, 0.92, 0.95)
+
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert page.locator("#values-table tbody tr").count() == 1, (
+        "spot outside the redrawn area was not dropped"
     )

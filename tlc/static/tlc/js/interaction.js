@@ -9,6 +9,7 @@
 
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
+import { clamp, pointInRegion } from "./geometry.js";
 import { applyCrop, pointerCanvas, redrawCanvas } from "./canvas.js";
 import { deleteSpot, isHorizontalLine, setActiveButton } from "./annotations.js";
 
@@ -52,6 +53,23 @@ function deleteSpotAt(px, py) {
         }
     }
     return false;
+}
+
+// When a plate area is drawn/redrawn, keep annotations consistent with it:
+// reference/label lines are clamped to the new bounds (a line is still valid at
+// the edge), but spots outside are deleted (a spot is a specific location — it
+// can't be meaningfully moved to the edge).
+function confineAnnotationsToRegion(r) {
+    state.lines.forEach((line) => {
+        if (isHorizontalLine(line)) line.y = clamp(line.y, r.y, r.y + r.height);
+        else line.x = clamp(line.x, r.x, r.x + r.width);
+    });
+    const before = state.spots.length;
+    state.spots = state.spots.filter((s) => pointInRegion(s.x, s.y, r));
+    const removed = before - state.spots.length;
+    if (removed > 0) {
+        notify(`Removed ${removed} spot(s) outside the plate area.`, "info");
+    }
 }
 
 export function handlePointerDown(e) {
@@ -128,14 +146,25 @@ export function handlePointerMove(e) {
         state.canvas.style.cursor = over ? "pointer" : "default";
         return;
     }
+    const r = state.plateRegion; // when set, dragging is confined to the plate
     if (state.draggingSpot) {
-        state.draggingSpot.x = (p.x - state.dragOffsetX) * window.scaleFactor;
-        state.draggingSpot.y = (p.y - state.dragOffsetY) * window.scaleFactor;
+        let nx = (p.x - state.dragOffsetX) * window.scaleFactor;
+        let ny = (p.y - state.dragOffsetY) * window.scaleFactor;
+        if (r) {
+            nx = clamp(nx, r.x, r.x + r.width);
+            ny = clamp(ny, r.y, r.y + r.height);
+        }
+        state.draggingSpot.x = nx;
+        state.draggingSpot.y = ny;
     } else if (state.draggingLine) {
         if (isHorizontalLine(state.draggingLine)) {
-            state.draggingLine.y = (p.y - state.lineDragOffsetY) * window.scaleFactor;
+            let ny = (p.y - state.lineDragOffsetY) * window.scaleFactor;
+            if (r) ny = clamp(ny, r.y, r.y + r.height);
+            state.draggingLine.y = ny;
         } else {
-            state.draggingLine.x = (p.x - state.lineDragOffsetX) * window.scaleFactor;
+            let nx = (p.x - state.lineDragOffsetX) * window.scaleFactor;
+            if (r) nx = clamp(nx, r.x, r.x + r.width);
+            state.draggingLine.x = nx;
         }
     }
     redrawCanvas();
@@ -162,13 +191,15 @@ export function handlePointerUp(e) {
             state.plateRegion = null; // a click (no real drag) clears the region
             notify("Plate area cleared.", "info");
         } else {
-            state.plateRegion = {
+            const region = {
                 x: Math.round(x0 * sf),
                 y: Math.round(y0 * sf),
                 width: Math.round(w * sf),
                 height: Math.round(h * sf),
             };
+            state.plateRegion = region;
             notify("Plate area set — Auto-detect will use it.", "success");
+            confineAnnotationsToRegion(region);
         }
         applyCrop(); // re-fit the crop view to the new/cleared region (redraws)
         return;

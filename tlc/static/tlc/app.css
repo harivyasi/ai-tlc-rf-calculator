@@ -477,9 +477,10 @@ body {
     border-radius: var(--radius); box-shadow: var(--shadow-sm);
     position: sticky; top: 0; z-index: 50;
 }
-.tool-group { display: flex; align-items: center; gap: 0.4rem; padding-right: 0.9rem; border-right: 1px solid var(--border); }
-.tool-group:last-child, .tool-group--actions { border-right: none; }
+.tool-group { display: flex; align-items: center; gap: 0.4rem; }
 .tool-group--actions { margin-left: auto; }
+/* Force three fixed ribbons: Bounds / Annotate / Labels + actions. */
+.toolbar-break { flex-basis: 100%; height: 0; margin: 0; }
 .tool-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
 /* Thin sub-divider inside a tool group (e.g. Plate/crop | Min/Max). */
 .tool-divider { align-self: stretch; width: 1px; min-height: 1.4rem; margin: 0 0.2rem; background: var(--border); }
@@ -532,14 +533,13 @@ body {
 @media (max-width: 760px) {
     .work-area.layout-columns { grid-template-columns: 1fr; }
     .toolbar { position: static; }
-    .tool-group { border-right: none; padding-right: 0; }
     .tool-group--actions { margin-left: 0; }
 }
 
 /* Compact toolbar labels on narrow screens: swap long labels for short ones,
    drop the group headers, and reduce Reset/Help to their icons. */
 .lbl-short { display: none; }
-@media (max-width: 960px) {
+@media (max-width: 480px) {
     .toolbar .tool-label { display: none; }
     .toolbar .lbl-full { display: none; }
     .toolbar .lbl-short { display: inline; }

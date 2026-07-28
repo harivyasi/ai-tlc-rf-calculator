@@ -8,6 +8,7 @@
 
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
+import { pointInRegion } from "./geometry.js";
 import { updateAnnotatedHeading } from "./ui.js";
 import { pointerCanvas, redrawCanvas } from "./canvas.js";
 
@@ -58,6 +59,19 @@ export function drawLine(event) {
     const p = pointerCanvas(event);
     const x = p.x;
     const y = p.y;
+
+    // With a plate area set, a line must fall inside it (horizontal on y,
+    // vertical on x). Block the click but keep the tool armed for a retry.
+    const r = state.plateRegion;
+    if (r) {
+        const outside = state.isHorizontal
+            ? y * window.scaleFactor < r.y || y * window.scaleFactor > r.y + r.height
+            : x * window.scaleFactor < r.x || x * window.scaleFactor > r.x + r.width;
+        if (outside) {
+            notify("Place it inside the plate area.", "warning");
+            return;
+        }
+    }
 
     if (state.isHorizontal) {
         if (state.lineType === "min" || state.lineType === "max") {
@@ -158,7 +172,13 @@ export function addSpot(origX, origY, auto = false) {
 export function drawSpot(event) {
     if (!state.addingSpots || state.isDragging || state.justDragged) return;
     const p = pointerCanvas(event);
-    if (!addSpot(p.x * window.scaleFactor, p.y * window.scaleFactor)) {
+    const ox = p.x * window.scaleFactor;
+    const oy = p.y * window.scaleFactor;
+    if (state.plateRegion && !pointInRegion(ox, oy, state.plateRegion)) {
+        notify("Place spots inside the plate area.", "warning");
+        return;
+    }
+    if (!addSpot(ox, oy)) {
         notify("Spot already exists here.", "warning");
         return;
     }

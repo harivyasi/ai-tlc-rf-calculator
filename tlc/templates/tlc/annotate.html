@@ -119,6 +119,7 @@
                     <svg class="icon"><use href="#i-hline"/></svg> Max Line
                 </button>
             </div>
+            <span class="toolbar-break" aria-hidden="true"></span>
             <div class="tool-group">
                 <span class="tool-label">Annotate</span>
                 <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots" title="Automatically find candidate spots. Draw a Plate Area first for the best results; review and adjust the results.">
@@ -138,6 +139,7 @@
                     <svg class="icon"><use href="#i-vline"/></svg> V-Line
                 </button>
             </div>
+            <span class="toolbar-break" aria-hidden="true"></span>
             <div class="tool-group">
                 <span class="tool-label">Labels</span>
                 <label class="num-row" for="text-scale" title="Annotation text size, 10–500% of the auto-computed size. Applies to the preview and the saved image.">
@@ -218,7 +220,9 @@
                     <li>Load a plate image from the ELN or by uploading a local file.</li>
                     <li><strong>Recommended:</strong> click <span class="highlight">Plate Area</span> and drag a
                         box around the plate. This greatly improves <span class="highlight">Auto-detect</span>
-                        accuracy (it ignores everything outside the box). It does not place the reference lines.</li>
+                        accuracy (it ignores everything outside the box). It does not place the reference lines.
+                        While a plate area is set, lines and spots must stay inside it — drawing or redrawing the
+                        box clamps the lines to it and drops any spots that fall outside.</li>
                     <li>Add the <span class="highlight">Min Line</span> on the baseline (where samples were spotted)
                         and the <span class="highlight">Max Line</span> on the solvent front (how far the solvent ran).</li>
                     <li>Click <span class="highlight">Auto-detect</span> (best inside a Plate Area) or

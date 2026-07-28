@@ -28,7 +28,9 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
   plate): it confines detection to the plate — ignoring edges, the baseline, and
   lane labels. The Plate Area is only a detection region; the **Min** (baseline)
   and **Max** (solvent front) lines sit *inside* the plate and are placed by you,
-  not derived from the box. A **crop view** checkbox zooms the work area to the
+  not derived from the box. While a plate area is set, all lines and spots are
+  kept inside it — drawing/redrawing the box clamps the lines to it and drops any
+  spots that fall outside. A **crop view** checkbox zooms the work area to the
   plate box for easier marking — view-only; the saved image keeps its full
   original dimensions (including any rotation).
 - **Rotate** the image 90° (on a clean image) to correct orientation.
