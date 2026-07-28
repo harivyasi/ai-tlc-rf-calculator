@@ -66,6 +66,18 @@ export function fitAndDraw(img) {
     document.body.dataset.imageReady = "1"; // readiness signal (used by tests)
 }
 
+// Distinct colours per reference-line type (Min vs Max were both red before).
+const LINE_COLORS = {
+    min: "#1e8e3e", // green — baseline / origin
+    max: "#d93025", // red — solvent front
+    horizontal: "#8e24aa", // purple — label line
+    vertical: "#1565c0", // blue — lane label
+};
+
+function lineColor(line) {
+    return LINE_COLORS[line.type] || "#d93025";
+}
+
 export function redrawCanvas() {
     const canvas = state.canvas;
     const ctx = state.ctx;
@@ -75,10 +87,12 @@ export function redrawCanvas() {
     ctx.font = Math.round(16 * textScale()) + "px sans-serif";
     ctx.lineWidth = 2;
 
-    // Lines.
-    ctx.strokeStyle = "red";
-    ctx.fillStyle = "red";
+    // Lines — each type has its own colour so Min and Max are told apart, and
+    // the matching delete cross is drawn in the same colour.
     state.lines.forEach((line) => {
+        const color = lineColor(line);
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
         ctx.beginPath();
         if (isHorizontalLine(line)) {
             const y = line.y / window.scaleFactor;
@@ -95,14 +109,19 @@ export function redrawCanvas() {
         }
     });
 
-    // Rebuild delete icons.
+    // Rebuild delete icons, placed right at the line on the canvas. Delete icons
+    // live in #canvas-container, which centres the canvas, so offset by the
+    // canvas position (not applicable in crop view, where toContainer maps it).
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
-    const fixed = state.cropView ? 4 : 10; // margin for the line's fixed axis
+    const fixed = state.cropView ? 8 : 12; // margin from the line's start
+    const ox = state.cropView ? 0 : canvas.offsetLeft;
+    const oy = state.cropView ? 0 : canvas.offsetTop;
     state.lines.forEach((line) => {
+        const color = lineColor(line);
         if (isHorizontalLine(line)) {
-            addDeleteIcon(line, fixed, toContainer(0, line.y / window.scaleFactor).y);
+            addDeleteIcon(line, ox + fixed, oy + toContainer(0, line.y / window.scaleFactor).y, color);
         } else {
-            addDeleteIcon(line, toContainer(line.x / window.scaleFactor, 0).x, fixed);
+            addDeleteIcon(line, ox + toContainer(line.x / window.scaleFactor, 0).x, oy + fixed, color);
         }
     });
 
@@ -160,12 +179,16 @@ export function redrawCanvas() {
     refreshUI();
 }
 
-export function addDeleteIcon(line, x, y) {
+export function addDeleteIcon(line, x, y, color) {
     const icon = document.createElement("span");
     icon.className = "delete-icon";
     icon.innerHTML = "&times;";
     icon.style.left = x + "px";
     icon.style.top = y + "px";
+    if (color) {
+        icon.style.color = color;
+        icon.style.borderColor = color;
+    }
     icon.onclick = () => deleteLine(line.id);
     document.getElementById("canvas-container").appendChild(icon);
     line.deleteIcon = icon;
