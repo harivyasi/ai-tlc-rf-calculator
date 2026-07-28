@@ -109,6 +109,16 @@ def blob_image_path(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture(scope="session")
+def wide_image_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """A 2000x500 image — wider than the panel, so the canvas is CSS-scaled
+    down (exercises the delete-icon display-scaling path)."""
+    path = tmp_path_factory.mktemp("img") / "wide.png"
+    image = np.full((500, 2000, 3), 235, dtype=np.uint8)
+    cv2.imwrite(str(path), image)
+    return str(path)
+
+
+@pytest.fixture(scope="session")
 def browser() -> Iterator[Browser]:
     with sync_playwright() as p:
         b = p.chromium.launch()

@@ -109,19 +109,27 @@ export function redrawCanvas() {
         }
     });
 
-    // Rebuild delete icons, placed right at the line on the canvas. Delete icons
-    // live in #canvas-container, which centres the canvas, so offset by the
-    // canvas position (not applicable in crop view, where toContainer maps it).
+    // Rebuild delete icons, placed right at the line on the canvas. Icons live
+    // in #canvas-container (CSS pixels), so bitmap coordinates must be scaled by
+    // the canvas's rendered/bitmap ratio — otherwise the icon drifts from the
+    // line proportionally to its position (a low Min/Max line pushed its × off
+    // the canvas). In crop view toContainer already maps to display pixels.
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
     const fixed = state.cropView ? 8 : 12; // margin from the line's start
     const ox = state.cropView ? 0 : canvas.offsetLeft;
     const oy = state.cropView ? 0 : canvas.offsetTop;
+    const dsx = canvas.width ? canvas.clientWidth / canvas.width : 1;
+    const dsy = canvas.height ? canvas.clientHeight / canvas.height : 1;
     state.lines.forEach((line) => {
         const color = lineColor(line);
         if (isHorizontalLine(line)) {
-            addDeleteIcon(line, ox + fixed, oy + toContainer(0, line.y / window.scaleFactor).y, color);
+            const by = line.y / window.scaleFactor;
+            const y = state.cropView ? toContainer(0, by).y : by * dsy;
+            addDeleteIcon(line, ox + fixed, oy + y, color);
         } else {
-            addDeleteIcon(line, ox + toContainer(line.x / window.scaleFactor, 0).x, oy + fixed, color);
+            const bx = line.x / window.scaleFactor;
+            const x = state.cropView ? toContainer(bx, 0).x : bx * dsx;
+            addDeleteIcon(line, ox + x, oy + fixed, color);
         }
     });
 

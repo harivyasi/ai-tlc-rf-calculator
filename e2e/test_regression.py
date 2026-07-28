@@ -688,3 +688,36 @@ def test_image_source_collapses_on_load_and_reexpands(page, servers, test_image_
     page.wait_for_function(
         "() => !document.getElementById('source-body').classList.contains('hidden')"
     )
+
+
+def test_line_delete_icon_stays_on_scaled_canvas(page, servers, wide_image_path):
+    """A reference line's delete cross must sit on the line even when the canvas
+    is CSS-scaled — a low Min/Max line previously pushed its × off the canvas."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", wide_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    scaled = page.evaluate(
+        "() => { const c = document.getElementById('image-canvas');"
+        " return c.clientWidth < c.width; }"
+    )
+    assert scaled, "canvas is not CSS-scaled here; the test would not exercise the bug"
+
+    cb = canvas.bounding_box()
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": cb["width"] * 0.5, "y": cb["height"] * 0.92})  # low line
+
+    icon = page.locator(".delete-icon").first
+    icon.wait_for(state="visible")
+    ib = icon.bounding_box()
+    icy = ib["y"] + ib["height"] / 2
+    expected = cb["y"] + cb["height"] * 0.92
+    assert cb["y"] - 15 <= icy <= cb["y"] + cb["height"] + 15, (
+        "delete cross fell outside the canvas"
+    )
+    assert abs(icy - expected) < 25, (
+        f"delete cross not on the line (icon y={icy:.0f}, line y≈{expected:.0f})"
+    )
