@@ -102,6 +102,14 @@ function init() {
             } catch (err) {
                 /* ignore */
             }
+            // Apply the change immediately: if spots were already auto-detected,
+            // drop those (keeping any manual spots) and re-detect with the new
+            // setting. Do nothing if the user hasn't auto-detected yet.
+            if (hasImage() && state.spots.some((s) => s.auto)) {
+                state.spots = state.spots.filter((s) => !s.auto);
+                redrawCanvas();
+                autoDetectSpots();
+            }
         });
     }
 

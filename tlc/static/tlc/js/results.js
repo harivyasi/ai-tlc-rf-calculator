@@ -109,7 +109,7 @@ export function autoDetectSpots() {
             hideOverlay();
             let added = 0;
             (result.spots || []).forEach((s) => {
-                if (addSpot(s.x, s.y)) added++;
+                if (addSpot(s.x, s.y, true)) added++;
             });
             redrawCanvas();
             updateAnnotatedHeading("editing");

@@ -165,13 +165,15 @@ export function addSpots(event) {
     if (event && event.currentTarget) setActiveButton(event.currentTarget);
 }
 
-export function addSpot(origX, origY) {
+export function addSpot(origX, origY, auto = false) {
     const duplicate = state.spots.some(
         (s) => Math.abs(s.x - origX) < 12 * window.scaleFactor &&
                Math.abs(s.y - origY) < 12 * window.scaleFactor
     );
     if (duplicate) return false;
-    state.spots.push({ id: Date.now() + state.spotSeq++, x: origX, y: origY });
+    // `auto` marks spots placed by Auto-detect, so re-running detection (e.g.
+    // when the "ring marks" preference changes) can replace only those.
+    state.spots.push({ id: Date.now() + state.spotSeq++, x: origX, y: origY, auto });
     return true;
 }
 

@@ -300,6 +300,22 @@ def test_ring_center_preference_persists(page, servers):
     assert page.is_checked("#ring-center"), "ring-center preference was not persisted"
 
 
+def test_toggling_ring_marks_reruns_autodetect(page, servers, blob_image_path):
+    """After Auto-detect, toggling 'ring marks' re-runs detection automatically."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    page.click("button:has-text('Auto-detect')")
+    page.wait_for_selector("text=Detected", timeout=20000)  # first detection added auto spots
+
+    # Toggling the checkbox must fire a second /detect-spots/ request on its own.
+    with page.expect_request("**/detect-spots/**", timeout=10000):
+        page.check("#ring-center")
+
+
 def test_deleting_vline_closes_annotation_popup(page, servers, test_image_path):
     """Deleting a just-drawn V-Line must also dismiss its annotation popup."""
     _stub_cdn(page)
