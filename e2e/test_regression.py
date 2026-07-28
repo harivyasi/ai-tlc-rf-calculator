@@ -882,3 +882,45 @@ def test_drag_line_is_clamped_to_plate_area(page, servers, blob_image_path):
     assert abs(icy - edge) < 15, (
         f"min line not clamped to plate bottom (icon y={icy:.0f}, edge={edge:.0f})"
     )
+
+
+# --- Undo / redo ------------------------------------------------------------
+
+
+def test_undo_redo_spot_edits(page, servers, test_image_path):
+    """Undo removes the last edit and redo re-applies it; recalculating reflects
+    the current spots. Undo/redo buttons enable/disable correctly."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    # Placing Min + Max already produced undoable history.
+    assert not page.locator("#undo-btn").is_disabled()
+    assert page.locator("#redo-btn").is_disabled()
+
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 130, "y": 150})
+    canvas.click(position={"x": 210, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert page.locator("#values-table tbody tr").count() == 2
+
+    # Undo drops the second spot; recalculate -> 1 row.
+    page.click("#undo-btn")
+    assert not page.locator("#redo-btn").is_disabled()
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 1")
+
+    # Redo brings it back; recalculate -> 2 rows.
+    page.click("#redo-btn")
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 2")
+
+
+def test_undo_keyboard_shortcut(page, servers, test_image_path):
+    """Ctrl+Z undoes the last edit (a placed spot)."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 130, "y": 150})
+    canvas.click(position={"x": 210, "y": 150})
+    page.keyboard.press("Control+z")  # undo the 2nd spot
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert page.locator("#values-table tbody tr").count() == 1

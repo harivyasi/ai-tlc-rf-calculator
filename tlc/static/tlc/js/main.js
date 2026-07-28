@@ -22,7 +22,15 @@ import {
     toggleImageSource,
     updateAnnotatedHeading,
 } from "./ui.js";
-import { applyCrop, redrawCanvas, rotateCCW, rotateCW, resetCanvas } from "./canvas.js";
+import {
+    applyCrop,
+    redoEdit,
+    redrawCanvas,
+    resetCanvas,
+    rotateCCW,
+    rotateCW,
+    undoEdit,
+} from "./canvas.js";
 import {
     addHorizontalLine,
     addMaxLine,
@@ -65,6 +73,8 @@ const ACTIONS = {
     addVerticalLine,
     calculateRF,
     resetCanvas,
+    undoEdit,
+    redoEdit,
     updateAnnotatedHeading,
     saveCSV,
     saveImageToServer,
@@ -190,15 +200,27 @@ function init() {
     state.canvas.addEventListener("dblclick", handleDoubleClick);
 
     document.addEventListener("keydown", (e) => {
-        if (e.key !== "Escape") return;
-        // Escape closes the help drawer first if it's open (it's a modal).
-        const drawer = document.getElementById("help-drawer");
-        if (drawer && drawer.classList.contains("open")) {
-            drawer.classList.remove("open");
+        if (e.key === "Escape") {
+            // Escape closes the help drawer first if it's open (it's a modal).
+            const drawer = document.getElementById("help-drawer");
+            if (drawer && drawer.classList.contains("open")) {
+                drawer.classList.remove("open");
+                return;
+            }
+            disableOtherActions();
+            hidePopup();
             return;
         }
-        disableOtherActions();
-        hidePopup();
+        // Undo / redo (ignore while typing in the line-label input).
+        if (!(e.ctrlKey || e.metaKey) || e.target.tagName === "INPUT") return;
+        const key = e.key.toLowerCase();
+        if (key === "z" && !e.shiftKey) {
+            e.preventDefault();
+            undoEdit();
+        } else if (key === "y" || (key === "z" && e.shiftKey)) {
+            e.preventDefault();
+            redoEdit();
+        }
     });
 
     // Default to ELN when a url param is present, otherwise local upload.

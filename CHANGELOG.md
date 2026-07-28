@@ -41,6 +41,8 @@ A full hardening, modernization, and feature overhaul of the v1 tool.
   saved image keeps its full original dimensions, including rotation).
 - Annotation text-size control (10–500%): scales the result labels in both the
   live preview and the saved image, clamped client- and server-side.
+- Undo / redo of annotation edits (add/move/delete lines & spots, Auto-detect,
+  plate-area changes) via toolbar buttons and Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z).
 - Light/dark theme toggle, persisted per browser.
 - Touch and pen support via Pointer Events (drag, double-tap to delete).
 - `/healthz` endpoint (reports version); `cleanup_media` management command.

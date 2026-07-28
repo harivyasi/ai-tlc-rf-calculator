@@ -11,7 +11,8 @@ import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import { clamp, pointInRegion } from "./geometry.js";
 import { markResultsStale } from "./ui.js";
-import { applyCrop, pointerCanvas, redrawCanvas } from "./canvas.js";
+import { commitHistory } from "./history.js";
+import { applyCrop, commitChange, pointerCanvas, redrawCanvas } from "./canvas.js";
 import { deleteSpot, isHorizontalLine, setActiveButton } from "./annotations.js";
 
 // Tap/drag tracking (module-local; not shared state).
@@ -79,8 +80,9 @@ function confineAnnotationsToRegion(r) {
     if (removed > 0) {
         notify(`Removed ${removed} spot(s) outside the plate area.`, "info");
     }
-    // Clamping lines or dropping spots invalidates any prior calculation.
-    if (changed || removed > 0) markResultsStale();
+    // The caller commits the region change (and marks results stale); we only
+    // report whether the confinement itself moved/dropped anything.
+    return changed || removed > 0;
 }
 
 export function handlePointerDown(e) {
@@ -212,6 +214,8 @@ export function handlePointerUp(e) {
             notify("Plate area set — Auto-detect will use it.", "success");
             confineAnnotationsToRegion(region);
         }
+        commitHistory(); // the region change (and any confinement) is undoable
+        markResultsStale();
         applyCrop(); // re-fit the crop view to the new/cleared region (redraws)
         return;
     }
@@ -223,7 +227,7 @@ export function handlePointerUp(e) {
         state.draggingLine = null;
         state.canvas.style.cursor = "default";
         justDraggedGuard();
-        if (moved) markResultsStale(); // a moved spot/line invalidates the results
+        if (moved) commitChange(); // a moved spot/line is an undoable edit
     }
 
     // Touch double-tap to delete a spot (mouse keeps its native dblclick).

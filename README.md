@@ -39,6 +39,8 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 - **Stale-results guard**: after a calculation, any annotation change flags the
   results out of date (banner + pulsing Calculate RF) and blocks CSV/image/ELN
   export until you recalculate — so a stale annotated image is never exported.
+- **Undo / redo** of annotation edits — toolbar buttons or **Ctrl+Z** /
+  **Ctrl+Y** (**Ctrl+Shift+Z**).
 - Light/dark theme toggle (overrides the OS preference, remembered per browser).
 - CSV export (download locally or POST back to an ELN).
 

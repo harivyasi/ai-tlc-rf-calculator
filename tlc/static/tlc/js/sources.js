@@ -9,6 +9,7 @@ import { elnUrl, state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import { clearResultsStale, collapseImageSource, refreshUI, updateAnnotatedHeading } from "./ui.js";
 import { applyCrop, fitAndDraw } from "./canvas.js";
+import { resetHistory } from "./history.js";
 
 export function triggerFileInput() {
     document.getElementById("local-image-input").click();
@@ -66,6 +67,7 @@ function loadLocalImage(dataURL, fileName) {
         if (tbody) tbody.innerHTML = "";
         state.hasResults = false;
         clearResultsStale();
+        resetHistory(); // fresh image = undo baseline
         notify('Image "' + fileName + '" loaded.', "success");
         updateAnnotatedHeading("editing");
         collapseImageSource(fileName);
@@ -98,6 +100,7 @@ function loadELNImage() {
                     state.image.src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
                     state.hasResults = false;
                     clearResultsStale();
+                    resetHistory();
                     updateAnnotatedHeading("editing");
                     collapseImageSource("ELN image");
                 } else {

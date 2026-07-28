@@ -506,6 +506,9 @@ body {
     position: sticky; top: 0; z-index: 50;
 }
 .tool-group { display: flex; align-items: center; gap: 0.4rem; }
+/* Two auto margins split the free space, centring undo/redo between the Labels
+   group (left) and the actions group (right) on the third ribbon. */
+.tool-group--center { margin-left: auto; }
 .tool-group--actions { margin-left: auto; }
 /* Force three fixed ribbons: Bounds / Annotate / Labels + actions. */
 .toolbar-break { flex-basis: 100%; height: 0; margin: 0; }

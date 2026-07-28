@@ -9,8 +9,7 @@
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import { pointInRegion } from "./geometry.js";
-import { markResultsStale } from "./ui.js";
-import { pointerCanvas, redrawCanvas } from "./canvas.js";
+import { commitChange, pointerCanvas, redrawCanvas } from "./canvas.js";
 
 // --- Line-type predicate (was repeated inline throughout) -----------------
 export function isHorizontalLine(line) {
@@ -100,8 +99,11 @@ export function drawLine(event) {
         showPopup(event.pageX, event.pageY);
     }
     state.canvas.removeEventListener("click", drawLine);
-    markResultsStale();
-    redrawCanvas();
+    if (state.lineType === "min" || state.lineType === "max") {
+        commitChange(); // no label popup -> commit the add now
+    } else {
+        redrawCanvas(); // label popup open -> commit on submit/cancel
+    }
 }
 
 function showPopup(x, y) {
@@ -126,11 +128,12 @@ export function submitAnnotation() {
     const text = document.getElementById("line-text").value.trim();
     if (state.currentLine && text !== "") state.currentLine.text = text;
     hidePopup();
-    redrawCanvas();
+    commitChange(); // the new (labelled) line is now final
 }
 
 export function cancelAnnotation() {
     hidePopup();
+    commitChange(); // keep the unlabelled line, but record it for undo
 }
 
 export function deleteLine(id) {
@@ -140,14 +143,12 @@ export function deleteLine(id) {
     // If the annotation popup is open for this line, close it too.
     if (state.currentLine && state.currentLine.id === id) hidePopup();
     state.lines.splice(index, 1);
-    markResultsStale();
-    redrawCanvas();
+    commitChange();
 }
 
 export function deleteSpot(id) {
     state.spots = state.spots.filter((s) => s.id !== id);
-    markResultsStale();
-    redrawCanvas();
+    commitChange();
 }
 
 export function addSpots(event) {
@@ -164,9 +165,10 @@ export function addSpot(origX, origY, auto = false) {
     );
     if (duplicate) return false;
     // `auto` marks spots placed by Auto-detect, so re-running detection (e.g.
-    // when the "ring marks" preference changes) can replace only those.
+    // when the "ring marks" preference changes) can replace only those. This is
+    // a plain mutator — callers commit at the gesture boundary (a single history
+    // entry per click / per Auto-detect batch).
     state.spots.push({ id: Date.now() + state.spotSeq++, x: origX, y: origY, auto });
-    markResultsStale();
     return true;
 }
 
@@ -183,5 +185,5 @@ export function drawSpot(event) {
         notify("Spot already exists here.", "warning");
         return;
     }
-    redrawCanvas();
+    commitChange();
 }

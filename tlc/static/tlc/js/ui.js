@@ -10,13 +10,15 @@
 "use strict";
 
 import { state } from "./state.js";
+import { canRedo, canUndo } from "./history.js";
 
 // Annotation text-size multiplier from the toolbar input, as a fraction
 // (100% -> 1.0), clamped to [0.1, 5.0] to match the server-side clamp.
 export function textScale() {
     const el = document.getElementById("text-scale");
-    const pct = el ? Number(el.value) : 100;
-    if (!Number.isFinite(pct)) return 1;
+    const pct = Number(el ? el.value : 100);
+    // Empty / invalid / non-positive (e.g. a cleared field) -> default 100%.
+    if (!Number.isFinite(pct) || pct <= 0) return 1;
     return Math.max(0.1, Math.min(5, pct / 100));
 }
 
@@ -155,9 +157,17 @@ export function clearResultsStale() {
     setExportDisabled(!state.hasResults); // export enabled only with fresh results
 }
 
+export function refreshUndoRedo() {
+    const undo = document.getElementById("undo-btn");
+    const redo = document.getElementById("redo-btn");
+    if (undo) undo.disabled = !canUndo();
+    if (redo) redo.disabled = !canRedo();
+}
+
 // Refresh contextual UI after any annotation change.
 export function refreshUI() {
     updateHint();
     updateCalculateEnabled();
     updateRotateEnabled();
+    refreshUndoRedo();
 }

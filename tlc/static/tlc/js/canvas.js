@@ -12,12 +12,14 @@ import {
     clearResultsStale,
     hasAnnotations,
     hasImage,
+    markResultsStale,
     refreshUI,
     textScale,
     updateAnnotatedHeading,
     updateWorkAreaLayout,
 } from "./ui.js";
 import { deleteLine, isHorizontalLine, setActiveButton } from "./annotations.js";
+import { commitHistory, redoHistory, resetHistory, undoHistory } from "./history.js";
 
 // Draw an image into the canvas frame applying the current clockwise rotation.
 export function drawImageRotated(context, img, rot, w, h) {
@@ -304,7 +306,33 @@ export function resetCanvas() {
     clearResultsStale();
     updateAnnotatedHeading("editing");
     setActiveButton(null);
+    resetHistory(); // clean slate becomes the undo baseline
     applyCrop(); // region cleared -> exit crop view (redraws)
     refreshUI();
     notify("Canvas reset.", "info");
+}
+
+// --- Edit commit + undo/redo ----------------------------------------------
+// Single funnel for every completed annotation edit: record it for undo/redo,
+// flag any prior result stale, and repaint.
+export function commitChange() {
+    commitHistory();
+    markResultsStale();
+    redrawCanvas(); // redraw -> refreshUI() -> undo/redo buttons refresh
+}
+
+function afterHistoryChange() {
+    state.highlightedSpot = null; // may point at a spot that no longer exists
+    document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
+    markResultsStale(); // annotations changed -> a prior result is out of date
+    applyCrop(); // region may have changed -> re-fit crop view (redraws)
+    refreshUI();
+}
+
+export function undoEdit() {
+    if (undoHistory()) afterHistoryChange();
+}
+
+export function redoEdit() {
+    if (redoHistory()) afterHistoryChange();
 }

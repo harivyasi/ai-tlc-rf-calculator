@@ -26,6 +26,8 @@
             <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
             <symbol id="i-rotate-cw" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></symbol>
             <symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
+            <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4"/></symbol>
+            <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h4"/></symbol>
             <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
             <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
             <symbol id="i-cloud-up" viewBox="0 0 24 24"><path d="M16 16l-4-4-4 4M12 12v9M20.4 14.5A5 5 0 0 0 18 5h-1.26A8 8 0 1 0 3 15.3"/></symbol>
@@ -151,6 +153,14 @@
                     <span aria-hidden="true">%</span>
                 </label>
             </div>
+            <div class="tool-group tool-group--center">
+                <button id="undo-btn" class="lab-btn btn-lab-outline" data-action="undoEdit" aria-label="Undo" title="Undo the last edit (Ctrl+Z)." disabled>
+                    <svg class="icon"><use href="#i-undo"/></svg>
+                </button>
+                <button id="redo-btn" class="lab-btn btn-lab-outline" data-action="redoEdit" aria-label="Redo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)." disabled>
+                    <svg class="icon"><use href="#i-redo"/></svg>
+                </button>
+            </div>
             <div class="tool-group tool-group--actions">
                 <button id="calculate-btn" class="lab-btn btn-lab-success" data-action="calculateRF" title="Compute RF for each spot and render the annotated image. Needs Min, Max, and at least one spot.">
                     <svg class="icon"><use href="#i-calc"/></svg> <span class="lbl-full">Calculate RF</span><span class="lbl-short">Calculate</span>
@@ -252,6 +262,8 @@
                 <p class="muted text-sm">After you calculate, changing any annotation marks the results
                     <strong>out of date</strong> — a banner appears and export is disabled until you click
                     <strong>Calculate RF</strong> again, so you never save a stale image.</p>
+                <p class="muted text-sm"><strong>Undo / redo</strong> your edits with the toolbar buttons or
+                    <strong>Ctrl+Z</strong> / <strong>Ctrl+Y</strong> (<strong>Ctrl+Shift+Z</strong>).</p>
             </div>
         </div>
     </div>

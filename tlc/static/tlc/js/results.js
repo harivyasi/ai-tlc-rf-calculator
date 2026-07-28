@@ -8,15 +8,10 @@
 
 import { elnUrl, state } from "./state.js";
 import { getCookie, hideOverlay, notify, showOverlay, timestampedName } from "./ui-kit.js";
-import {
-    clearResultsStale,
-    hasImage,
-    markResultsStale,
-    textScale,
-    updateAnnotatedHeading,
-} from "./ui.js";
+import { clearResultsStale, hasImage, textScale, updateAnnotatedHeading } from "./ui.js";
 import { addSpot } from "./annotations.js";
-import { redrawCanvas } from "./canvas.js";
+import { commitChange, redrawCanvas } from "./canvas.js";
+import { commitHistory } from "./history.js";
 
 // --- Image payload (shared by calculate + auto-detect) --------------------
 export function getImagePayload() {
@@ -119,10 +114,11 @@ export function autoDetectSpots() {
             (result.spots || []).forEach((s) => {
                 if (addSpot(s.x, s.y, true)) added++;
             });
-            redrawCanvas(); // addSpot() marks results stale when it adds a spot
             if (added > 0) {
+                commitChange(); // one undo entry for the whole detection batch
                 notify("Detected " + added + " spot(s). Review and adjust as needed.", "success");
             } else {
+                redrawCanvas();
                 notify("No new spots detected — add them manually.", "info");
             }
         })
@@ -186,19 +182,19 @@ function deleteResultRow(row) {
         }
     }
     row.remove();
-    redrawCanvas();
 
-    // The annotated image is a server snapshot from the last calculation. Deleting
-    // a spot makes it out of date — flag it stale (recalculate to refresh) — or,
-    // if no spots remain, clear the results entirely.
+    // Deleting the spot is an undoable edit. If none remain, clear the results
+    // entirely; otherwise commitChange() records it and flags the results stale.
     if (state.spots.length > 0) {
-        markResultsStale();
+        commitChange();
     } else {
         const annotated = document.getElementById("annotated-image");
         if (annotated) annotated.removeAttribute("src");
         state.hasResults = false;
         clearResultsStale();
         updateAnnotatedHeading("editing");
+        commitHistory();
+        redrawCanvas();
     }
 }
 
