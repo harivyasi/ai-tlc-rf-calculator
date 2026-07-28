@@ -10,6 +10,7 @@
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import { clamp, pointInRegion } from "./geometry.js";
+import { markResultsStale } from "./ui.js";
 import { applyCrop, pointerCanvas, redrawCanvas } from "./canvas.js";
 import { deleteSpot, isHorizontalLine, setActiveButton } from "./annotations.js";
 
@@ -60,9 +61,17 @@ function deleteSpotAt(px, py) {
 // the edge), but spots outside are deleted (a spot is a specific location — it
 // can't be meaningfully moved to the edge).
 function confineAnnotationsToRegion(r) {
+    let changed = false;
     state.lines.forEach((line) => {
-        if (isHorizontalLine(line)) line.y = clamp(line.y, r.y, r.y + r.height);
-        else line.x = clamp(line.x, r.x, r.x + r.width);
+        if (isHorizontalLine(line)) {
+            const ny = clamp(line.y, r.y, r.y + r.height);
+            if (ny !== line.y) changed = true;
+            line.y = ny;
+        } else {
+            const nx = clamp(line.x, r.x, r.x + r.width);
+            if (nx !== line.x) changed = true;
+            line.x = nx;
+        }
     });
     const before = state.spots.length;
     state.spots = state.spots.filter((s) => pointInRegion(s.x, s.y, r));
@@ -70,6 +79,8 @@ function confineAnnotationsToRegion(r) {
     if (removed > 0) {
         notify(`Removed ${removed} spot(s) outside the plate area.`, "info");
     }
+    // Clamping lines or dropping spots invalidates any prior calculation.
+    if (changed || removed > 0) markResultsStale();
 }
 
 export function handlePointerDown(e) {
@@ -206,11 +217,13 @@ export function handlePointerUp(e) {
     }
 
     if (state.isDragging) {
+        const moved = wasDrag && (state.draggingSpot || state.draggingLine);
         state.isDragging = false;
         state.draggingSpot = null;
         state.draggingLine = null;
         state.canvas.style.cursor = "default";
         justDraggedGuard();
+        if (moved) markResultsStale(); // a moved spot/line invalidates the results
     }
 
     // Touch double-tap to delete a spot (mouse keeps its native dblclick).

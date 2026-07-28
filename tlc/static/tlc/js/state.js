@@ -52,4 +52,7 @@ export const state = {
     regionCurrent: null, // {x, y} in display coordinates
     highlightedSpot: null, // {x, y} of a result row highlighted on the canvas
     cropView: null, // when cropped-to-plate: {rcx, rcy, k} in canvas display px
+
+    hasResults: false, // a calculation has produced a table + annotated image
+    resultsStale: false, // annotations changed since that calculation
 };

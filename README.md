@@ -36,6 +36,9 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 - **Rotate** the image 90° (on a clean image) to correct orientation.
 - **Annotation text size** (10–500%): scales the result labels in both the
   live preview and the saved image, relative to the auto-computed size.
+- **Stale-results guard**: after a calculation, any annotation change flags the
+  results out of date (banner + pulsing Calculate RF) and blocks CSV/image/ELN
+  export until you recalculate — so a stale annotated image is never exported.
 - Light/dark theme toggle (overrides the OS preference, remembered per browser).
 - CSV export (download locally or POST back to an ELN).
 

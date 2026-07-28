@@ -14,7 +14,14 @@
 import { pageUrl, state } from "./state.js";
 import { preventDefaults } from "./ui-kit.js";
 import { initTheme, toggleTheme } from "./theme.js";
-import { hasImage, refreshUI, toggleHelp, toggleImageSource, updateAnnotatedHeading } from "./ui.js";
+import {
+    hasImage,
+    markResultsStale,
+    refreshUI,
+    toggleHelp,
+    toggleImageSource,
+    updateAnnotatedHeading,
+} from "./ui.js";
 import { applyCrop, redrawCanvas, rotateCCW, rotateCW, resetCanvas } from "./canvas.js";
 import {
     addHorizontalLine,
@@ -107,6 +114,7 @@ function init() {
             // setting. Do nothing if the user hasn't auto-detected yet.
             if (hasImage() && state.spots.some((s) => s.auto)) {
                 state.spots = state.spots.filter((s) => !s.auto);
+                markResultsStale(); // spots changed -> any prior result is stale
                 redrawCanvas();
                 autoDetectSpots();
             }
@@ -141,22 +149,16 @@ function init() {
         } catch (err) {
             /* localStorage unavailable */
         }
-        let textScaleTimer = null;
         textScaleInput.addEventListener("input", () => {
             try {
                 localStorage.setItem("tlc-text-scale", textScaleInput.value);
             } catch (err) {
                 /* ignore */
             }
-            if (hasImage()) redrawCanvas();
-            // The spot labels are burned into the server-rendered annotated
-            // image, so a size change only shows there after a re-render. If a
-            // result already exists, regenerate it automatically (debounced so
-            // holding the spinner / typing doesn't fire a request per keystroke).
-            if (textScaleTimer) clearTimeout(textScaleTimer);
-            textScaleTimer = setTimeout(() => {
-                if (document.querySelector("#values-table tbody tr")) calculateRF();
-            }, 400);
+            if (hasImage()) redrawCanvas(); // live preview of the label size
+            // The size is burned into the server-rendered annotated image, so a
+            // change makes a prior result out of date until it is recalculated.
+            markResultsStale();
         });
     }
 

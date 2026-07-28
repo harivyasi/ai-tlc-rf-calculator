@@ -8,7 +8,13 @@
 
 import { elnUrl, state } from "./state.js";
 import { getCookie, hideOverlay, notify, showOverlay, timestampedName } from "./ui-kit.js";
-import { hasImage, textScale, updateAnnotatedHeading } from "./ui.js";
+import {
+    clearResultsStale,
+    hasImage,
+    markResultsStale,
+    textScale,
+    updateAnnotatedHeading,
+} from "./ui.js";
 import { addSpot } from "./annotations.js";
 import { redrawCanvas } from "./canvas.js";
 
@@ -73,6 +79,8 @@ export function calculateRF() {
                     annotated.src = result.annotated_image_url + "?t=" + Date.now();
                     updateAnnotatedHeading("annotated");
                 }
+                state.hasResults = true; // results are now current
+                clearResultsStale();
                 notify("RF calculation complete: " + result.rf_values.length + " spot(s).", "success");
             } else {
                 notify("No RF values calculated. Check your annotations.", "warning");
@@ -111,8 +119,7 @@ export function autoDetectSpots() {
             (result.spots || []).forEach((s) => {
                 if (addSpot(s.x, s.y, true)) added++;
             });
-            redrawCanvas();
-            updateAnnotatedHeading("editing");
+            redrawCanvas(); // addSpot() marks results stale when it adds a spot
             if (added > 0) {
                 notify("Detected " + added + " spot(s). Review and adjust as needed.", "success");
             } else {
@@ -181,17 +188,16 @@ function deleteResultRow(row) {
     row.remove();
     redrawCanvas();
 
-    // The annotated image is a server snapshot from the last calculation, so it
-    // still shows the just-deleted spot (and would be exported that way). Refresh
-    // it to match the remaining spots — or clear it back to the placeholder when
-    // nothing is left to show.
-    const hasRefs =
-        state.lines.some((l) => l.type === "min") && state.lines.some((l) => l.type === "max");
-    if (state.spots.length > 0 && hasRefs) {
-        calculateRF();
+    // The annotated image is a server snapshot from the last calculation. Deleting
+    // a spot makes it out of date — flag it stale (recalculate to refresh) — or,
+    // if no spots remain, clear the results entirely.
+    if (state.spots.length > 0) {
+        markResultsStale();
     } else {
         const annotated = document.getElementById("annotated-image");
         if (annotated) annotated.removeAttribute("src");
+        state.hasResults = false;
+        clearResultsStale();
         updateAnnotatedHeading("editing");
     }
 }

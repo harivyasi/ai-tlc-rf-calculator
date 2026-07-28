@@ -9,6 +9,7 @@
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import {
+    clearResultsStale,
     hasAnnotations,
     hasImage,
     refreshUI,
@@ -105,7 +106,8 @@ export function redrawCanvas() {
             ctx.moveTo(x, 0);
             ctx.lineTo(x, canvas.height);
             ctx.stroke();
-            ctx.fillText(line.text, x + 5, 10);
+            // Label at the bottom (the delete cross sits at the top).
+            ctx.fillText(line.text, x + 5, canvas.height - 6);
         }
     });
 
@@ -115,18 +117,23 @@ export function redrawCanvas() {
     // line proportionally to its position (a low Min/Max line pushed its × off
     // the canvas). In crop view toContainer already maps to display pixels.
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
-    const fixed = state.cropView ? 8 : 12; // margin from the line's start
+    const fixed = state.cropView ? 8 : 12; // margin from the canvas edge
     const ox = state.cropView ? 0 : canvas.offsetLeft;
     const oy = state.cropView ? 0 : canvas.offsetTop;
     const dsx = canvas.width ? canvas.clientWidth / canvas.width : 1;
     const dsy = canvas.height ? canvas.clientHeight / canvas.height : 1;
+    // Right edge of the visible canvas (clipped viewport when cropped).
+    const container = document.getElementById("canvas-container");
+    const rightEdge = state.cropView ? container.clientWidth : ox + canvas.clientWidth;
     state.lines.forEach((line) => {
         const color = lineColor(line);
         if (isHorizontalLine(line)) {
+            // Cross on the RIGHT (the label sits at the left).
             const by = line.y / window.scaleFactor;
             const y = state.cropView ? toContainer(0, by).y : by * dsy;
-            addDeleteIcon(line, ox + fixed, oy + y, color);
+            addDeleteIcon(line, rightEdge - fixed, oy + y, color);
         } else {
+            // Cross at the TOP (the label sits at the bottom).
             const bx = line.x / window.scaleFactor;
             const x = state.cropView ? toContainer(bx, 0).x : bx * dsx;
             addDeleteIcon(line, ox + x, oy + fixed, color);
@@ -293,6 +300,8 @@ export function resetCanvas() {
     }
     const tbody = document.querySelector("#values-table tbody");
     if (tbody) tbody.innerHTML = "";
+    state.hasResults = false;
+    clearResultsStale();
     updateAnnotatedHeading("editing");
     setActiveButton(null);
     applyCrop(); // region cleared -> exit crop view (redraws)

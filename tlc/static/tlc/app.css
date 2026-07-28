@@ -252,8 +252,36 @@ body {
     box-shadow: var(--shadow-sm);
 }
 #annotated-image { margin: 0 auto; }
+#annotated-image.stale { opacity: 0.45; filter: grayscale(0.3); }
 /* Let pointer drags reach the canvas on touch devices (no scroll/zoom steal). */
 #image-canvas { touch-action: none; }
+
+/* "Results out of date" banner + pulsing Calculate RF while stale. */
+.stale-banner {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: var(--radius-sm);
+}
+.stale-banner.show { display: flex; }
+.stale-banner .icon { width: 16px; height: 16px; flex: none; }
+@media (prefers-color-scheme: dark) {
+    .stale-banner { color: #fde68a; background: rgba(180, 83, 9, 0.22); border-color: #b45309; }
+}
+:root[data-theme="dark"] .stale-banner {
+    color: #fde68a; background: rgba(180, 83, 9, 0.22); border-color: #b45309;
+}
+.lab-btn.pulse { animation: btn-pulse 1.4s ease-in-out infinite; }
+@keyframes btn-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--green); }
+    50% { box-shadow: 0 0 0 4px rgba(34, 139, 34, 0); }
+}
 
 .controls-panel {
     background: var(--surface);

@@ -9,7 +9,7 @@
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import { pointInRegion } from "./geometry.js";
-import { updateAnnotatedHeading } from "./ui.js";
+import { markResultsStale } from "./ui.js";
 import { pointerCanvas, redrawCanvas } from "./canvas.js";
 
 // --- Line-type predicate (was repeated inline throughout) -----------------
@@ -32,7 +32,6 @@ export function disableOtherActions() {
 export function selectPlateArea(event) {
     disableOtherActions();
     state.selectingRegion = true;
-    updateAnnotatedHeading("editing");
     if (event && event.currentTarget) setActiveButton(event.currentTarget);
     notify("Drag a box around the plate, then Auto-detect. Click once to clear.", "info");
 }
@@ -45,7 +44,6 @@ function startLine(type, horizontal, event) {
     disableOtherActions();
     state.lineType = type;
     state.isHorizontal = horizontal;
-    updateAnnotatedHeading("editing");
     state.canvas.addEventListener("click", drawLine);
     if (event && event.currentTarget) setActiveButton(event.currentTarget);
 }
@@ -102,6 +100,7 @@ export function drawLine(event) {
         showPopup(event.pageX, event.pageY);
     }
     state.canvas.removeEventListener("click", drawLine);
+    markResultsStale();
     redrawCanvas();
 }
 
@@ -141,18 +140,19 @@ export function deleteLine(id) {
     // If the annotation popup is open for this line, close it too.
     if (state.currentLine && state.currentLine.id === id) hidePopup();
     state.lines.splice(index, 1);
+    markResultsStale();
     redrawCanvas();
 }
 
 export function deleteSpot(id) {
     state.spots = state.spots.filter((s) => s.id !== id);
+    markResultsStale();
     redrawCanvas();
 }
 
 export function addSpots(event) {
     disableOtherActions();
     state.addingSpots = true;
-    updateAnnotatedHeading("editing");
     state.canvas.addEventListener("click", drawSpot);
     if (event && event.currentTarget) setActiveButton(event.currentTarget);
 }
@@ -166,6 +166,7 @@ export function addSpot(origX, origY, auto = false) {
     // `auto` marks spots placed by Auto-detect, so re-running detection (e.g.
     // when the "ring marks" preference changes) can replace only those.
     state.spots.push({ id: Date.now() + state.spotSeq++, x: origX, y: origY, auto });
+    markResultsStale();
     return true;
 }
 

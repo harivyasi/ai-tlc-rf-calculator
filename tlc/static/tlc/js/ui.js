@@ -118,6 +118,43 @@ export function updateRotateEnabled() {
         });
 }
 
+// --- Stale-results handling -----------------------------------------------
+// The results table + annotated image are a snapshot from the last Calculate RF.
+// Any annotation change afterwards makes them out of date: we keep them on
+// screen but flag them (banner + pulsing Calculate RF) and block export until
+// the user recalculates, so a stale image can't be saved / pushed to the ELN.
+
+function setExportDisabled(disabled) {
+    document.querySelectorAll("#export-row .lab-btn").forEach((b) => {
+        b.disabled = disabled;
+    });
+}
+
+export function markResultsStale() {
+    if (!state.hasResults || state.resultsStale) return;
+    state.resultsStale = true;
+    const banner = document.getElementById("stale-banner");
+    if (banner) banner.classList.add("show");
+    const annotated = document.getElementById("annotated-image");
+    if (annotated) annotated.classList.add("stale");
+    const calc = document.getElementById("calculate-btn");
+    if (calc) calc.classList.add("pulse");
+    setExportDisabled(true);
+}
+
+// Called on a fresh calculation (results now current) and on reset/new image
+// (no results). `hasResults` is set by the caller.
+export function clearResultsStale() {
+    state.resultsStale = false;
+    const banner = document.getElementById("stale-banner");
+    if (banner) banner.classList.remove("show");
+    const annotated = document.getElementById("annotated-image");
+    if (annotated) annotated.classList.remove("stale");
+    const calc = document.getElementById("calculate-btn");
+    if (calc) calc.classList.remove("pulse");
+    setExportDisabled(!state.hasResults); // export enabled only with fresh results
+}
+
 // Refresh contextual UI after any annotation change.
 export function refreshUI() {
     updateHint();

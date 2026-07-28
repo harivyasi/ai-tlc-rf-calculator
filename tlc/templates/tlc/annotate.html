@@ -68,7 +68,8 @@
                         <svg class="icon"><use href="#i-rotate-cw"/></svg>
                     </button>
                     <button type="button" id="source-change" class="source-summary-change"
-                            data-action="toggleImageSource" aria-expanded="false">
+                            data-action="toggleImageSource" aria-expanded="false"
+                            title="Re-open the image source panel to load a different image.">
                         <svg class="icon"><use href="#i-chevron"/></svg> Change
                     </button>
                 </span>
@@ -78,11 +79,13 @@
                 <div class="card-content">
                     <div class="button-group button-group--row">
                         <button id="eln-source-btn" class="lab-btn btn-lab-primary active flex-1"
-                                data-action="selectImageSource" data-arg="eln">
+                                data-action="selectImageSource" data-arg="eln"
+                                title="Load the plate image attached to the ELN entry that opened this tool.">
                             <svg class="icon"><use href="#i-cloud"/></svg> From ELN
                         </button>
                         <button id="local-source-btn" class="lab-btn btn-lab-outline flex-1"
-                                data-action="selectImageSource" data-arg="local">
+                                data-action="selectImageSource" data-arg="local"
+                                title="Upload a plate image from your computer (JPG or PNG, under 10 MB).">
                             <svg class="icon"><use href="#i-upload"/></svg> Upload local
                         </button>
                     </div>
@@ -173,6 +176,10 @@
 
             <div class="panel panel-result">
                 <h5 class="panel-title" id="annotated-heading">Result</h5>
+                <div id="stale-banner" class="stale-banner" role="status">
+                    <svg class="icon"><use href="#i-info"/></svg>
+                    <span>Results are out of date — click <strong>Calculate RF</strong> to refresh.</span>
+                </div>
                 <img id="annotated-image" class="hidden" alt="Annotated result">
                 <p id="result-placeholder" class="muted text-sm">
                     Set the reference lines and spots, then <strong>Calculate RF</strong> —
@@ -192,13 +199,13 @@
                     </table>
                 </div>
                 <div class="export-row" id="export-row">
-                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveCSV">
+                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveCSV" title="Download the RF results table as a CSV file.">
                         <svg class="icon"><use href="#i-download"/></svg> CSV
                     </button>
-                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveImageToServer">
+                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveImageToServer" title="Save the annotated image (download it, or upload it to the ELN when the plate came from one).">
                         <svg class="icon"><use href="#i-image"/></svg> Image
                     </button>
-                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveCSVToServer">
+                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveCSVToServer" title="Upload the results CSV back to the ELN (only for plates loaded from an ELN).">
                         <svg class="icon"><use href="#i-cloud-up"/></svg> To ELN
                     </button>
                 </div>
@@ -242,6 +249,9 @@
                 <p class="muted text-sm"><strong>Rotate</strong> is available on a freshly loaded image (before
                     you annotate) to correct its orientation. Tick <strong>ring marks</strong> before
                     Auto-detect to centre detections on ring outlines rather than filled spots.</p>
+                <p class="muted text-sm">After you calculate, changing any annotation marks the results
+                    <strong>out of date</strong> — a banner appears and export is disabled until you click
+                    <strong>Calculate RF</strong> again, so you never save a stale image.</p>
             </div>
         </div>
     </div>

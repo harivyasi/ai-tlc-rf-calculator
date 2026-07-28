@@ -216,26 +216,24 @@ def test_result_row_highlight_and_delete(page, servers, test_image_path):
     page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 1")
 
 
-def test_deleting_result_row_refreshes_annotated_image(page, servers, test_image_path):
-    """Deleting a row re-renders the annotated image so it (and any export)
-    matches the remaining spots — it must not stay the stale snapshot."""
+def test_deleting_result_row_marks_results_stale(page, servers, test_image_path):
+    """Deleting a row makes the annotated image out of date: it must flag the
+    results stale (banner + disabled export), not silently keep the old image."""
     canvas = _load_with_min_max(page, servers["new"], test_image_path)
     page.click("button:has-text('Add Spots')")
     canvas.click(position={"x": 110, "y": 150})
     canvas.click(position={"x": 210, "y": 150})
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
-    assert page.locator("#values-table tbody tr").count() == 2
-    src_before = page.locator("#annotated-image").get_attribute("src")
+    assert not page.locator("#stale-banner").is_visible()
+    assert not page.locator("#export-row .lab-btn").first.is_disabled()
 
     page.locator("#values-table tbody tr").first.locator(".row-del").click()
-    # The annotated image is auto-refreshed (new cache-busting src) after delete.
-    page.wait_for_function(
-        "(prev) => { const a = document.getElementById('annotated-image');"
-        " return a && a.getAttribute('src') && a.getAttribute('src') !== prev; }",
-        arg=src_before,
+    page.wait_for_selector("#stale-banner", state="visible")
+    assert page.locator("#export-row .lab-btn").first.is_disabled(), (
+        "export not blocked while stale"
     )
-    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 1")
+    assert page.locator("#values-table tbody tr").count() == 1
 
 
 def test_auto_detect_populates_spots(page, servers, blob_image_path):
@@ -562,22 +560,40 @@ def test_text_scale_is_sent_in_payload_and_persists(page, servers, test_image_pa
     assert page.locator("#text-scale").input_value() == "250", "text-size preference not persisted"
 
 
-def test_changing_text_size_refreshes_annotated_image(page, servers, test_image_path):
-    """Changing the text size re-renders the annotated image on its own — the
-    user should not have to click Calculate RF again."""
+def test_changing_text_size_marks_results_stale(page, servers, test_image_path):
+    """Changing the text size (burned into the annotated image) flags a prior
+    result stale — the canvas preview updates live, but export is blocked until
+    recalculation."""
     canvas = _load_with_min_max(page, servers["new"], test_image_path)
     page.click("button:has-text('Add Spots')")
     canvas.click(position={"x": 150, "y": 150})
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
-    src_before = page.locator("#annotated-image").get_attribute("src")
+    assert not page.locator("#stale-banner").is_visible()
 
-    page.fill("#text-scale", "300")  # no Calculate RF click
-    page.wait_for_function(
-        "(prev) => { const a = document.getElementById('annotated-image');"
-        " return a && a.getAttribute('src') && a.getAttribute('src') !== prev; }",
-        arg=src_before,
-    )
+    page.fill("#text-scale", "300")
+    page.wait_for_selector("#stale-banner", state="visible")
+    assert page.locator("#export-row .lab-btn").first.is_disabled()
+
+
+def test_editing_after_calc_marks_stale_then_recalc_clears(page, servers, test_image_path):
+    """Adding a spot after a calculation flags results stale (banner + pulsing
+    Calculate RF + blocked export); recalculating clears it."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert not page.locator("#stale-banner").is_visible()
+
+    canvas.click(position={"x": 220, "y": 150})  # add another spot
+    page.wait_for_selector("#stale-banner", state="visible")
+    assert page.locator("#export-row .lab-btn").first.is_disabled()
+    assert "pulse" in (page.locator("#calculate-btn").get_attribute("class") or "")
+
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#stale-banner", state="hidden")
+    assert not page.locator("#export-row .lab-btn").first.is_disabled()
 
 
 # --- Additional UI-behaviour coverage --------------------------------------

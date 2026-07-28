@@ -7,7 +7,7 @@
 
 import { elnUrl, state } from "./state.js";
 import { notify } from "./ui-kit.js";
-import { collapseImageSource, refreshUI, updateAnnotatedHeading } from "./ui.js";
+import { clearResultsStale, collapseImageSource, refreshUI, updateAnnotatedHeading } from "./ui.js";
 import { applyCrop, fitAndDraw } from "./canvas.js";
 
 export function triggerFileInput() {
@@ -64,6 +64,8 @@ function loadLocalImage(dataURL, fileName) {
         document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
         const tbody = document.querySelector("#values-table tbody");
         if (tbody) tbody.innerHTML = "";
+        state.hasResults = false;
+        clearResultsStale();
         notify('Image "' + fileName + '" loaded.', "success");
         updateAnnotatedHeading("editing");
         collapseImageSource(fileName);
@@ -94,6 +96,8 @@ function loadELNImage() {
                         refreshUI();
                     };
                     state.image.src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
+                    state.hasResults = false;
+                    clearResultsStale();
                     updateAnnotatedHeading("editing");
                     collapseImageSource("ELN image");
                 } else {
