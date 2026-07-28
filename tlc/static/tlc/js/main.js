@@ -141,6 +141,7 @@ function init() {
         } catch (err) {
             /* localStorage unavailable */
         }
+        let textScaleTimer = null;
         textScaleInput.addEventListener("input", () => {
             try {
                 localStorage.setItem("tlc-text-scale", textScaleInput.value);
@@ -148,6 +149,14 @@ function init() {
                 /* ignore */
             }
             if (hasImage()) redrawCanvas();
+            // The spot labels are burned into the server-rendered annotated
+            // image, so a size change only shows there after a re-render. If a
+            // result already exists, regenerate it automatically (debounced so
+            // holding the spinner / typing doesn't fire a request per keystroke).
+            if (textScaleTimer) clearTimeout(textScaleTimer);
+            textScaleTimer = setTimeout(() => {
+                if (document.querySelector("#values-table tbody tr")) calculateRF();
+            }, 400);
         });
     }
 

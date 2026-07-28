@@ -548,6 +548,24 @@ def test_text_scale_is_sent_in_payload_and_persists(page, servers, test_image_pa
     assert page.locator("#text-scale").input_value() == "250", "text-size preference not persisted"
 
 
+def test_changing_text_size_refreshes_annotated_image(page, servers, test_image_path):
+    """Changing the text size re-renders the annotated image on its own — the
+    user should not have to click Calculate RF again."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    src_before = page.locator("#annotated-image").get_attribute("src")
+
+    page.fill("#text-scale", "300")  # no Calculate RF click
+    page.wait_for_function(
+        "(prev) => { const a = document.getElementById('annotated-image');"
+        " return a && a.getAttribute('src') && a.getAttribute('src') !== prev; }",
+        arg=src_before,
+    )
+
+
 # --- Additional UI-behaviour coverage --------------------------------------
 
 
