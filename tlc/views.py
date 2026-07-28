@@ -37,7 +37,6 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from config import __version__
-from config.env import env_list
 
 from . import detection
 
@@ -113,9 +112,9 @@ def _is_safe_remote_url(url: str) -> bool:
     """Return whether ``url`` is safe to fetch server-side (SSRF guard).
 
     The URL must use http(s) and must not resolve to a private, loopback,
-    link-local, reserved, or otherwise non-public address. When the
-    ``ELN_ALLOWED_HOSTS`` environment variable is set (comma-separated), the
-    host must additionally appear in that allowlist.
+    link-local, reserved, or otherwise non-public address. When
+    ``settings.ELN_ALLOWED_HOSTS`` is non-empty (set directly or derived from
+    ``ELN_ORIGIN``), the host must additionally appear in that allowlist.
 
     Args:
         url: The remote URL to validate.
@@ -127,7 +126,7 @@ def _is_safe_remote_url(url: str) -> bool:
     if parts.scheme not in ("http", "https") or not parts.hostname:
         return False
 
-    allowed = [h.lower() for h in env_list("ELN_ALLOWED_HOSTS")]
+    allowed = [h.lower() for h in settings.ELN_ALLOWED_HOSTS]
     if allowed and parts.hostname.lower() not in allowed:
         return False
 

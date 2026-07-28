@@ -6,9 +6,13 @@ run in development and production:
     DEBUG                  Enable debug mode (default: False).
     SECRET_KEY             Django secret key (required when DEBUG is off).
     ALLOWED_HOSTS          Comma-separated allowed hosts.
-    CSRF_TRUSTED_ORIGINS   Comma-separated trusted origins for CSRF.
-    ELN_ALLOWED_HOSTS      Comma-separated allowlist of hosts the server may
-                           fetch ELN images from (empty = any public host).
+    ELN_ORIGIN             The ELN origin (e.g. https://eln.example.org). Sets
+                           both the CSP connect-src and the fetch allowlist.
+
+A minimal deployment needs only SECRET_KEY, ALLOWED_HOSTS, and (for ELN
+save-back) ELN_ORIGIN. Advanced overrides — CSRF_TRUSTED_ORIGINS,
+CSP_CONNECT_SRC, ELN_ALLOWED_HOSTS, MAX_UPLOAD_MB, SECURE_* — are all optional
+and default sensibly from the three above.
 
 See https://docs.djangoproject.com/en/5.2/ref/settings/
 """
@@ -16,7 +20,14 @@ See https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
-from .env import env_bool, env_int, env_list
+from .env import csrf_origins_from_hosts, env_bool, env_int, env_list, host_of
+
+# A single ELN_ORIGIN (e.g. https://eln.example.org) configures both the CSP
+# connect-src (so the browser may POST results back) and the remote-fetch
+# allowlist below — one variable instead of two. Either derived value can still
+# be overridden explicitly (CSP_CONNECT_SRC / ELN_ALLOWED_HOSTS).
+ELN_ORIGIN = os.getenv("ELN_ORIGIN", "").strip()
+ELN_ORIGIN_HOST = host_of(ELN_ORIGIN)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -40,7 +51,14 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
 
-CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+# Trusted CSRF origins default to https://<host> for each real ALLOWED_HOSTS
+# entry (local / wildcard hosts are skipped), so you rarely need to set this
+# separately. An explicit CSRF_TRUSTED_ORIGINS overrides the derivation.
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS") or csrf_origins_from_hosts(ALLOWED_HOSTS)
+
+# Hosts the server may fetch ELN images from (SSRF allowlist). Empty = any
+# public host. Explicit ELN_ALLOWED_HOSTS wins, else the ELN_ORIGIN host.
+ELN_ALLOWED_HOSTS = env_list("ELN_ALLOWED_HOSTS") or ([ELN_ORIGIN_HOST] if ELN_ORIGIN_HOST else [])
 
 
 # Application definition
@@ -65,8 +83,9 @@ MIDDLEWARE = [
 # Content-Security-Policy. The frontend is fully self-hosted with no inline
 # scripts, inline styles, or inline event handlers, so scripts and styles are
 # locked to 'self'. Cross-origin fetches (e.g. saving results back to an ELN)
-# are blocked unless their origins are listed in CSP_CONNECT_SRC.
-_csp_connect = " ".join(["'self'", *env_list("CSP_CONNECT_SRC")])
+# are blocked unless their origin is allowed via ELN_ORIGIN (or CSP_CONNECT_SRC).
+_csp_extra = env_list("CSP_CONNECT_SRC") or ([ELN_ORIGIN] if ELN_ORIGIN else [])
+_csp_connect = " ".join(["'self'", *_csp_extra])
 CONTENT_SECURITY_POLICY = "; ".join(
     [
         "default-src 'self'",

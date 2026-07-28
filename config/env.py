@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit
 
 _TRUTHY = {"true", "1", "t", "yes", "y", "on"}
+_LOCAL_HOSTS = {"localhost", "127.0.0.1"}
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -54,3 +56,17 @@ def env_list(name: str, default: str = "") -> list[str]:
     """
     raw = os.getenv(name, default)
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def csrf_origins_from_hosts(hosts: list[str]) -> list[str]:
+    """Derive ``https://<host>`` CSRF origins from real ALLOWED_HOSTS entries.
+
+    Local (``localhost``/``127.0.0.1``) and wildcard hosts are skipped, so the
+    result is safe to use as a default for ``CSRF_TRUSTED_ORIGINS``.
+    """
+    return [f"https://{h}" for h in hosts if h not in _LOCAL_HOSTS and "*" not in h]
+
+
+def host_of(url: str) -> str | None:
+    """Return the hostname of a URL (e.g. ``https://eln.example.org/x`` -> host), or None."""
+    return urlsplit(url).hostname if url else None

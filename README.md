@@ -122,19 +122,24 @@ uv run pre-commit install
 
 ## Configuration
 
-All configuration is via environment variables:
+Configuration is via environment variables. A real deployment needs only three:
+**`SECRET_KEY`**, **`ALLOWED_HOSTS`**, and (for ELN save-back) **`ELN_ORIGIN`** —
+everything else is derived and optional.
 
 | Variable               | Default                     | Description                                                            |
 | ---------------------- | --------------------------- | ---------------------------------------------------------------------- |
-| `DEBUG`                | `False`                     | Enable Django debug mode. **Never enable in production.**              |
 | `SECRET_KEY`           | *(required if not DEBUG)*   | Django secret key. A throwaway key is generated only when `DEBUG=True`. |
 | `ALLOWED_HOSTS`        | `localhost,127.0.0.1`       | Comma-separated allowed hosts.                                         |
-| `CSRF_TRUSTED_ORIGINS` | *(empty)*                   | Comma-separated trusted origins for CSRF (e.g. `https://tlc.example.org`). |
-| `ELN_ALLOWED_HOSTS`    | *(empty = any public host)* | Comma-separated allowlist of hosts the server may fetch ELN images from. |
-| `CSP_CONNECT_SRC`      | *(empty)*                   | Extra origins added to the CSP `connect-src` (e.g. your ELN origin, so "save to ELN" works). |
+| `ELN_ORIGIN`           | *(empty)*                   | The ELN origin, e.g. `https://eln.example.org`. Sets **both** the CSP `connect-src` (so "save to ELN" works) **and** the fetch allowlist. |
+| `DEBUG`                | `False`                     | Enable Django debug mode. **Never enable in production.**              |
 | `MAX_UPLOAD_MB`        | `16`                        | Max request-body size (MB). Must exceed the base64-inflated 10 MB image cap. |
 | `SECURE_SSL_REDIRECT`  | `True` (when not DEBUG)     | Redirect HTTP to HTTPS.                                                |
 | `SECURE_HSTS_SECONDS`  | `31536000`                  | HSTS max-age (when not DEBUG).                                         |
+
+**Derived (override only if needed):** `CSRF_TRUSTED_ORIGINS` defaults to
+`https://<host>` for each real `ALLOWED_HOSTS` entry; `CSP_CONNECT_SRC` and
+`ELN_ALLOWED_HOSTS` default from `ELN_ORIGIN`. Set any of them explicitly to
+override the derivation.
 
 When `DEBUG` is off, secure cookies, HSTS, and SSL redirect are enabled
 automatically. Verify a deployment's configuration with:
@@ -175,10 +180,13 @@ docker build -t tlc-rf-calculator .
 docker run --rm -p 8050:8050 \
   -e SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \
   -e ALLOWED_HOSTS="tlc.example.org" \
-  -e CSRF_TRUSTED_ORIGINS="https://tlc.example.org" \
-  -e CSP_CONNECT_SRC="https://eln.example.org" \
+  -e ELN_ORIGIN="https://eln.example.org" \
   tlc-rf-calculator
 ```
+
+(`CSRF_TRUSTED_ORIGINS` is derived from `ALLOWED_HOSTS`, and the CSP
+`connect-src` + fetch allowlist from `ELN_ORIGIN`, so those three variables are
+all a typical ELN deployment needs.)
 
 ### ELN (Chemotion) integration
 
@@ -189,9 +197,9 @@ image (GET) and receives the annotated results (POST):
 https://tlc.example.org/?url=https%3A%2F%2Feln.example.org%2Fapi%2Fv1%2Fpublic%2Fthird_party_apps%2F<jwt>
 ```
 
-For that flow, set `CSP_CONNECT_SRC` to the ELN origin (so the browser may POST
-results back), e.g. `CSP_CONNECT_SRC="https://eln.example.org"`, and optionally
-`ELN_ALLOWED_HOSTS="eln.example.org"` to restrict which hosts the server will
+For that flow, set `ELN_ORIGIN` to the ELN origin (so the browser may POST
+results back and the server may fetch images), e.g.
+`ELN_ORIGIN="https://eln.example.org"`. This restricts which hosts the server will
 fetch images from.
 
 See [docs/eln-integration.md](docs/eln-integration.md) for the full contract

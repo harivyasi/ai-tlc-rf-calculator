@@ -70,30 +70,27 @@ In the frontend this is a single `elnUrl` (`tlc/static/tlc/js/state.js`):
 For the same-origin fetch/serve/calculate flow, nothing special is needed. For
 **save-back to Chemotion** (a cross-origin browser POST) both of these must hold:
 
-1. **CSP** — the tool's strict `connect-src` blocks cross-origin requests by
-   default. Add the Chemotion origin:
+1. **CSP + fetch allowlist** — set a single `ELN_ORIGIN`. It adds the Chemotion
+   origin to the strict `connect-src` (so the browser POST is allowed) and
+   restricts which hosts the server will fetch images from:
 
    ```bash
-   CSP_CONNECT_SRC="https://<eln-host>"
+   ELN_ORIGIN="https://<eln-host>"
    ```
+
+   (The individual `CSP_CONNECT_SRC` / `ELN_ALLOWED_HOSTS` still override it if
+   you need them to differ.)
 
 2. **CORS** — the Chemotion endpoint must permit cross-origin POSTs from the
    tool's origin. This is Chemotion server configuration, outside this repo.
 
-Optionally restrict which hosts the server will fetch images from:
-
-```bash
-ELN_ALLOWED_HOSTS="<eln-host>"
-```
-
 ### Worked example
 
 Given the tool at `tlc.example.org` and a Chemotion instance at
-`eln.example.org`:
+`eln.example.org`, the full configuration is three variables:
 
 ```bash
-ALLOWED_HOSTS="tlc.example.org"
-CSRF_TRUSTED_ORIGINS="https://tlc.example.org"
-CSP_CONNECT_SRC="https://eln.example.org"
-ELN_ALLOWED_HOSTS="eln.example.org"
+SECRET_KEY="…"
+ALLOWED_HOSTS="tlc.example.org"   # CSRF_TRUSTED_ORIGINS derived as https://tlc.example.org
+ELN_ORIGIN="https://eln.example.org"   # sets CSP connect-src + fetch allowlist
 ```

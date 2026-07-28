@@ -64,6 +64,10 @@ A full hardening, modernization, and feature overhaul of the v1 tool.
 - Reference lines are colour-coded (Min green, Max red, H-Line purple, V-Line
   blue) with a matching delete cross placed clear of the label.
 - Frontend organised as native ES modules (`static/tlc/js/`, no bundler).
+- Simplified deployment config: a typical ELN deployment needs only `SECRET_KEY`,
+  `ALLOWED_HOSTS`, and `ELN_ORIGIN`. `CSRF_TRUSTED_ORIGINS` is derived from
+  `ALLOWED_HOSTS`; the CSP `connect-src` and fetch allowlist from `ELN_ORIGIN`
+  (all still overridable individually).
 - Fixed click/annotation misalignment on CSS-scaled canvases (pointer mapping
   now uses the rendered rectangle); delete crosses track their line when the
   canvas is scaled.

@@ -18,11 +18,11 @@ import numpy as np
 import requests
 from django.conf import settings
 from django.core.management import call_command
-from django.test import Client, SimpleTestCase
+from django.test import Client, SimpleTestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
-from config.env import env_bool, env_int, env_list
+from config.env import csrf_origins_from_hosts, env_bool, env_int, env_list, host_of
 from tlc.detection import detect_spots
 from tlc.views import (
     _decode_data_url,
@@ -457,6 +457,47 @@ class EnvHelperTests(SimpleTestCase):
             self.assertEqual(env_list("TLC_L"), ["a", "b", "c"])
         self.assertEqual(env_list("TLC_MISSING"), [])
 
+    def test_csrf_origins_from_hosts(self) -> None:
+        # Real hosts -> https origins; local/wildcard hosts dropped.
+        self.assertEqual(
+            csrf_origins_from_hosts(["tlc.example.org", "localhost", "127.0.0.1", "*.foo"]),
+            ["https://tlc.example.org"],
+        )
+        self.assertEqual(csrf_origins_from_hosts(["localhost", "127.0.0.1"]), [])
+
+    def test_host_of(self) -> None:
+        self.assertEqual(host_of("https://eln.example.org/api/v1"), "eln.example.org")
+        self.assertIsNone(host_of(""))
+
+
+class SettingsDerivationTests(SimpleTestCase):
+    """A single ELN_ORIGIN drives both the CSP connect-src and the SSRF allowlist."""
+
+    def test_eln_origin_populates_csp_and_allowlist(self) -> None:
+        import subprocess
+        import sys
+
+        code = (
+            "import django; django.setup(); from django.conf import settings; "
+            "print('HOSTS', settings.ELN_ALLOWED_HOSTS); "
+            "print('CSP', 'https://eln.example.org' in settings.CONTENT_SECURITY_POLICY); "
+            "print('CSRF', settings.CSRF_TRUSTED_ORIGINS)"
+        )
+        env = {
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "config.settings",
+            "DEBUG": "False",
+            "SECRET_KEY": "x" * 50,
+            "ELN_ORIGIN": "https://eln.example.org",
+            "ALLOWED_HOSTS": "tlc.example.org",
+        }
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, env=env, check=True
+        ).stdout
+        self.assertIn("HOSTS ['eln.example.org']", out)  # allowlist derived from ELN_ORIGIN
+        self.assertIn("CSP True", out)  # connect-src includes the ELN origin
+        self.assertIn("CSRF ['https://tlc.example.org']", out)  # derived from ALLOWED_HOSTS
+
 
 class TextScaleTests(SimpleTestCase):
     """Annotation text-size multiplier: parsing/clamping and its effect."""
@@ -689,14 +730,14 @@ class ResolveWithinMediaTests(SimpleTestCase):
 class SafeRemoteUrlTests(SimpleTestCase):
     """SSRF URL validation branches beyond the endpoint-level tests."""
 
+    @override_settings(ELN_ALLOWED_HOSTS=["eln.example.org"])
     def test_allowlist_rejects_unlisted_host(self) -> None:
-        with mock.patch.dict(os.environ, {"ELN_ALLOWED_HOSTS": "eln.example.org"}):
-            self.assertFalse(_is_safe_remote_url("http://93.184.216.34/x.png"))
+        self.assertFalse(_is_safe_remote_url("http://93.184.216.34/x.png"))
 
+    @override_settings(ELN_ALLOWED_HOSTS=["93.184.216.34"])
     def test_allowlist_accepts_listed_host_shape(self) -> None:
         # A listed public IP passes the allowlist and public-address checks.
-        with mock.patch.dict(os.environ, {"ELN_ALLOWED_HOSTS": "93.184.216.34"}):
-            self.assertTrue(_is_safe_remote_url("http://93.184.216.34/x.png"))
+        self.assertTrue(_is_safe_remote_url("http://93.184.216.34/x.png"))
 
     def test_unresolvable_host_is_rejected(self) -> None:
         with mock.patch("tlc.views.socket.getaddrinfo", side_effect=socket.gaierror):
