@@ -25,9 +25,8 @@ A full hardening, modernization, and feature overhaul of the v1 tool.
 
 - Assisted spot detection ("Auto-detect"): scikit-image Laplacian-of-Gaussian
   blobs + lane-profile `peak_local_max`, shape-gated to reject lines/labels.
-- Optional "Plate Area" region to confine detection; it also suggests editable
-  Min/Max reference lines from its edges. An optional "ring marks" mode centres
-  detections on ring outlines rather than filled area.
+- Optional "Plate Area" region to confine detection to the plate. An optional
+  "ring marks" mode centres detections on ring outlines rather than filled area.
 - Rotate the image 90° (on a clean image) to correct orientation.
 - Crop-to-plate view: zoom the work area to the plate box (view only — the
   saved image keeps its full original dimensions, including rotation).

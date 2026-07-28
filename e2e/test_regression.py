@@ -378,8 +378,10 @@ def test_theme_toggle_switches_and_persists(page, servers):
     assert after == second, f"theme not persisted: {after!r} != {second!r}"
 
 
-def test_plate_region_suggests_reference_lines(page, servers, blob_image_path):
-    """Drawing a plate area suggests Min/Max lines, so RF computes without them."""
+def test_plate_area_does_not_create_reference_lines(page, servers, blob_image_path):
+    """A Plate Area is a detection region only — it must NOT create Min/Max lines
+    (the plate edges are not the baseline / solvent front). RF needs the user to
+    place them; once placed, it computes."""
     _stub_cdn(page)
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
@@ -394,8 +396,19 @@ def test_plate_region_suggests_reference_lines(page, servers, blob_image_path):
     page.mouse.move(box["x"] + 380, box["y"] + 270, steps=8)
     page.mouse.up()
 
-    # No manual Min/Max lines: they were suggested from the region edges.
     page.click("button:has-text('Auto-detect')")
+    page.wait_for_selector("text=Detected", timeout=20000)  # spots were added
+    # Spots exist, but the plate area created no Min/Max — so RF stays disabled.
+    assert page.locator("#calculate-btn").is_disabled(), (
+        "plate area must not seed Min/Max — Calculate RF should stay disabled"
+    )
+
+    # Placing Min/Max by hand enables it and computes normally.
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 200, "y": 280})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 200, "y": 40})
+    page.wait_for_function("() => !document.getElementById('calculate-btn').disabled")
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
     assert page.locator("#values-table tbody tr").count() == 3

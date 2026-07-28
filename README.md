@@ -26,9 +26,10 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
   labels. Detected spots are editable suggestions you review before calculating.
   **For accurate detection, first draw a Plate Area** (drag a box around the
   plate): it confines detection to the plate — ignoring edges, the baseline, and
-  lane labels — and suggests Min/Max reference lines from the box edges (which
-  remain draggable/deletable). A **crop view** checkbox zooms the work area to
-  the plate box for easier marking — view-only; the saved image keeps its full
+  lane labels. The Plate Area is only a detection region; the **Min** (baseline)
+  and **Max** (solvent front) lines sit *inside* the plate and are placed by you,
+  not derived from the box. A **crop view** checkbox zooms the work area to the
+  plate box for easier marking — view-only; the saved image keeps its full
   original dimensions (including any rotation).
 - **Rotate** the image 90° (on a clean image) to correct orientation.
 - **Annotation text size** (10–500%): scales the result labels in both the
@@ -41,9 +42,9 @@ RF = (spot_y − min_line_y) / (max_line_y − min_line_y)
 1. Load a plate image — from the ELN, or by uploading a local file.
 2. **Recommended: draw a Plate Area.** Click **Plate Area** and drag a box
    around the plate. This makes **Auto-detect** far more reliable (it ignores
-   everything outside the box) and suggests the Min/Max lines from the box edges.
-3. Check the **Min Line** (baseline / origin) and **Max Line** (solvent front) —
-   adjust the suggestions, or add them yourself if you skipped the Plate Area.
+   everything outside the box). It does not place the reference lines.
+3. Add the **Min Line** on the **baseline / origin** (where samples were spotted)
+   and the **Max Line** on the **solvent front** (how far the solvent ran).
 4. Click **Auto-detect** to find spots (most reliable inside a Plate Area), or
    **Add Spots** to place them manually. Drag to reposition; double-click
    (double-tap on touch devices) to delete. Mouse, touch, and pen are all supported.

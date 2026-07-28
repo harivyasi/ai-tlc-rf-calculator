@@ -36,31 +36,9 @@ export function selectPlateArea(event) {
     notify("Drag a box around the plate, then Auto-detect. Click once to clear.", "info");
 }
 
-// Suggest Min (baseline, bottom edge) and Max (solvent front, top edge) lines
-// from the plate region. Only fills in a line the user hasn't already placed;
-// the suggestions are ordinary lines, so they can be dragged or deleted.
-export function suggestReferenceLines() {
-    if (!state.plateRegion) return;
-    let added = false;
-    if (!state.lines.some((l) => l.type === "max")) {
-        state.lines.push({
-            id: Date.now() + state.lineSeq++,
-            type: "max",
-            y: state.plateRegion.y,
-            text: "max",
-        });
-        added = true;
-    }
-    if (!state.lines.some((l) => l.type === "min")) {
-        const bottom = state.plateRegion.y + state.plateRegion.height;
-        state.lines.push({ id: Date.now() + state.lineSeq++, type: "min", y: bottom, text: "min" });
-        added = true;
-    }
-    if (added) {
-        redrawCanvas();
-        notify("Suggested Min/Max lines — drag to adjust or delete.", "info");
-    }
-}
+// Note: the plate region is a detection ROI only. The Min (baseline) and Max
+// (solvent front) lines are experimental features inside the plate — not its
+// edges — so they are placed by the user, never derived from the plate box.
 
 function startLine(type, horizontal, event) {
     disableOtherActions();

@@ -10,7 +10,7 @@
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import { applyCrop, pointerCanvas, redrawCanvas } from "./canvas.js";
-import { deleteSpot, isHorizontalLine, setActiveButton, suggestReferenceLines } from "./annotations.js";
+import { deleteSpot, isHorizontalLine, setActiveButton } from "./annotations.js";
 
 // Tap/drag tracking (module-local; not shared state).
 let downX = 0;
@@ -169,7 +169,6 @@ export function handlePointerUp(e) {
                 height: Math.round(h * sf),
             };
             notify("Plate area set — Auto-detect will use it.", "success");
-            suggestReferenceLines();
         }
         applyCrop(); // re-fit the crop view to the new/cleared region (redraws)
         return;
