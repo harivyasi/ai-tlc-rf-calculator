@@ -628,7 +628,7 @@ def test_image_source_collapses_on_load_and_reexpands(page, servers, test_image_
         "() => document.getElementById('source-body').classList.contains('hidden')"
     )
 
-    page.click("#source-summary")
+    page.click("#source-change")  # the "Change" button re-expands the source card
     page.wait_for_function(
         "() => !document.getElementById('source-body').classList.contains('hidden')"
     )

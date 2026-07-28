@@ -43,16 +43,16 @@ export function updateAnnotatedHeading(stateName) {
 
 export function toggleImageSource() {
     const body = document.getElementById("source-body");
-    const summary = document.getElementById("source-summary");
+    const change = document.getElementById("source-change");
     const collapsed = body.classList.toggle("hidden");
-    summary.setAttribute("aria-expanded", String(!collapsed));
+    if (change) change.setAttribute("aria-expanded", String(!collapsed));
 }
 
 export function collapseImageSource(name) {
     document.getElementById("source-body").classList.add("hidden");
-    const summary = document.getElementById("source-summary");
-    summary.classList.add("shown");
-    summary.setAttribute("aria-expanded", "false");
+    document.getElementById("source-summary").classList.add("shown");
+    const change = document.getElementById("source-change");
+    if (change) change.setAttribute("aria-expanded", "false");
     document.getElementById("source-name").textContent = name;
 }
 

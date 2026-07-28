@@ -454,12 +454,19 @@ body {
 /* Collapsible image source */
 .source-summary {
     display: none; align-items: center; justify-content: space-between;
-    width: 100%; padding: 0.85rem 1.25rem;
+    width: 100%; padding: 0.6rem 1rem;
     background: var(--surface); color: var(--text);
-    border: none; border-radius: var(--radius); font: inherit; cursor: pointer;
+    border-radius: var(--radius); font: inherit;
 }
 .source-summary.shown { display: flex; }
-.source-summary-change { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--primary); font-weight: 600; font-size: 0.85rem; }
+.source-summary-actions { display: inline-flex; align-items: center; gap: 0.5rem; }
+.source-rotate { padding: 0.35rem 0.5rem; }
+.source-summary-change {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.35rem 0.5rem; background: none; border: none; cursor: pointer;
+    color: var(--primary); font-weight: 600; font-size: 0.85rem;
+}
+.source-summary-change:hover { text-decoration: underline; }
 .source-summary .icon { width: 16px; height: 16px; }
 
 /* Toolbar */

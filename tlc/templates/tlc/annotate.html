@@ -56,11 +56,23 @@
     <div class="content-wrapper">
         <!-- Image source (collapses once an image is loaded) -->
         <div class="lab-card source-card" id="source-card">
-            <button type="button" id="source-summary" class="source-summary"
-                    data-action="toggleImageSource" aria-expanded="true">
+            <div id="source-summary" class="source-summary">
                 <span class="source-summary-text"><strong>Image:</strong> <span id="source-name">none</span></span>
-                <span class="source-summary-change"><svg class="icon"><use href="#i-chevron"/></svg> Change</span>
-            </button>
+                <span class="source-summary-actions">
+                    <button type="button" class="lab-btn btn-lab-outline source-rotate" data-action="rotateCCW"
+                            title="Rotate 90° left" aria-label="Rotate left" disabled>
+                        <svg class="icon"><use href="#i-rotate-ccw"/></svg>
+                    </button>
+                    <button type="button" class="lab-btn btn-lab-outline source-rotate" data-action="rotateCW"
+                            title="Rotate 90° right" aria-label="Rotate right" disabled>
+                        <svg class="icon"><use href="#i-rotate-cw"/></svg>
+                    </button>
+                    <button type="button" id="source-change" class="source-summary-change"
+                            data-action="toggleImageSource" aria-expanded="false">
+                        <svg class="icon"><use href="#i-chevron"/></svg> Change
+                    </button>
+                </span>
+            </div>
             <div id="source-body" class="source-body">
                 <div class="card-header"><h2 class="card-title">Image source</h2></div>
                 <div class="card-content">
@@ -126,15 +138,6 @@
                 <label class="check-row" title="Center detected spots on the ring outline instead of its filled area — best for hand-drawn circles.">
                     <input type="checkbox" id="ring-center"> ring marks
                 </label>
-            </div>
-            <div class="tool-group">
-                <span class="tool-label">Image</span>
-                <button class="lab-btn btn-lab-outline" data-action="rotateCCW" title="Rotate 90° left" aria-label="Rotate left">
-                    <svg class="icon"><use href="#i-rotate-ccw"/></svg>
-                </button>
-                <button class="lab-btn btn-lab-outline" data-action="rotateCW" title="Rotate 90° right" aria-label="Rotate right">
-                    <svg class="icon"><use href="#i-rotate-cw"/></svg>
-                </button>
             </div>
             <div class="tool-group">
                 <span class="tool-label">Labels</span>
