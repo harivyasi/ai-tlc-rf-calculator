@@ -54,5 +54,4 @@ export const state = {
     cropView: null, // when cropped-to-plate: {rcx, rcy, k} in canvas display px
 
     hasResults: false, // a calculation has produced a table + annotated image
-    resultsStale: false, // annotations changed since that calculation
 };

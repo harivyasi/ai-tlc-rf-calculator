@@ -564,7 +564,8 @@ body {
 @media (max-width: 760px) {
     .work-area.layout-columns { grid-template-columns: 1fr; }
     .toolbar { position: static; }
-    .tool-group--actions { margin-left: 0; }
+    /* Reset both auto-margins together so the ribbon flows left-aligned. */
+    .tool-group--center, .tool-group--actions { margin-left: 0; }
 }
 
 /* Compact toolbar labels on narrow screens: swap long labels for short ones,

@@ -54,55 +54,41 @@ export function addVerticalLine(event) { startLine("vertical", false, event); }
 
 export function drawLine(event) {
     const p = pointerCanvas(event);
-    const x = p.x;
-    const y = p.y;
+    const ox = p.x * window.scaleFactor; // original-image coordinates
+    const oy = p.y * window.scaleFactor;
+    const isRef = state.lineType === "min" || state.lineType === "max";
+    const r = state.plateRegion;
 
     // With a plate area set, a line must fall inside it (horizontal on y,
     // vertical on x). Block the click but keep the tool armed for a retry.
-    const r = state.plateRegion;
     if (r) {
         const outside = state.isHorizontal
-            ? y * window.scaleFactor < r.y || y * window.scaleFactor > r.y + r.height
-            : x * window.scaleFactor < r.x || x * window.scaleFactor > r.x + r.width;
+            ? oy < r.y || oy > r.y + r.height
+            : ox < r.x || ox > r.x + r.width;
         if (outside) {
             notify("Place it inside the plate area.", "warning");
             return;
         }
     }
 
-    if (state.isHorizontal) {
-        if (state.lineType === "min" || state.lineType === "max") {
-            if (state.lines.some((l) => l.type === state.lineType)) {
-                notify('A "' + state.lineType + '" line already exists.', "warning");
-                state.canvas.removeEventListener("click", drawLine);
-                return;
-            }
-        }
-        state.currentLine = {
-            id: Date.now(),
-            type: state.lineType,
-            y: y * window.scaleFactor,
-            text: state.lineType === "min" ? "min" : state.lineType === "max" ? "max" : "",
-        };
-        state.lines.push(state.currentLine);
-        if (state.lineType !== "min" && state.lineType !== "max") {
-            showPopup(event.pageX, event.pageY);
-        }
-    } else {
-        state.currentLine = {
-            id: Date.now(),
-            type: state.lineType,
-            x: x * window.scaleFactor,
-            text: "",
-        };
-        state.lines.push(state.currentLine);
-        showPopup(event.pageX, event.pageY);
+    // Min/Max are singletons.
+    if (isRef && state.lines.some((l) => l.type === state.lineType)) {
+        notify('A "' + state.lineType + '" line already exists.', "warning");
+        state.canvas.removeEventListener("click", drawLine);
+        return;
     }
+
+    state.currentLine = state.isHorizontal
+        ? { id: Date.now(), type: state.lineType, y: oy, text: isRef ? state.lineType : "" }
+        : { id: Date.now(), type: state.lineType, x: ox, text: "" };
+    state.lines.push(state.currentLine);
     state.canvas.removeEventListener("click", drawLine);
-    if (state.lineType === "min" || state.lineType === "max") {
+
+    if (isRef) {
         commitChange(); // no label popup -> commit the add now
     } else {
-        redrawCanvas(); // label popup open -> commit on submit/cancel
+        showPopup(event.pageX, event.pageY); // label popup -> commit on submit/cancel
+        redrawCanvas();
     }
 }
 

@@ -307,26 +307,29 @@ export function resetCanvas() {
     updateAnnotatedHeading("editing");
     setActiveButton(null);
     resetHistory(); // clean slate becomes the undo baseline
-    applyCrop(); // region cleared -> exit crop view (redraws)
-    refreshUI();
+    applyCrop(); // region cleared -> exit crop view (redraws + refreshUI)
     notify("Canvas reset.", "info");
 }
 
 // --- Edit commit + undo/redo ----------------------------------------------
-// Single funnel for every completed annotation edit: record it for undo/redo,
-// flag any prior result stale, and repaint.
+// Shared tail for any annotation-state change: flag a prior result stale and
+// re-fit the crop view (which repaints and refreshes the contextual UI).
+// applyCrop() is a harmless reshape when the plate region is unchanged, so it is
+// safe for every edit — this is the one place the "single funnel" lives.
+function afterAnnotationChange() {
+    markResultsStale();
+    applyCrop();
+}
+
+// Record a completed edit for undo/redo, then run the shared tail.
 export function commitChange() {
     commitHistory();
-    markResultsStale();
-    redrawCanvas(); // redraw -> refreshUI() -> undo/redo buttons refresh
+    afterAnnotationChange();
 }
 
 function afterHistoryChange() {
     state.highlightedSpot = null; // may point at a spot that no longer exists
-    document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
-    markResultsStale(); // annotations changed -> a prior result is out of date
-    applyCrop(); // region may have changed -> re-fit crop view (redraws)
-    refreshUI();
+    afterAnnotationChange();
 }
 
 export function undoEdit() {

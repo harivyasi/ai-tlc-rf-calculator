@@ -10,9 +10,7 @@
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
 import { clamp, pointInRegion } from "./geometry.js";
-import { markResultsStale } from "./ui.js";
-import { commitHistory } from "./history.js";
-import { applyCrop, commitChange, pointerCanvas, redrawCanvas } from "./canvas.js";
+import { commitChange, pointerCanvas, redrawCanvas } from "./canvas.js";
 import { deleteSpot, isHorizontalLine, setActiveButton } from "./annotations.js";
 
 // Tap/drag tracking (module-local; not shared state).
@@ -62,17 +60,9 @@ function deleteSpotAt(px, py) {
 // the edge), but spots outside are deleted (a spot is a specific location — it
 // can't be meaningfully moved to the edge).
 function confineAnnotationsToRegion(r) {
-    let changed = false;
     state.lines.forEach((line) => {
-        if (isHorizontalLine(line)) {
-            const ny = clamp(line.y, r.y, r.y + r.height);
-            if (ny !== line.y) changed = true;
-            line.y = ny;
-        } else {
-            const nx = clamp(line.x, r.x, r.x + r.width);
-            if (nx !== line.x) changed = true;
-            line.x = nx;
-        }
+        if (isHorizontalLine(line)) line.y = clamp(line.y, r.y, r.y + r.height);
+        else line.x = clamp(line.x, r.x, r.x + r.width);
     });
     const before = state.spots.length;
     state.spots = state.spots.filter((s) => pointInRegion(s.x, s.y, r));
@@ -80,9 +70,7 @@ function confineAnnotationsToRegion(r) {
     if (removed > 0) {
         notify(`Removed ${removed} spot(s) outside the plate area.`, "info");
     }
-    // The caller commits the region change (and marks results stale); we only
-    // report whether the confinement itself moved/dropped anything.
-    return changed || removed > 0;
+    // The caller commits the region change through commitChange().
 }
 
 export function handlePointerDown(e) {
@@ -214,9 +202,7 @@ export function handlePointerUp(e) {
             notify("Plate area set — Auto-detect will use it.", "success");
             confineAnnotationsToRegion(region);
         }
-        commitHistory(); // the region change (and any confinement) is undoable
-        markResultsStale();
-        applyCrop(); // re-fit the crop view to the new/cleared region (redraws)
+        commitChange(); // region change is undoable; marks stale + re-fits crop
         return;
     }
 

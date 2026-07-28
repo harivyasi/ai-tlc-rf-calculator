@@ -133,8 +133,7 @@ function setExportDisabled(disabled) {
 }
 
 export function markResultsStale() {
-    if (!state.hasResults || state.resultsStale) return;
-    state.resultsStale = true;
+    if (!state.hasResults) return; // nothing calculated yet; writes below are idempotent
     const banner = document.getElementById("stale-banner");
     if (banner) banner.classList.add("show");
     const annotated = document.getElementById("annotated-image");
@@ -147,7 +146,6 @@ export function markResultsStale() {
 // Called on a fresh calculation (results now current) and on reset/new image
 // (no results). `hasResults` is set by the caller.
 export function clearResultsStale() {
-    state.resultsStale = false;
     const banner = document.getElementById("stale-banner");
     if (banner) banner.classList.remove("show");
     const annotated = document.getElementById("annotated-image");
@@ -157,7 +155,7 @@ export function clearResultsStale() {
     setExportDisabled(!state.hasResults); // export enabled only with fresh results
 }
 
-export function refreshUndoRedo() {
+function refreshUndoRedo() {
     const undo = document.getElementById("undo-btn");
     const redo = document.getElementById("redo-btn");
     if (undo) undo.disabled = !canUndo();
