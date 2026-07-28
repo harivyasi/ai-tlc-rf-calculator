@@ -50,7 +50,14 @@ import {
     handlePointerMove,
     handlePointerUp,
 } from "./interaction.js";
-import { autoDetectSpots, calculateRF, saveCSV, saveCSVToServer, saveImageToServer } from "./results.js";
+import {
+    autoDetectSpots,
+    calculateRF,
+    csvToEln,
+    imageToEln,
+    saveCSV,
+    saveImage,
+} from "./results.js";
 import { handleLocalImageFile, handleLocalImageUpload, selectImageSource, triggerFileInput } from "./sources.js";
 
 // Maps the `data-action` attribute on a control to its handler. Handlers that
@@ -77,8 +84,9 @@ const ACTIONS = {
     redoEdit,
     updateAnnotatedHeading,
     saveCSV,
-    saveImageToServer,
-    saveCSVToServer,
+    saveImage,
+    csvToEln,
+    imageToEln,
     submitAnnotation,
     cancelAnnotation,
 };

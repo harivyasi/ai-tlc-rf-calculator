@@ -132,6 +132,15 @@ function setExportDisabled(disabled) {
     });
 }
 
+// The two "upload to ELN" export buttons only make sense for an ELN-sourced
+// plate; for a local upload they're hidden and the two download buttons expand
+// to fill the row (flex: 1).
+export function updateExportButtons() {
+    document.querySelectorAll("#export-row .export-eln").forEach((b) => {
+        b.classList.toggle("hidden", state.isLocalImage);
+    });
+}
+
 export function markResultsStale() {
     if (!state.hasResults) return; // nothing calculated yet; writes below are idempotent
     const banner = document.getElementById("stale-banner");

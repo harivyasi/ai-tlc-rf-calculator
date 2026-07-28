@@ -31,7 +31,8 @@ RF = (distance from baseline to spot) / (distance from baseline to solvent front
    delete. Mouse, touch, and pen all work.
 5. **(Optional) Label lanes and compounds** with **V-Line** / **H-Line**.
 6. **Click Calculate RF.** The results table and the annotated image appear.
-   Export as **CSV** or **Image**, or send back **To ELN**.
+   Then **download** the CSV or the annotated Image — and, when the plate came
+   from an ELN, **upload** the CSV or Image straight back to it.
 
 ### Handy features
 

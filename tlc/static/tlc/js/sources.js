@@ -7,7 +7,13 @@
 
 import { elnUrl, state } from "./state.js";
 import { notify } from "./ui-kit.js";
-import { clearResultsStale, collapseImageSource, refreshUI, updateAnnotatedHeading } from "./ui.js";
+import {
+    clearResultsStale,
+    collapseImageSource,
+    refreshUI,
+    updateAnnotatedHeading,
+    updateExportButtons,
+} from "./ui.js";
 import { applyCrop, fitAndDraw } from "./canvas.js";
 import { resetHistory } from "./history.js";
 
@@ -30,6 +36,7 @@ export function selectImageSource(source) {
     document.getElementById("local-upload-section").style.display =
         source === "local" ? "block" : "none";
 
+    updateExportButtons(); // ELN-upload buttons only for ELN-sourced plates
     if (source === "eln") loadELNImage();
 }
 

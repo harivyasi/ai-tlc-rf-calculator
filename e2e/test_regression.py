@@ -937,3 +937,42 @@ def test_unmarked_lane_blank_compound_unknown_in_table(page, servers, test_image
     row = page.locator("#values-table tbody tr").first
     assert row.locator("td").first.inner_text().strip() == "", "unmarked lane should be blank"
     assert row.locator("td").nth(1).inner_text().strip() == "Unknown"
+
+
+# --- Export buttons: download pair vs ELN-upload pair -----------------------
+
+_EXPORT_VISIBLE = (
+    "() => Array.from(document.querySelectorAll('#export-row .lab-btn'))"
+    ".filter((b) => b.offsetParent !== null).length"
+)
+
+
+def test_export_local_shows_only_download_pair(page, servers, test_image_path):
+    """A local upload shows just the two download buttons (the ELN-upload pair is
+    hidden and the download pair expands)."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(_IMAGE_READY)
+    assert page.evaluate(_EXPORT_VISIBLE) == 2
+    assert not page.locator("#export-row .export-eln").first.is_visible()
+
+
+def test_export_eln_shows_all_four(page, servers, test_image_path):
+    """An ELN-sourced plate shows all four buttons (download + upload × CSV/Image)."""
+    png = Path(test_image_path).read_bytes()
+    page.route(
+        "**/fetch-image/**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"imagePath": "stub.png"}'
+        ),
+    )
+    page.route(
+        "**/serve-image/**",
+        lambda route: route.fulfill(status=200, content_type="image/png", body=png),
+    )
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/?url=http%3A%2F%2Feln.example%2Fplate.png")
+    page.wait_for_function(_IMAGE_READY)
+    assert page.evaluate(_EXPORT_VISIBLE) == 4

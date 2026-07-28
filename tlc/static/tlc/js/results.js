@@ -253,7 +253,8 @@ function postToEln(blob, filename) {
         });
 }
 
-function downloadAnnotatedImage() {
+// Download the annotated image locally.
+export function saveImage() {
     const annotated = document.getElementById("annotated-image");
     if (!annotated || !annotated.src) {
         notify("Calculate RF values first.", "warning");
@@ -266,11 +267,8 @@ function downloadAnnotatedImage() {
     notify("Annotated image downloaded.", "success");
 }
 
-export function saveImageToServer() {
-    if (state.isLocalImage) {
-        downloadAnnotatedImage();
-        return;
-    }
+// Upload the annotated image to the ELN (re-encoded from the full-res result).
+export function imageToEln() {
     const annotated = document.getElementById("annotated-image");
     if (!annotated || !annotated.src) {
         notify("Annotated image not found. Calculate RF values first.", "error");
@@ -289,7 +287,8 @@ export function saveImageToServer() {
     sourceImage.src = annotated.src;
 }
 
-export function saveCSVToServer() {
+// Upload the results CSV to the ELN.
+export function csvToEln() {
     const csv = buildCsvContent();
     if (!csv) {
         notify("No CSV data to save.", "warning");

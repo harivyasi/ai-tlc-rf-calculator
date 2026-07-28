@@ -286,6 +286,13 @@ sent cross-origin straight from the browser, so it depends on the ELN's CORS and
 the tool's `CSP_CONNECT_SRC`/`ELN_ORIGIN`. Full contract, JWT fields, and
 worked config: [eln-integration.md](eln-integration.md).
 
+Export is four separate one-file actions (`results.js`): **download** CSV /
+Image (local `<a download>` / canvas `toBlob`), and **upload** CSV / Image to the
+ELN (`postToEln` → multipart POST to `elnUrl`). The two ELN-upload buttons
+(`.export-eln`) are shown only for an ELN-sourced plate; for a local upload they
+hide and the download pair expands. Each upload sends exactly one `file` — image
+and CSV are independent POSTs, never bundled.
+
 ## 9. Possible future: fully client-side (WASM)
 
 The app could become a static, serverless site: RF calc + annotated-image export
