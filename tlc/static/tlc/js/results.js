@@ -180,6 +180,20 @@ function deleteResultRow(row) {
     }
     row.remove();
     redrawCanvas();
+
+    // The annotated image is a server snapshot from the last calculation, so it
+    // still shows the just-deleted spot (and would be exported that way). Refresh
+    // it to match the remaining spots — or clear it back to the placeholder when
+    // nothing is left to show.
+    const hasRefs =
+        state.lines.some((l) => l.type === "min") && state.lines.some((l) => l.type === "max");
+    if (state.spots.length > 0 && hasRefs) {
+        calculateRF();
+    } else {
+        const annotated = document.getElementById("annotated-image");
+        if (annotated) annotated.removeAttribute("src");
+        updateAnnotatedHeading("editing");
+    }
 }
 
 // --- CSV export -----------------------------------------------------------

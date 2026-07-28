@@ -216,6 +216,28 @@ def test_result_row_highlight_and_delete(page, servers, test_image_path):
     page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 1")
 
 
+def test_deleting_result_row_refreshes_annotated_image(page, servers, test_image_path):
+    """Deleting a row re-renders the annotated image so it (and any export)
+    matches the remaining spots — it must not stay the stale snapshot."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 110, "y": 150})
+    canvas.click(position={"x": 210, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert page.locator("#values-table tbody tr").count() == 2
+    src_before = page.locator("#annotated-image").get_attribute("src")
+
+    page.locator("#values-table tbody tr").first.locator(".row-del").click()
+    # The annotated image is auto-refreshed (new cache-busting src) after delete.
+    page.wait_for_function(
+        "(prev) => { const a = document.getElementById('annotated-image');"
+        " return a && a.getAttribute('src') && a.getAttribute('src') !== prev; }",
+        arg=src_before,
+    )
+    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 1")
+
+
 def test_auto_detect_populates_spots(page, servers, blob_image_path):
     """New feature: Auto-detect finds the drawn spots and they flow into RF calc."""
     _stub_cdn(page)
