@@ -348,24 +348,19 @@ def _draw_annotations(
             _RED,
             text_thickness,
         )
-        cv2.putText(
-            image,
-            spot["compound"],
-            (x + offset, y + round(line_gap)),
-            font,
-            font_scale,
-            _BLUE,
-            text_thickness,
-        )
-        cv2.putText(
-            image,
-            spot["solvent"],
-            (x + offset, y + round(2 * line_gap)),
-            font,
-            font_scale,
-            _BLUE,
-            text_thickness,
-        )
+        # Draw the compound then the lane label below the spot, skipping any
+        # blank label (an unmarked lane is simply omitted, not shown as text).
+        labels = [text for text in (spot["compound"], spot["solvent"]) if text]
+        for row, text in enumerate(labels, start=1):
+            cv2.putText(
+                image,
+                text,
+                (x + offset, y + round(row * line_gap)),
+                font,
+                font_scale,
+                _BLUE,
+                text_thickness,
+            )
 
 
 def calculate_rf(request: HttpRequest) -> JsonResponse:
@@ -435,8 +430,12 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
             key=lambda line: abs(line.get("y", 0) - y),
             default=None,
         )
-        solvent = closest_vertical["text"] if closest_vertical else "Unknown"
-        compound = closest_horizontal["text"] if closest_horizontal else "Unknown"
+        # The lane label (vertical V-Line) is organisational and optional — if no
+        # lane is marked it is left blank (not shown). The compound (horizontal
+        # H-Line) is the spot's identity, which in TLC is often genuinely unknown,
+        # so an unmarked compound defaults to "Unknown".
+        solvent = (closest_vertical["text"].strip() if closest_vertical else "") or ""
+        compound = (closest_horizontal["text"].strip() if closest_horizontal else "") or "Unknown"
 
         # x/y are echoed so the frontend can map each result row to its spot.
         rf_values.append({"compound": compound, "solvent": solvent, "rf": rf_value, "x": x, "y": y})

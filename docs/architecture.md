@@ -138,7 +138,11 @@ The live canvas draws colour-coded reference lines (Min green, Max red, H purple
 V blue) and orange spot rings for interaction. The **saved** annotated image is
 rendered server-side (`_draw_annotations`) by burning only the *results* — spot
 rings + RF/compound/solvent labels — into the **full-resolution** image;
-reference/label lines are intentionally not saved. The crop view and the 500 px
+reference/label lines are intentionally not saved. The two label axes default
+asymmetrically, matching TLC practice: an unmarked **lane** (V-Line, X) is left
+blank (organisational, often a single-lane plate), while an unmarked **compound**
+(H-Line, Y) shows "Unknown" (a spot's identity is frequently what you're trying
+to determine). The crop view and the 500 px
 canvas cap are display-only; the export keeps the original dimensions (and any
 rotation). Text size is a **percentage multiplier** on the size auto-derived from
 the image resolution — a fixed pt/px value would mean different things on a 3 MP

@@ -924,3 +924,16 @@ def test_undo_keyboard_shortcut(page, servers, test_image_path):
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
     assert page.locator("#values-table tbody tr").count() == 1
+
+
+def test_unmarked_lane_blank_compound_unknown_in_table(page, servers, test_image_path):
+    """With no V-Line/H-Line, the results table shows a blank lane (Mixture) and
+    an "Unknown" compound (Substance) — the lane name is not invented."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    row = page.locator("#values-table tbody tr").first
+    assert row.locator("td").first.inner_text().strip() == "", "unmarked lane should be blank"
+    assert row.locator("td").nth(1).inner_text().strip() == "Unknown"

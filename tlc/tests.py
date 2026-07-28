@@ -108,6 +108,17 @@ class CalculateRfTests(SimpleTestCase):
         self.assertEqual(value["solvent"], "SolventB")
         self.assertEqual(value["compound"], "CompoundX")
 
+    def test_unmarked_labels_default_lane_blank_compound_unknown(self) -> None:
+        # No V-Line / H-Line: the lane label is blank (omitted) while the
+        # compound defaults to "Unknown".
+        response = self.client.post(
+            reverse("calculate_rf"), data=_valid_payload(), content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        value = response.json()["rf_values"][0]
+        self.assertEqual(value["solvent"], "")
+        self.assertEqual(value["compound"], "Unknown")
+
     def test_large_local_upload_is_accepted(self) -> None:
         # A multi-MB image (base64 body > Django's 2.5 MB default) must not be
         # rejected as RequestDataTooBig.

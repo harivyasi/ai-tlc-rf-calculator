@@ -141,8 +141,11 @@ export function populateTable(rfValues) {
             row.classList.add("clickable");
             row.addEventListener("click", () => highlightSpotFromRow(row));
         }
-        row.insertCell(0).textContent = value.solvent || "Lane " + (index + 1);
-        row.insertCell(1).textContent = value.compound || "Spot " + (index + 1);
+        // Lane (X) is optional — shown blank when unmarked; compound (Y) is
+        // "Unknown" from the server when unmarked. Kept consistent with the
+        // annotated image and the CSV.
+        row.insertCell(0).textContent = value.solvent || "";
+        row.insertCell(1).textContent = value.compound || "";
         row.insertCell(2).textContent = typeof value.rf !== "undefined" ? value.rf : value.rf_value;
         const actions = row.insertCell(3);
         const del = document.createElement("button");
