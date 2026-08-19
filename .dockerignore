@@ -1,0 +1,44 @@
+# Was empty, so `COPY . /code/` pulled in the ~51MB .git directory.
+.git
+.gitignore
+.gitattributes
+.dockerignore
+Dockerfile
+README.md
+*.md
+
+# Local virtualenvs and caches
+.venv/
+venv/
+env/
+.python-version
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime state: these belong in a mounted volume, never in the image
+media/
+staticfiles/
+db.sqlite3
+*.log
+
+# Secrets
+.env
+.env.*
+*.secret
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.zip
+
+# Documentation images at the repo root (the app does not serve these).
+# NOTE: this must not match circle_detector/ml_models/*.onnx -- the models
+# are required at runtime and must stay in the build context.
+/initial-quick-guide.png
