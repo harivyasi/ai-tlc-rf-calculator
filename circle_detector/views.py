@@ -1,49 +1,61 @@
-import os
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.cluster import DBSCAN
-from django.shortcuts import render
-from django.core.files.storage import FileSystemStorage
-from django.conf import settings
-from django.views.decorators.csrf import csrf_exempt
-import json
-import csv
-from django.core.files.storage import default_storage
-import requests
-import logging
-import tempfile
-from django.http import JsonResponse, HttpResponse
-from django.views.decorators.csrf import csrf_exempt
 import base64
+import csv
 import io
-from PIL import Image as PILImage
-import time
+import json
+import logging
+import os
 import uuid
 
-from .spot_onnx import SpotONNX
+import cv2
+import numpy as np
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
+from PIL import Image as PILImage
+
 from .line_onnx import LineONNX
+from .paths import resolve_media_path, safe_image_extension, safe_output_stem
+from .remote import (
+    RemoteFetchError,
+    fetch_remote_image,
+    save_downloaded_image,
+    sweep_old_downloads,
+)
+from .spot_onnx import SpotONNX
+
+logger = logging.getLogger(__name__)
+
+# Loaded on first use rather than at import. Each session is ~200MB, and
+# importing this module happens for every management command, test run and
+# system check, none of which need a model.
+_MODELS = {}
 
 
+def get_spot_model():
+    if 'spot' not in _MODELS:
+        _MODELS['spot'] = SpotONNX(
+            str(settings.SPOT_MODEL_PATH),
+            imgsz=getattr(settings, 'SPOT_IMGSZ_DEFAULT', 1280),
+        )
+    return _MODELS['spot']
 
-SPOT_MODEL = SpotONNX(str(settings.SPOT_MODEL_PATH), imgsz=getattr(settings, "SPOT_IMGSZ_DEFAULT", 1280))
-LINE_MODEL = LineONNX(str(settings.LINE_MODEL_PATH), imgsz=getattr(settings, "LINE_IMGSZ_DEFAULT", 1024))
+
+def get_line_model():
+    if 'line' not in _MODELS:
+        _MODELS['line'] = LineONNX(
+            str(settings.LINE_MODEL_PATH),
+            imgsz=getattr(settings, 'LINE_IMGSZ_DEFAULT', 1024),
+        )
+    return _MODELS['line']
 
 
 def _safe_local_image_path(local_image_path):
     """Resolve a user-provided media-relative path safely."""
-    if not local_image_path:
-        return None
-
-    normalized = os.path.normpath(local_image_path).lstrip(os.sep)
-    full_path = os.path.normpath(os.path.join(settings.MEDIA_ROOT, normalized))
-    media_root = os.path.normpath(str(settings.MEDIA_ROOT))
-
-    if os.path.commonpath([full_path, media_root]) != media_root:
-        return None
-    if not os.path.exists(full_path):
-        return None
-    return full_path
+    return resolve_media_path(local_image_path)
 
 
 def _load_image_from_payload(is_local_image, image_src=None, image_data=None, local_image_path=None):
@@ -66,42 +78,36 @@ def _load_image_from_payload(is_local_image, image_src=None, image_data=None, lo
     if not image_src:
         raise ValueError("Missing imageSrc")
 
-    image_path = os.path.join(settings.MEDIA_ROOT, image_src)
+    # Containment-checked: this value comes from the browser, and joining it
+    # onto MEDIA_ROOT unchecked allowed reads outside the media directory.
+    image_path = resolve_media_path(image_src)
+    if image_path is None:
+        raise ValueError(f"Image not found: {image_src}")
+
     image = cv2.imread(image_path)
     if image is None:
         raise ValueError(f"Image not found: {image_src}")
     return image
 
+
 # View for handling image upload
 def upload_image(request):
     """
-    Handle image upload and rendering.
+    Render the TLC annotation page.
 
-    This view handles both GET and POST requests. When an image is uploaded via
-    a POST request, it saves the image to the server's file system and redirects
-    the user to the annotation page. For GET requests, it renders the image upload page.
+    The ELN allowlist is passed through so the page can refuse to upload
+    results to a host the deployment has not named. Without it the server-side
+    guard would close the inbound fetch and leave the outbound upload open.
 
     Args:
-        request (HttpRequest): The HTTP request object containing image file data (if POST).
+        request (HttpRequest): The HTTP request object.
 
     Returns:
-        HttpResponse: A rendered HTML template for either image upload or annotation,
-                      depending on the request method.
+        HttpResponse: The rendered annotation template.
     """
-    ## Check if the request method is POST and an image file is provided
-    #if request.method == 'POST' and request.FILES.get('image'):
-    #    image = request.FILES['image']  # Get the uploaded image file
-    #    fs = FileSystemStorage()  # Initialize file system storage handler
-    #    filename = fs.save(image.name, image)  # Save the uploaded image to the server
-    #    uploaded_file_url = fs.url(filename)  # Get the URL of the saved image
-    #
-    #    # Render the annotation page with the URL of the uploaded image
-    #    return render(request, 'circle_detector/annotate.html', {
-    #        'uploaded_file_url': uploaded_file_url,
-    #    })
-
-    # If the request method is GET, render the upload page template
-    return render(request, 'circle_detector/annotate.html')
+    return render(request, 'circle_detector/annotate.html', {
+        'eln_allowed_hosts': [host.lower() for host in settings.ELN_ALLOWED_HOSTS],
+    })
 
 
 @csrf_exempt
@@ -114,39 +120,31 @@ def upload_local_image(request):
     if not image_file:
         return JsonResponse({'error': 'No image file provided'}, status=400)
 
-    if not image_file.content_type or not image_file.content_type.startswith('image/'):
-        return JsonResponse({'error': 'Uploaded file is not an image'}, status=400)
+    raw_bytes = image_file.read()
 
-    upload_dir = os.path.join(settings.MEDIA_ROOT, 'local_uploads')
-    os.makedirs(upload_dir, exist_ok=True)
+    # The extension is taken from the decoded image, never from the filename or
+    # the Content-Type header: both are attacker-controlled, and trusting them
+    # allowed an .html file to be stored in a directory we serve.
+    extension = safe_image_extension(raw_bytes)
+    if extension is None:
+        return JsonResponse({'error': 'Uploaded file is not a supported image'}, status=400)
 
-    _, ext = os.path.splitext(image_file.name)
-    ext = ext if ext else '.png'
-    filename = f"{uuid.uuid4().hex}{ext}"
+    filename = f"{uuid.uuid4().hex}{extension}"
     relative_path = os.path.join('local_uploads', filename)
 
-    saved_path = default_storage.save(relative_path, image_file)
+    saved_path = default_storage.save(relative_path, ContentFile(raw_bytes))
     return JsonResponse({
         'imagePath': saved_path,
-        'imageUrl': f"/serve-image/?file_path={os.path.join(settings.MEDIA_ROOT, saved_path)}",
+        'imageUrl': f"/serve-image/?file_path={saved_path}",
         'originalName': image_file.name,
     })
 
-
-
-# Configure logging for the module
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-# Set up logging
-logger = logging.getLogger(__name__)
 
 @csrf_exempt
 def calculate_rf(request):
     """
     Handles the calculation of RF values from the spots and lines in the request body.
-    Now supports both ELN images (file paths) and local uploaded images (base64 data).
+    Supports both ELN images (file paths) and local uploaded images (base64 data).
     """
     if request.method == 'POST':
         try:
@@ -174,7 +172,7 @@ def calculate_rf(request):
             if not spots:
                 logger.error('Spots data is missing')
                 return JsonResponse({'error': 'Missing "spots" data in request'}, status=400)
-            if not image_src and not local_image_path:
+            if not image_src and not local_image_path and not image_data:
                 logger.error('Image source is missing')
                 return JsonResponse({'error': 'Missing "imageSrc" data in request'}, status=400)
 
@@ -201,10 +199,10 @@ def calculate_rf(request):
             original_height, original_width = image.shape[:2]
             logger.info(f'Image dimensions: {original_width}x{original_height}')
 
-            # ✅ Calculate scaling factors for coordinate conversion
+            # Calculate scaling factors for coordinate conversion
             scale_x = original_width / canvas_width if canvas_width > 0 else 1
             scale_y = original_height / canvas_height if canvas_height > 0 else 1
-            
+
             logger.info(f'Scaling factors: x={scale_x}, y={scale_y}')
 
             # Scale the min and max line coordinates
@@ -213,7 +211,7 @@ def calculate_rf(request):
             # - max line = solvent front near the top of the plate
             min_y_scaled = min_line['y'] * scale_y
             max_y_scaled = max_line['y'] * scale_y
-            
+
             logger.info(f'Min line: original y={min_line["y"]}, scaled y={min_y_scaled}')
             logger.info(f'Max line: original y={max_line["y"]}, scaled y={max_y_scaled}')
 
@@ -228,15 +226,14 @@ def calculate_rf(request):
 
             # Calculate RF values based on spot positions
             rf_values_for_csv = []
-            
+
             for i, spot in enumerate(spots):
                 # Scale spot coordinates from canvas to image space
                 x_original = spot['x']
                 y_original = spot['y']
                 x_scaled = int(x_original * scale_x)
                 y_scaled = int(y_original * scale_y)
-                             
-                
+
                 logger.info(f'Spot {i+1}: original=({x_original}, {y_original}), scaled=({x_scaled}, {y_scaled})')
 
                 # Calculate the RF value using TLC semantics:
@@ -273,98 +270,96 @@ def calculate_rf(request):
                     "rf": rf_value
                 })
 
-                # ✅ IMPROVED: Smart text positioning to keep within image bounds
+                # Smart text positioning to keep within image bounds
                 img_height, img_width = image.shape[:2]
-                
+
                 # Ensure coordinates are within image bounds
                 x_pos = max(10, min(x_scaled, img_width - 120))
                 y_pos = max(30, min(y_scaled, img_height - 80))
-                
+
                 # Draw circle at spot location (using scaled coordinates)
                 cv2.circle(image, (x_scaled, y_scaled), 8, (0, 165, 255), -1)  # Filled circle
                 cv2.circle(image, (x_scaled, y_scaled), 12, (255, 255, 255), 2)  # White border
-                
-                # ✅ IMPROVED: Better text positioning with bounds checking
+
                 # Calculate text position relative to spot, but keep within bounds
                 text_x = x_pos
                 text_y_rf = max(25, y_pos - 20)      # RF value above spot
                 text_y_compound = min(img_height - 35, y_pos + 20)  # Compound below spot
                 text_y_solvent = min(img_height - 15, y_pos + 40)   # Solvent further below
-                
+
                 # If spot is too close to top, move all text below the spot
                 if y_pos < 80:
                     text_y_rf = y_pos + 25
                     text_y_compound = y_pos + 45
                     text_y_solvent = y_pos + 65
-                
+
                 # If spot is too close to right edge, move text to left
                 if x_pos > img_width - 150:
                     text_x = max(10, x_pos - 120)
-                
+
                 # If spot is too close to bottom, move text above the spot
                 if y_pos > img_height - 80:
                     text_y_rf = y_pos - 60
                     text_y_compound = y_pos - 40
                     text_y_solvent = y_pos - 20
-                
+
                 # Prepare text strings
                 rf_text = f'RF={rf_value}'
                 compound_text = f'{compound}'
                 solvent_text = f'{solvent}'
-                
-                # ✅ Draw RF value with background for better visibility
-                # Background (shadow) for RF value
-                cv2.putText(image, rf_text, (text_x + 2, text_y_rf + 2), 
+
+                # Draw RF value with a shadow for legibility on light plates
+                cv2.putText(image, rf_text, (text_x + 2, text_y_rf + 2),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3, cv2.LINE_AA)
-                # Foreground (bright text) for RF value
-                cv2.putText(image, rf_text, (text_x, text_y_rf), 
+                cv2.putText(image, rf_text, (text_x, text_y_rf),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
-                
-                # ✅ Draw compound with background
-                # Background for compound
-                cv2.putText(image, compound_text, (text_x + 2, text_y_compound + 2), 
+
+                # Draw compound
+                cv2.putText(image, compound_text, (text_x + 2, text_y_compound + 2),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3, cv2.LINE_AA)
-                # Foreground for compound
-                cv2.putText(image, compound_text, (text_x, text_y_compound), 
+                cv2.putText(image, compound_text, (text_x, text_y_compound),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
-                
-                # ✅ Draw solvent with background
-                # Background for solvent
-                cv2.putText(image, solvent_text, (text_x + 2, text_y_solvent + 2), 
+
+                # Draw solvent
+                cv2.putText(image, solvent_text, (text_x + 2, text_y_solvent + 2),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3, cv2.LINE_AA)
-                # Foreground for solvent
-                cv2.putText(image, solvent_text, (text_x, text_y_solvent), 
+                cv2.putText(image, solvent_text, (text_x, text_y_solvent),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2, cv2.LINE_AA)
-                
+
                 logger.info(f'Annotated spot {i+1}: RF={rf_value}, text positioned at ({text_x}, {text_y_rf})')
 
-            # ✅ Draw the min and max lines on the annotated image for reference
+            # Draw the min and max lines on the annotated image for reference
             min_y_img = int(min_y_scaled)
             max_y_img = int(max_y_scaled)
-            
+
             # Draw min line (green)
             cv2.line(image, (0, min_y_img), (original_width, min_y_img), (0, 255, 0), 2)
             cv2.putText(image, 'MIN', (10, min_y_img - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
+
             # Draw max line (red)
             cv2.line(image, (0, max_y_img), (original_width, max_y_img), (0, 0, 255), 2)
             cv2.putText(image, 'MAX', (10, max_y_img + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-            # Save the annotated image
-            annotated_image_name = f'annotated_{os.path.splitext(image_src)[0]}_{int(time.time())}.png'
-            annotated_image_path = os.path.join(settings.MEDIA_ROOT, annotated_image_name)
-            
-            # Ensure media directory exists
+            # Build the output names from a sanitised stem plus a random token.
+            # imageSrc is caller-supplied, so it is reduced to a bare stem that
+            # cannot contain a directory component; the token replaces a
+            # second-granular timestamp that collided under concurrency.
+            stem = safe_output_stem(image_src)
+            token = uuid.uuid4().hex[:8]
+
             os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
-            
+
+            annotated_image_name = f'annotated_{stem}_{token}.png'
+            annotated_image_path = os.path.join(settings.MEDIA_ROOT, annotated_image_name)
+
             # Save with high quality
             cv2.imwrite(annotated_image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
             logger.info(f'Annotated image saved: {annotated_image_path}')
 
             # Save RF values to a CSV file
-            csv_name = f'rf_values_{os.path.splitext(image_src)[0]}_{int(time.time())}.csv'
+            csv_name = f'rf_values_{stem}_{token}.csv'
             csv_path = os.path.join(settings.MEDIA_ROOT, csv_name)
-            
+
             with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                 fieldnames = ['Solvent (X value)', 'Compound (Y value)', 'RF value']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -375,7 +370,7 @@ def calculate_rf(request):
                         'Compound (Y value)': value['compound'],
                         'RF value': value['rf']
                     })
-            
+
             logger.info(f'CSV file saved: {csv_path}')
 
             # Return URLs for the annotated image and CSV
@@ -400,76 +395,66 @@ def calculate_rf(request):
             logger.error(f'Invalid JSON format received: {str(e)}')
             return JsonResponse({'error': 'Invalid JSON format'}, status=400)
         except Exception as e:
-            logger.error(f'Unexpected error in calculate_rf: {str(e)}')
-            import traceback
-            logger.error(f'Traceback: {traceback.format_exc()}')
-            return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
+            logger.exception('Unexpected error in calculate_rf')
+            return JsonResponse({'error': 'Server error while calculating RF values'}, status=500)
 
     return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
+@require_GET
 def fetch_and_save_image(request):
     """
-    Fetch and save an image from a remote URL.
+    Fetch a remote (ELN) image and store it under MEDIA_ROOT.
 
-    This view fetches an image from the URL provided as a GET parameter,
-    temporarily saves it to the server, and returns the file path.
-
-    Args:
-        request (HttpRequest): The HTTP request object containing the 'url' parameter.
+    The URL is caller-supplied, so it is validated before every request and
+    after every redirect; see circle_detector.remote for the guarantees and
+    the one documented residual risk.
 
     Returns:
-        JsonResponse: A JSON response containing the local path of the saved image
-                      or an error message if the fetch fails.
+        JsonResponse: {'imagePath': <media-relative name>} or an error.
     """
-    # Extract the image URL from the request
     image_url = request.GET.get('url')
-    print(image_url)
-    
-    # Attempt to fetch the image from the remote URL
-    response = requests.get(image_url)
-    
-    if response.status_code == 200:
-        # If the request is successful, save the image to a temporary file
-        temp_dir = tempfile.gettempdir()  # Get the system's temporary directory
-        temp_file_path = os.path.join(settings.MEDIA_ROOT, 'downloaded_image.png')  # Set file name and path
-        
-        # Write the image content to the temp file
-        with open(temp_file_path, 'wb') as temp_file:
-            temp_file.write(response.content)
-        
-        # Return the file path of the saved image
-        return JsonResponse({'imagePath': temp_file_path})
-    else:
-        # Return an error message if the image fetch fails
+
+    try:
+        raw_bytes, extension = fetch_remote_image(image_url)
+    except RemoteFetchError as exc:
+        logger.warning('Refused or failed ELN fetch: %s', exc)
+        return JsonResponse({'error': str(exc)}, status=400)
+    except Exception:
+        logger.exception('Unexpected error fetching remote image')
         return JsonResponse({'error': 'Failed to fetch image'}, status=400)
 
+    saved_name = save_downloaded_image(raw_bytes, extension)
 
+    # Fetched images are kept only briefly: they are written under unique
+    # names, so nothing else bounds how many accumulate.
+    sweep_old_downloads()
+
+    return JsonResponse({'imagePath': saved_name})
+
+
+@require_GET
 def serve_image(request):
     """
-    Serve an image file to the client.
+    Serve an image from the media directory.
 
-    This view reads an image from the local file system, given its path in the
-    'file_path' GET parameter, and serves it as a PNG image.
-
-    Args:
-        request (HttpRequest): The HTTP request object containing the 'file_path' parameter.
+    file_path is media-relative. Absolute paths and anything resolving outside
+    MEDIA_ROOT are refused: this endpoint previously opened whatever path it
+    was given, which made every file readable by the process fetchable.
 
     Returns:
-        HttpResponse: A response containing the image file's binary content and correct
-                      content type or an error message if the file is not found.
+        FileResponse: the image, or 404.
     """
-    # Get the file path from the request
-    file_path = request.GET.get('file_path')
-    
-    # Check if the file exists at the specified path
-    if os.path.exists(file_path):
-        # Serve the image if found
-        with open(file_path, 'rb') as f:
-            return HttpResponse(f.read(), content_type="image/png")
-    else:
-        # Return an error if the file does not exist
-        return JsonResponse({'error': 'File not found'}, status=404)
+    file_path = resolve_media_path(request.GET.get('file_path'))
+    if file_path is None:
+        # Deliberately indistinguishable from a genuinely missing file, so the
+        # response does not report what exists outside MEDIA_ROOT.
+        raise Http404('Image not found.')
+
+    # No redirect here: annotate.html re-derives the file_path parameter out of
+    # response.url, so a redirect would make it read null.
+    return FileResponse(open(file_path, 'rb'))
+
 
 @csrf_exempt
 def auto_detect_spots(request):
@@ -526,7 +511,7 @@ def auto_detect_spots(request):
         conf = float(getattr(settings, "SPOT_CONF_DEFAULT", 0.15))
 
         # Run model on ROI
-        dets = SPOT_MODEL.predict(roi, conf=conf)
+        dets = get_spot_model().predict(roi, conf=conf)
 
         spots_out = []
         for d in dets:
@@ -557,11 +542,13 @@ def auto_detect_spots(request):
             }
         })
 
-    except Exception as e:
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+    except Exception:
         logger.exception("auto_detect_spots failed")
-        return JsonResponse({"error": str(e)}, status=500)
-        
-        
+        return JsonResponse({"error": "Spot detection failed"}, status=500)
+
+
 @csrf_exempt
 def auto_detect_lines(request):
     """
@@ -597,9 +584,9 @@ def auto_detect_lines(request):
 
         conf = float(getattr(settings, "LINE_CONF_DEFAULT", 0.15))
 
-        dets = LINE_MODEL.predict(bgr, conf=conf)
+        dets = get_line_model().predict(bgr, conf=conf)
 
-        # ---- pick best per class (stops the “only one line” issue) ----
+        # ---- pick best per class (stops the "only one line" issue) ----
         CLASS_MIN = 0
         CLASS_MAX = 1
 
@@ -666,6 +653,8 @@ def auto_detect_lines(request):
             }
         })
 
-    except Exception as e:
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+    except Exception:
         logger.exception("auto_detect_lines failed")
-        return JsonResponse({"error": str(e)}, status=500)
+        return JsonResponse({"error": "Line detection failed"}, status=500)
