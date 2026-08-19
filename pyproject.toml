@@ -1,0 +1,47 @@
+[project]
+name = "ai-tlc-rf-calculator"
+version = "1.0.0"
+description = "Django web app for Thin Layer Chromatography image analysis and RF calculation"
+requires-python = ">=3.11"
+
+dependencies = [
+    "Django>=4.2,<5.0",
+    "gunicorn>=23.0",
+    "whitenoise>=6.6",
+    "requests>=2.32.3",
+    # numpy is held below 2.0 on purpose: onnxruntime declares an unbounded
+    # numpy>=1.21.6, and opencv 4.6 is built against the 1.x ABI.
+    "numpy>=1.26.4,<2.0",
+    "Pillow>=10.4",
+    "opencv-python-headless>=4.6.0.66,<5",
+    "onnxruntime>=1.19.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "pytest-cov>=5.0",
+    "pytest-env>=1.1",
+]
+
+[tool.uv]
+# An application, not a library: nothing installs this project itself.
+package = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "rf_calculator.settings"
+testpaths = ["circle_detector/tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: loads the real ONNX models (~57MB); deselect with -m 'not slow'",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:pkg_resources",
+]
+
+# Set before pytest-django calls django.setup(): settings.py refuses to import
+# without a SECRET_KEY, and the test runner forces DEBUG off.
+env = [
+    "SECRET_KEY=test-only-key-not-used-in-any-deployment",
+]
