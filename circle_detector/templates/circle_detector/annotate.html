@@ -1,16 +1,18 @@
-<!DOCTYPE html>
+{% load static %}<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TLC Image Annotation Tool</title>
 
-<!-- Import Google Icon Font for Material Icons -->
-<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<!-- Fonts, icons and CSS framework are vendored under static/, not loaded
+     from a CDN: the app has to work on an isolated lab network and under a
+     restrictive CSP. See vendor/LICENSES.md. -->
+<link rel="stylesheet" href="{% static 'circle_detector/vendor/material-icons.css' %}">
+<link rel="stylesheet" href="{% static 'circle_detector/vendor/inter.css' %}">
+<link rel="stylesheet" href="{% static 'circle_detector/vendor/materialize.min.css' %}">
 
-<!-- Import Materialize CSS framework for styling -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+{{ eln_allowed_hosts|json_script:"eln-allowed-hosts" }}
 
 <!-- Lab System Theme Styles -->
 <style>
@@ -812,8 +814,8 @@
 </div>
 
 <!-- Scripts -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'circle_detector/vendor/materialize.min.js' %}"></script>
+<script src="{% static 'circle_detector/vendor/sweetalert2.all.min.js' %}"></script>
 
 <script>
     let image = new Image();
@@ -1541,12 +1543,12 @@
                     formData.append('file', blob, filename);
 
                     const externalApiUrl = window.decodedPostUrl;
-                    const csrftoken = getCookie('csrftoken');
 
+                    // No X-CSRFToken here: this is a cross-origin request to a
+                    // caller-supplied host, and our token has no meaning there.
                     fetch(externalApiUrl, {
                         method: 'POST',
-                        body: formData,
-                        headers: {'X-CSRFToken': csrftoken}
+                        body: formData
                     })
                     .then(response => response.json())
                     .then(data => {
@@ -1604,12 +1606,11 @@
             formData.append('file', csvBlob, csvFilename);
 
             const externalApiUrl = window.decodedPostUrl;
-            const csrftoken = getCookie('csrftoken');
 
+            // No X-CSRFToken: cross-origin, caller-supplied destination.
             fetch(externalApiUrl, {
                 method: 'POST',
-                body: formData,
-                headers: { 'X-CSRFToken': csrftoken }
+                body: formData
             })
             .then(response => response.json())
             .then(data => {
@@ -2233,70 +2234,59 @@ function autoDetectLines() {
 
 
     document.addEventListener('DOMContentLoaded', function () {
-// ---- Step 1: Safely extract single query param ----
+// ---- ELN URL validation -------------------------------------------------
+  // The ?url= parameter is both the image source (fetched server-side) and the
+  // destination we POST results back to, so it is validated once here and
+  // nothing else is allowed to use the raw value.
+  const ELN_ALLOWED_HOSTS = JSON.parse(
+    document.getElementById('eln-allowed-hosts').textContent || '[]'
+  );
+
+  function validateElnUrl(raw) {
+    if (!raw) return '';
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      console.error('Invalid URL parameter:', raw);
+      return '';
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      console.error('Refusing non-http(s) ELN URL:', raw);
+      return '';
+    }
+    // When the deployment names its ELN hosts, refuse anything else. Without
+    // this the server-side guard would close the inbound fetch while leaving
+    // the outbound upload free to post plate images anywhere.
+    if (ELN_ALLOWED_HOSTS.length &&
+        !ELN_ALLOWED_HOSTS.includes(parsed.hostname.toLowerCase())) {
+      console.error('Host is not in the configured ELN allowlist:', parsed.hostname);
+      return '';
+    }
+    return raw;
+  }
+
+  // ---- Step 1: Safely extract single query param ----
   const params = new URL(window.location.href).searchParams;
   const encodedUrl = params.get('url') || '';
   const decodedUrl = encodedUrl ? decodeURIComponent(encodedUrl) : '';
 
-  // Make available globally for downstream processes
-  window.decodedImageUrl = decodedUrl;
-  window.decodedPostUrl  = decodedUrl; // single-source-of-truth
+  // ---- Step 2: Validate before publishing ----
+  // Only the validated value is exposed. loadELNImage() previously read the
+  // raw parameter, so the check below was bypassed on the path that actually
+  // renders the plate.
+  const validRemoteUrl = validateElnUrl(decodedUrl);
 
-  let validRemoteUrl = '';
+  window.decodedImageUrl = validRemoteUrl;
+  window.decodedPostUrl  = validRemoteUrl; // single source of truth
+
   if (!decodedUrl) {
     console.info('No "url" parameter found; local upload mode is available.');
-  } else {
-    // ---- Step 2: Validate URL format defensively ----
-    try {
-      new URL(decodedUrl);
-      validRemoteUrl = decodedUrl;
-    } catch {
-      console.error('Invalid URL parameter:', decodedUrl);
-    }
   }
 
-  // ---- Step 3: Define DOM targets ----
-  const imageContainer = document.getElementById('imageContainer');
-  let imageEl = document.getElementById('imageElement');
-  if (!imageEl) {
-    imageEl = new Image();
-    imageEl.id = 'imageElement';
-  }
-
-  // ---- Step 4: Fetch and serve image asynchronously ----
-  (async function loadAndRenderImage() {
-    if (!validRemoteUrl) return;
-
-    try {
-      const res = await fetch(`/fetch-image/?url=${encodeURIComponent(validRemoteUrl)}`);
-      const data = await res.json();
-
-      if (!data?.imagePath) {
-        throw new Error(data?.error || 'No imagePath from fetch-image');
-      }
-
-      const servedImageUrl = `/serve-image/?file_path=${encodeURIComponent(data.imagePath)}`;
-      console.log('Serving image:', servedImageUrl);
-
-      imageEl.src = servedImageUrl;
-      imageEl.alt = 'Fetched image';
-      imageEl.loading = 'lazy';
-      imageEl.decoding = 'async';
-
-      if (imageContainer && !imageContainer.contains(imageEl)) {
-        imageContainer.innerHTML = '';
-        imageContainer.appendChild(imageEl);
-      }
-
-      // Optional: trigger visual or functional updates
-      if (typeof updateAnnotatedHeading === 'function') {
-        updateAnnotatedHeading('editing');
-      }
-
-    } catch (err) {
-      console.error('ELN fetch error:', err);
-    }
-	 })();
+  // (An earlier duplicate ELN loader lived here. It fetched the image a
+  //  second time into a detached <img> that was never inserted, so it
+  //  only doubled the outbound requests. loadELNImage() is the live path.)
 
         // Initialize heading
         updateAnnotatedHeading('instructions');
