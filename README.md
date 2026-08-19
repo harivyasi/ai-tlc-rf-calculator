@@ -8,7 +8,7 @@ AI TLC RF Calculator is a Django web application for Thin Layer Chromatography (
 
 ```text
 Repository name: ai-tlc-rf-calculator
-Application folder: aitlcapp
+Repository root: ai-tlc-rf-calculator
 Django project: rf_calculator
 Django app: circle_detector
 Primary page title: TLC Image Annotation Tool
@@ -66,7 +66,7 @@ Primary page title: TLC Image Annotation Tool
 ## Project Structure
 
 ```text
-aitlcapp/
+ai-tlc-rf-calculator/
 ├── circle_detector/
 │   ├── images/
 │   │   └── initial-quick-guide.png
@@ -115,7 +115,11 @@ aitlcapp/
 
 ## ONNX Model Files
 
-The app loads both ONNX models during Django startup:
+The app loads each ONNX model on its first detection request, not at startup.
+Importing the views module therefore stays cheap for management commands,
+system checks and the test suite; the cost (~250 MB per worker process, per
+model) is paid on the first `/auto_detect_spots/` or `/auto_detect_lines/`
+call and cached thereafter:
 
 ```text
 circle_detector/ml_models/spot_best.onnx
@@ -135,12 +139,15 @@ LINE_IMGSZ_DEFAULT = 1024
 LINE_CONF_DEFAULT = 0.05
 ```
 
-Model file sizes in the uploaded app package:
+Model file sizes:
 
 ```text
 line_best.onnx: about 12 MB
 spot_best.onnx: about 44 MB
 ```
+
+Both files must ship in the Docker image; `.dockerignore` deliberately does not
+exclude `circle_detector/ml_models/`.
 
 ## RF Calculation Logic
 
@@ -399,6 +406,48 @@ and add roughly 250 MB per process, so budget about 900 MB once both are warm.
 
 ## Environment Variables
 
+### What you actually need to set
+
+**Exactly one variable is mandatory: `SECRET_KEY`.** Everything else has a
+working default, and the container will not start without it.
+
+| Situation | Set these |
+|---|---|
+| Local development | `DEBUG=True` -- and nothing else. A throwaway `SECRET_KEY` is generated per run. |
+| Any real deployment | `SECRET_KEY` (mandatory). Plus `ELN_ALLOWED_HOSTS` and a volume mounted at `MEDIA_ROOT` -- strongly recommended, see below. |
+| Behind an HTTPS proxy | The four TLS variables in the Docker Setup section above. |
+
+```bash
+# The minimum that runs
+docker run --rm -p 8050:8050 \
+  -e SECRET_KEY="$(openssl rand -base64 48)" \
+  ai-tlc-rf-calculator
+
+# What a lab deployment should actually use
+docker run -d -p 8050:8050 \
+  -e SECRET_KEY="$(openssl rand -base64 48)" \
+  -e ELN_ALLOWED_HOSTS="eln.your-institution.example" \
+  -v tlc-media:/code/media \
+  ai-tlc-rf-calculator
+```
+
+Why the two recommended ones matter rather than being optional polish:
+
+- **`ELN_ALLOWED_HOSTS`** -- left unset, `/fetch-image/` will fetch from any
+  *public* address (internal ranges are always refused) and the page will
+  upload results to any host named in `?url=`. Setting it restricts both
+  directions to hosts you name, and it is also what makes the documented
+  DNS-rebinding window irrelevant.
+- **A volume at `/code/media`** -- annotated images and CSVs are written there
+  and the UI links to them, so without one a container restart loses results
+  that are still on screen.
+
+You do **not** need to set `ALLOWED_HOSTS`: it defaults to `*` so the image
+runs on any hostname, and validating the `Host` header is left to whatever
+proxy sits in front. Set it only if you want to narrow that.
+
+### Full reference
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `SECRET_KEY` | *(required when `DEBUG=False`)* | Django signing key. No fallback: the app refuses to start without it. |
@@ -535,6 +584,43 @@ Run `python manage.py check --deploy` before go-live; with the TLS variables set
 it reports no issues.
 
 ## Troubleshooting
+
+### The container exits immediately
+
+```text
+django.core.exceptions.ImproperlyConfigured: SECRET_KEY must be set when DEBUG is off.
+```
+
+This is deliberate. Set `SECRET_KEY`, or `DEBUG=True` for local work. There is
+no built-in fallback, because the previous fallback was a value committed to
+this repository.
+
+### "That address range cannot be fetched" / "not in the configured ELN allowlist"
+
+`/fetch-image/` is refusing the URL in `?url=`. Either the host resolves to an
+internal address (loopback, private, link-local, CGNAT, reserved or multicast --
+all refused, including on any redirect hop), or `ELN_ALLOWED_HOSTS` is set and
+the host is not on it. To fetch from a host on a private network you must name it
+in `ELN_ALLOWED_HOSTS`; that allowlist matches by name and skips the address
+check.
+
+### The annotated image does not appear after Calculate RF
+
+Check that `/media/<name>.png` returns 200. If it 404s, the file is missing or
+its extension is not on the media allowlist. If results disappear after a
+restart, no volume is mounted at `MEDIA_ROOT`.
+
+### Uploading a local image returns "not a supported image"
+
+The extension is derived from the file contents, not its name, and only PNG,
+JPEG and WEBP are accepted. A renamed file, an unsupported format such as GIF or
+TIFF, or a truncated file will all be refused.
+
+### The page looks unstyled, or icons show as text
+
+Static files are served by WhiteNoise, which reads from `STATIC_ROOT`. Run
+`python manage.py collectstatic` -- the Docker image does this at build time.
+Nothing is loaded from a CDN, so a network problem is not the cause.
 
 ### ONNX model loading error
 
