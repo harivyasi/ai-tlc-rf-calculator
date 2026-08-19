@@ -48,19 +48,20 @@ Primary page title: TLC Image Annotation Tool
 
 | Area | Technology |
 |---|---|
-| Backend framework | Django `>=3.2,<4.0` |
-| Runtime image | Python `3.9` Docker base image |
-| HTTP server | Gunicorn `20.1.0` |
-| Static dependency | WhiteNoise `6.6.0` |
-| HTTP client | Requests `2.32.3` |
-| Computer vision | OpenCV Headless `4.6.0.66` |
-| Numerical processing | NumPy `1.26.4` |
-| Image handling | Pillow `10.2.0` |
-| ONNX inference | ONNX Runtime `1.19.2` |
-| ML utilities | scikit-learn `1.2.2`, Matplotlib `3.7.1` |
+| Backend framework | Django `>=4.2,<5.0` (LTS) |
+| Runtime image | Python `3.11-slim` Docker base image |
+| Dependency management | `pyproject.toml` + [uv](https://docs.astral.sh/uv/) with a committed `uv.lock` |
+| HTTP server | Gunicorn `>=23.0` (`gthread` worker) |
+| Static files | WhiteNoise `>=6.6` |
+| HTTP client | Requests `>=2.32.3` |
+| Computer vision | OpenCV Headless `>=4.6.0.66` |
+| Numerical processing | NumPy `>=1.26.4,<2.0` |
+| Image handling | Pillow `>=10.4` |
+| ONNX inference | ONNX Runtime `>=1.19.2` |
+| Tests | pytest + pytest-django |
 | Frontend | HTML, CSS, JavaScript |
-| UI libraries | Materialize CSS, SweetAlert2, Google Material Icons |
-| Database | SQLite by default |
+| UI libraries | Materialize CSS, SweetAlert2, Material Icons, Inter -- all vendored locally, no CDN |
+| Database | SQLite (unused: the app defines no models) |
 
 ## Project Structure
 
@@ -83,13 +84,17 @@ aitlcapp/
 │   │       ├── annotate.html
 │   │       ├── result.html
 │   │       └── upload.html
+│   ├── tests/                  # pytest suite
 │   ├── __init__.py
 │   ├── admin.py
 │   ├── apps.py
 │   ├── line_onnx.py
+│   ├── media_views.py          # hardened /media/ serving
+│   ├── middleware.py           # Content-Security-Policy
 │   ├── models.py
+│   ├── paths.py                # path containment + filename sanitising
+│   ├── remote.py               # SSRF-guarded ELN image fetching
 │   ├── spot_onnx.py
-│   ├── tests.py
 │   ├── urls.py
 │   └── views.py
 ├── rf_calculator/
@@ -101,9 +106,11 @@ aitlcapp/
 ├── static/
 ├── .dockerignore
 ├── .gitattributes
+├── .python-version
 ├── Dockerfile
 ├── manage.py
-└── requirements.txt
+├── pyproject.toml
+└── uv.lock
 ```
 
 ## ONNX Model Files
@@ -164,8 +171,9 @@ mixture_label (X axis), substance_label (Y axis), RF value
 |---|---|---|
 | GET | `/` | Opens the TLC annotation interface. |
 | POST | `/upload-local-image/` | Uploads a local TLC image to `media/local_uploads/`. |
-| GET | `/fetch-image/?url=...` | Downloads an ELN/remote image and stores it as `media/downloaded_image.png`. |
-| GET | `/serve-image/?file_path=...` | Serves an image file path back to the browser. |
+| GET | `/fetch-image/?url=...` | Validates and downloads a remote image, storing it as `media/downloaded_<random>.<ext>` and returning that **media-relative** name. |
+| GET | `/serve-image/?file_path=...` | Serves an image by **media-relative** path. Absolute paths and anything outside `MEDIA_ROOT` return 404. |
+| GET | `/media/<path>` | Serves annotated images and CSVs. Always available, extension-restricted. |
 | POST | `/auto_detect_lines/` | Runs `line_best.onnx` and returns Min/Max line positions. |
 | POST | `/auto_detect_spots/` | Runs `spot_best.onnx` inside the Min/Max band and returns detected spot centers. |
 | POST | `/calculate_rf/` | Calculates RF values and creates annotated image plus CSV files. |
@@ -245,7 +253,7 @@ Example response:
   "spots": [
     {"x": 300, "y": 420}
   ],
-  "imageSrc": "downloaded_image.png",
+  "imageSrc": "downloaded_a1b2c3d4.png",
   "isLocalImage": false,
   "canvasWidth": 1024,
   "canvasHeight": 768,
@@ -279,57 +287,47 @@ git clone https://github.com/shilpa2806/ai-tlc-rf-calculator.git
 cd ai-tlc-rf-calculator
 ```
 
-### 2. Create a virtual environment
+### 2. Install uv
 
-Windows:
-
-```powershell
-python -m venv venv
-venv\Scripts\activate
-```
-
-macOS/Linux:
+See the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/), or:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ### 3. Install dependencies
 
+`uv` creates the virtual environment and installs the exact locked versions:
+
 ```bash
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+uv sync
 ```
+
+The Python version comes from `.python-version` (3.11); uv downloads it if needed.
 
 ### 4. Set local environment variables
 
-Windows PowerShell:
-
-```powershell
-$env:SECRET_KEY="django-insecure-local-development-ai-tlc-rf-calculator"
-$env:DEBUG="True"
-$env:ALLOWED_HOSTS="localhost,127.0.0.1,172.22.211.68"
-```
-
-macOS/Linux:
+Only `DEBUG` is needed locally. With `DEBUG=True` a throwaway `SECRET_KEY` is
+generated per run, so nothing else has to be configured:
 
 ```bash
-export SECRET_KEY="django-insecure-local-development-ai-tlc-rf-calculator"
-export DEBUG="True"
-export ALLOWED_HOSTS="localhost,127.0.0.1,172.22.211.68"
+export DEBUG=True
 ```
+
+With `DEBUG=False` an explicit `SECRET_KEY` is **required** and the app refuses
+to start without one. `ALLOWED_HOSTS` defaults to `*`, so it does not need to be
+set for local use.
 
 ### 5. Apply migrations
 
 ```bash
-python manage.py migrate
+uv run python manage.py migrate
 ```
 
 ### 6. Run the development server
 
 ```bash
-python manage.py runserver
+uv run python manage.py runserver
 ```
 
 Local URL:
@@ -338,21 +336,27 @@ Local URL:
 http://127.0.0.1:8000/
 ```
 
+### 7. Run the tests
+
+```bash
+uv run pytest                  # everything
+uv run pytest -m 'not slow'    # skip the tests that load the ONNX models
+```
+
 ## Docker Setup
 
-Build the Docker image:
+Build the image:
 
 ```bash
 docker build -t ai-tlc-rf-calculator .
 ```
 
-Run the Docker container:
+Run the container:
 
 ```bash
 docker run --rm -p 8050:8050 \
-  -e SECRET_KEY="django-insecure-local-development-ai-tlc-rf-calculator" \
-  -e DEBUG="False" \
-  -e ALLOWED_HOSTS="localhost,127.0.0.1" \
+  -e SECRET_KEY="$(openssl rand -base64 48)" \
+  -v tlc-media:/code/media \
   ai-tlc-rf-calculator
 ```
 
@@ -362,29 +366,58 @@ Docker URL:
 http://localhost:8050/
 ```
 
-The included Dockerfile uses:
+Notes on the two flags:
 
-```text
-FROM python:3.9
-WORKDIR /code
-EXPOSE 8050
-CMD gunicorn rf_calculator.wsgi:application --bind 0.0.0.0:8050
+- `SECRET_KEY` is mandatory. The container exits immediately without one rather
+  than falling back to a built-in value.
+- `-v tlc-media:/code/media` is strongly recommended. Annotated images and CSVs
+  are written there and the UI links to them, so without a volume they are lost
+  on restart. Override the location with `MEDIA_ROOT` if you prefer.
+
+`ALLOWED_HOSTS` defaults to `*`, so the image runs on any host without
+configuration; validating the `Host` header is left to whatever proxy sits in
+front. Set `ALLOWED_HOSTS` explicitly to narrow it.
+
+Behind a TLS-terminating proxy, add:
+
+```bash
+  -e TRUST_PROXY_SSL_HEADER=True \
+  -e SECURE_SSL_REDIRECT=True \
+  -e SESSION_COOKIE_SECURE=True \
+  -e CSRF_COOKIE_SECURE=True \
+  -e SECURE_HSTS_SECONDS=31536000 \
+  -e CSRF_TRUSTED_ORIGINS=https://tlc.example.org
 ```
+
+With those set, `manage.py check --deploy` reports no issues. `TRUST_PROXY_SSL_HEADER`
+must only be enabled when a proxy really is in front: otherwise any client can
+assert `X-Forwarded-Proto: https` and defeat the checks above.
+
+The image serves requests with the Gunicorn `gthread` worker (2 processes x 4
+threads). The two ONNX models are loaded lazily on the first detection request
+and add roughly 250 MB per process, so budget about 900 MB once both are warm.
 
 ## Environment Variables
 
-| Variable | Used In | Purpose |
+| Variable | Default | Purpose |
 |---|---|---|
-| `SECRET_KEY` | `rf_calculator/settings.py` | Django cryptographic signing key. |
-| `DEBUG` | `rf_calculator/settings.py` | Enables or disables Django debug mode. |
-| `ALLOWED_HOSTS` | `rf_calculator/settings.py` | Comma-separated host allowlist. |
-
-Default values currently present in the uploaded app:
-
-```python
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1,172.22.211.68
-```
+| `SECRET_KEY` | *(required when `DEBUG=False`)* | Django signing key. No fallback: the app refuses to start without it. |
+| `DEBUG` | `False` | Debug mode. Off by default so a forgotten variable cannot ship a debug build. |
+| `ALLOWED_HOSTS` | `*` | Comma-separated host allowlist. |
+| `MEDIA_ROOT` | `<project>/media` | Where annotated images and CSVs are written. Mount a volume here. |
+| `ELN_ALLOWED_HOSTS` | *(empty)* | Comma-separated hosts `/fetch-image/` may fetch from, and that the page may upload results to. Empty means any public host, with internal ranges refused. **Set this in production.** |
+| `ELN_FETCH_MAX_BYTES` | `26214400` (25 MB) | Size cap on a fetched image. |
+| `ELN_CONNECT_TIMEOUT` / `ELN_READ_TIMEOUT` | `5` / `20` | Seconds. |
+| `MEDIA_RETENTION_HOURS` | `24` | How long fetched ELN images are kept before being swept. |
+| `ENABLE_ADMIN` | `False` | Exposes `/admin/`. Off by default: there are no models registered, so it is only a login surface. |
+| `TRUST_PROXY_SSL_HEADER` | `False` | Trust `X-Forwarded-Proto`. Enable **only** behind a real proxy. |
+| `SECURE_SSL_REDIRECT` | `False` | Redirect HTTP to HTTPS. |
+| `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` | `False` | Mark cookies HTTPS-only. |
+| `SECURE_HSTS_SECONDS` | `0` | Enable HSTS. |
+| `CSRF_TRUSTED_ORIGINS` | *(empty)* | Comma-separated, **scheme required** (`https://host`). Note `ALLOWED_HOSTS=*` does not relax the CSRF origin check. |
+| `DATA_UPLOAD_MAX_MEMORY_SIZE` | `41943040` (40 MB) | Request body cap; plate images arrive base64-encoded in JSON. |
+| `FILE_UPLOAD_MAX_MEMORY_SIZE` | `10485760` (10 MB) | Multipart upload cap. |
+| `LOG_LEVEL` | `INFO` | Root log level. |
 
 ## GitHub Push Commands
 
@@ -449,21 +482,57 @@ Thumbs.db
 .idea/
 ```
 
-## Production Readiness Notes
+## Security Notes
 
-The current app is ready for GitHub and can run with Django or Docker. For public production deployment, the following operational items should be completed:
+The following were fixed and are covered by tests in `circle_detector/tests/`:
 
-- Set `DEBUG=False`.
-- Generate and set a secure `SECRET_KEY` in the hosting environment.
-- Set `ALLOWED_HOSTS` to the deployed domain.
-- Add `whitenoise.middleware.WhiteNoiseMiddleware` or serve static files through a web server/CDN.
-- Move from SQLite to PostgreSQL or another managed database for multi-user usage.
-- Use persistent media storage for uploaded TLC images, annotated images, and generated CSV files.
-- Restrict `/fetch-image/` to trusted ELN or image-host domains.
-- Avoid exposing absolute server file paths through `/serve-image/`.
-- Remove `csrf_exempt` from POST endpoints or protect them with the final authentication flow.
-- Add authentication before exposing the app outside a private lab or ELN network.
-- Run `python manage.py check --deploy` before go-live.
+- **`/serve-image/` no longer accepts absolute paths.** `file_path` is
+  media-relative and resolved against `MEDIA_ROOT` with a containment check, so
+  it can no longer be used to read arbitrary files. Symlinks out of the media
+  directory are refused too.
+- **`/fetch-image/` validates its target.** Only `http`/`https`; internal
+  address ranges (loopback, private, link-local including `169.254.169.254`,
+  CGNAT, reserved, multicast) are refused after DNS resolution; redirects are
+  followed but **every hop is revalidated**; the body is capped as it streams;
+  and the stored file must decode as a real image.
+- **Output filenames cannot steer writes.** `imageSrc` is reduced to a bare
+  stem, so it cannot contain a directory component, and a random token replaces
+  the previous second-granular timestamp that collided under concurrency.
+- **Uploads derive their extension from the file contents**, not the filename or
+  the client's `Content-Type`. Previously `evil.html` sent as `image/png` was
+  stored as `.html`.
+- **Media is served in production.** Annotated images and CSVs used to 404
+  whenever `DEBUG=False`, which meant the app's main output was unreachable.
+  The media route is now always registered, restricted to an extension
+  allowlist, and sends `nosniff` plus a sandboxed CSP.
+- **No CDN dependency.** Materialize, SweetAlert2, Material Icons and Inter are
+  vendored under `circle_detector/static/circle_detector/vendor/`, so the app
+  works on an isolated network. See that directory's `LICENSES.md`.
+- **Safe defaults.** `DEBUG` defaults to off and `SECRET_KEY` has no fallback.
+
+### Known limitations
+
+- **There is no authentication.** Anyone who can reach the service can run
+  inference and write files into the media directory. Put it behind SSO or a
+  private network before exposing it.
+- **`@csrf_exempt` remains on the four POST endpoints.** The frontend already
+  sends `X-CSRFToken`, so removing it is likely straightforward, but it is a
+  behaviour change for any external API consumer and is deliberately left for a
+  separate change.
+- **DNS rebinding is not fully closed.** A window exists between address
+  validation and the connection in `/fetch-image/`. Setting `ELN_ALLOWED_HOSTS`
+  makes it irrelevant, because allowlisting is by name.
+- **The CSP still needs `'unsafe-inline'` for scripts**, because the annotation
+  page carries its behaviour inline. Extracting it into a static file is what
+  would allow that to be dropped.
+- **Media growth is only partly bounded.** Fetched ELN images are swept after
+  `MEDIA_RETENTION_HOURS`, but annotated images and CSVs accumulate and need a
+  retention policy of their own.
+- **SQLite is configured but unused** -- the app defines no models. A real
+  database is only needed if persistence is added.
+
+Run `python manage.py check --deploy` before go-live; with the TLS variables set
+it reports no issues.
 
 ## Troubleshooting
 
