@@ -15,6 +15,7 @@ dependencies = [
     "requests>=2.32.3",
     "scikit-image>=0.25.0",
     "scipy>=1.15.0",
+    "onnxruntime>=1.31",
 ]
 
 [dependency-groups]
