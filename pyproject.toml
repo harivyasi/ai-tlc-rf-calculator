@@ -1,0 +1,20 @@
+[project]
+name = "tlc-rf-calculator"
+version = "2.0.0"
+description = "Web tool for measuring retention factor (Rf) values on thin layer chromatography (TLC) plate photos, with model-assisted line and spot detection."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "MIT (code); AGPL-3.0 (model files in tlc/ml_models/)" }
+dependencies = [
+    "django>=5.2,<5.3",
+    "gunicorn>=23.0.0",
+    "whitenoise>=6.9.0",
+    "opencv-python-headless>=4.11.0.86",
+    "numpy>=2.2.0",
+    "pillow>=11.0.0",
+    "requests>=2.32.3",
+    "onnxruntime>=1.31",
+]
+
+[tool.uv]
+package = false
