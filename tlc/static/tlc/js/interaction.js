@@ -199,7 +199,7 @@ export function handlePointerUp(e) {
                 height: Math.round(h * sf),
             };
             state.plateRegion = region;
-            notify("Plate area set — Auto-detect will use it.", "success");
+            notify("Plate area set — Detect Spots will search only inside it.", "success");
             confineAnnotationsToRegion(region);
         }
         commitChange(); // region change is undoable; marks stale + re-fits crop

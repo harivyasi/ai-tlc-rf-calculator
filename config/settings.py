@@ -175,6 +175,27 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("MAX_UPLOAD_MB", 16) * 1024 * 1024
 
 
+# Candidate detection: TLC-SpotDet and TLC-LineDet (SI section 6). The models
+# are versioned artefacts; their SHA-256 is reported with every detection.
+# Input sizes come from the models themselves (1280 and 1024 px).
+SPOT_MODEL_PATH = BASE_DIR / "tlc" / "ml_models" / "spot_best.onnx"
+LINE_MODEL_PATH = BASE_DIR / "tlc" / "ml_models" / "line_best.onnx"
+# spot_best.onnx was exported with its own confidence cutoff of 0.25: it
+# returns nothing scoring lower (checked on 223 plates; the lowest score seen
+# is 0.252). A lower value here therefore finds no more spots -- Shilpa's
+# tool used 0.15 with the same result -- so the setting states the cutoff
+# that actually applies. Going lower would need a re-export from the .pt
+# weights.
+SPOT_CONF_DEFAULT = 0.25
+LINE_CONF_DEFAULT = 0.05
+# Spot inference runs only on the strip between baseline and solvent front,
+# widened by this many pixels on each side (SI section 4).
+TLC_BAND_MARGIN = 12
+# Threads ONNX Runtime may use per inference. Each Gunicorn thread can run one
+# inference at a time, so workers x threads x this should not exceed the cores.
+ONNX_INTRA_OP_THREADS = env_int("ONNX_INTRA_OP_THREADS", 2)
+
+
 # Security hardening. These are enforced whenever DEBUG is off so that local
 # development over plain HTTP keeps working, while deployments are secure.
 # https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/

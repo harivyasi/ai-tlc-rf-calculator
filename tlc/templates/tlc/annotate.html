@@ -110,7 +110,7 @@
         <div class="toolbar" id="toolbar" role="toolbar" aria-label="Annotation tools">
             <div class="tool-group">
                 <span class="tool-label">Bounds</span>
-                <button class="lab-btn btn-lab-secondary" data-action="selectPlateArea" title="Draw a box around the plate to focus Auto-detect. Detection region only — it does not place the reference lines.">
+                <button class="lab-btn btn-lab-secondary" data-action="selectPlateArea" title="Optional: draw a box around the plate. Detect Spots then searches only inside it, and lines and spots stay within it. It does not place the reference lines.">
                     <svg class="icon"><use href="#i-region"/></svg> <span class="lbl-full">Plate Area</span><span class="lbl-short">Plate</span>
                 </button>
                 <label class="check-row" title="Zoom the work area to the plate box. View only — the saved image keeps its full dimensions.">
@@ -123,16 +123,16 @@
                 <button class="lab-btn btn-lab-outline" data-action="addMaxLine" title="Mark the solvent front — how far the mobile phase travelled.">
                     <svg class="icon"><use href="#i-hline"/></svg> Max Line
                 </button>
+                <button class="lab-btn btn-lab-secondary" data-action="autoDetectLines" id="detect-lines-btn" title="Propose the Min (baseline) and Max (solvent front) lines with TLC-LineDet. Review and drag them into place." disabled>
+                    <svg class="icon"><use href="#i-wand"/></svg> Detect Lines
+                </button>
             </div>
             <span class="toolbar-break" aria-hidden="true"></span>
             <div class="tool-group">
                 <span class="tool-label">Annotate</span>
-                <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots" title="Automatically find candidate spots. Draw a Plate Area first for the best results; review and adjust the results.">
-                    <svg class="icon"><use href="#i-wand"/></svg> Auto-detect
+                <button class="lab-btn btn-lab-secondary" data-action="autoDetectSpots" id="detect-spots-btn" title="Propose candidate spots with TLC-SpotDet, searching only between the Min and Max lines. Review and adjust the results." disabled>
+                    <svg class="icon"><use href="#i-wand"/></svg> Detect Spots
                 </button>
-                <label class="check-row" title="Center detected spots on the ring outline instead of its filled area — best for hand-drawn circles.">
-                    <input type="checkbox" id="ring-center"> ring marks
-                </label>
                 <button class="lab-btn btn-lab-primary" data-action="addSpots" title="Click on the plate to place spots. Double-click (double-tap on touch) a spot to delete it.">
                     <svg class="icon"><use href="#i-target"/></svg> <span class="lbl-full">Add Spots</span><span class="lbl-short">Spots</span>
                 </button>
@@ -174,7 +174,7 @@
             </div>
         </div>
 
-        <!-- Contextual hint (prioritises Plate Area, then Auto-detect). -->
+        <!-- Contextual hint: Shilpa's order — lines first, then spots inside them. -->
         <div id="hint" class="hint" role="status"></div>
 
         <!-- Work area: canvas + result. Layout adapts to image orientation. -->
@@ -238,15 +238,17 @@
             <div id="instructions-box" class="instructions-panel">
                 <ol>
                     <li>Load a plate image from the ELN or by uploading a local file.</li>
-                    <li><strong>Recommended:</strong> click <span class="highlight">Plate Area</span> and drag a
-                        box around the plate. This greatly improves <span class="highlight">Auto-detect</span>
-                        accuracy (it ignores everything outside the box). It does not place the reference lines.
-                        While a plate area is set, lines and spots must stay inside it — drawing or redrawing the
-                        box clamps the lines to it and drops any spots that fall outside.</li>
-                    <li>Add the <span class="highlight">Min Line</span> on the baseline (where samples were spotted)
-                        and the <span class="highlight">Max Line</span> on the solvent front (how far the solvent ran).</li>
-                    <li>Click <span class="highlight">Auto-detect</span> (best inside a Plate Area) or
-                        <span class="highlight">Add Spots</span> to mark spots. Review and adjust.</li>
+                    <li><strong>Optional:</strong> click <span class="highlight">Plate Area</span> and drag a
+                        box around the plate. <span class="highlight">Detect Spots</span> then ignores everything
+                        to the left and right of it. It does not place the reference lines. While a plate area is
+                        set, lines and spots must stay inside it — drawing or redrawing the box clamps the lines
+                        to it and drops any spots that fall outside.</li>
+                    <li>Click <span class="highlight">Detect Lines</span> to propose the
+                        <span class="highlight">Min Line</span> (baseline, where samples were spotted) and the
+                        <span class="highlight">Max Line</span> (solvent front, how far the solvent ran), or place
+                        them yourself. Drag them into place if needed.</li>
+                    <li>Click <span class="highlight">Detect Spots</span> — it searches only between Min and
+                        Max — or <span class="highlight">Add Spots</span> to mark spots. Review and adjust.</li>
                     <li>Optionally add <span class="highlight">V-Line</span> / <span class="highlight">H-Line</span>
                         labels to name lanes and compounds. An unlabelled lane is left blank; an unmarked
                         compound shows as “Unknown”.</li>
@@ -261,8 +263,10 @@
                     both the preview and the saved image, relative to the size auto-computed from the plate
                     resolution.</p>
                 <p class="muted text-sm"><strong>Rotate</strong> is available on a freshly loaded image (before
-                    you annotate) to correct its orientation. Tick <strong>ring marks</strong> before
-                    Auto-detect to centre detections on ring outlines rather than filled spots.</p>
+                    you annotate) to correct its orientation.</p>
+                <p class="muted text-sm">Detected lines and spots are <strong>candidates</strong> from two
+                    trained models (TLC-LineDet and TLC-SpotDet). Nothing is calculated until you have
+                    reviewed them and clicked <strong>Calculate RF</strong>.</p>
                 <p class="muted text-sm">After you calculate, changing any annotation marks the results
                     <strong>out of date</strong> — a banner appears and export is disabled until you click
                     <strong>Calculate RF</strong> again, so you never save a stale image.</p>

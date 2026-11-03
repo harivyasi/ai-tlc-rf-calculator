@@ -1,6 +1,6 @@
 /*
  * Server round-trips and results: building the image payload, RF calculation,
- * assisted spot detection, the results table (with row highlight/delete), CSV
+ * candidate line and spot detection, the results table (with row highlight/delete), CSV
  * export, and saving image/CSV back to the ELN.
  */
 
@@ -10,10 +10,11 @@ import { elnUrl, state } from "./state.js";
 import { getCookie, hideOverlay, notify, showOverlay, timestampedName } from "./ui-kit.js";
 import { clearResultsStale, hasImage, textScale, updateAnnotatedHeading } from "./ui.js";
 import { addSpot } from "./annotations.js";
+import { clamp } from "./geometry.js";
 import { commitChange, redrawCanvas } from "./canvas.js";
 import { commitHistory } from "./history.js";
 
-// --- Image payload (shared by calculate + auto-detect) --------------------
+// --- Image payload (shared by calculate + detection) ----------------------
 export function getImagePayload() {
     let payload;
     if (state.isLocalImage) {
@@ -88,26 +89,43 @@ export function calculateRF() {
         });
 }
 
-// --- Assisted spot detection ----------------------------------------------
+// --- Candidate detection (TLC-SpotDet / TLC-LineDet) ---------------------
+function postDetection(url, payload) {
+    return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
+        body: JSON.stringify(payload),
+    }).then((response) =>
+        response
+            .json()
+            .catch(() => ({}))
+            .then((body) => {
+                // 400s carry a user-facing reason; anything else is generic.
+                if (!response.ok) throw new Error(body.error || "HTTP " + response.status);
+                return body;
+            }),
+    );
+}
+
+// Spots are searched only between the baseline and the solvent front (SI §4),
+// so both lines must exist first.
 export function autoDetectSpots() {
     if (!hasImage()) {
         notify("Load an image first.", "warning");
         return;
     }
+    const minLine = state.lines.find((l) => l.type === "min");
+    const maxLine = state.lines.find((l) => l.type === "max");
+    if (!minLine || !maxLine) {
+        notify("Place the Min and Max lines first (or click Detect Lines).", "warning");
+        return;
+    }
     showOverlay("Detecting spots…");
     const payload = getImagePayload();
+    payload.minY = minLine.y;
+    payload.maxY = maxLine.y;
     if (state.plateRegion) payload.region = state.plateRegion;
-    const ringToggle = document.getElementById("ring-center");
-    if (ringToggle) payload.ringCenter = ringToggle.checked;
-    fetch("/detect-spots/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
-        body: JSON.stringify(payload),
-    })
-        .then((response) => {
-            if (!response.ok) throw new Error("HTTP " + response.status);
-            return response.json();
-        })
+    postDetection("/detect-spots/", payload)
         .then((result) => {
             hideOverlay();
             let added = 0;
@@ -125,7 +143,44 @@ export function autoDetectSpots() {
         .catch((error) => {
             hideOverlay();
             console.error("Error detecting spots:", error);
-            notify("Spot detection failed.", "error");
+            notify(error.message || "Spot detection failed.", "error");
+        });
+}
+
+// Place (or move) the Min and Max lines where TLC-LineDet puts them. The server
+// assigns them by position — lower = baseline — and estimates one line at
+// 10 % / 90 % of the height when only the other was found.
+export function autoDetectLines() {
+    if (!hasImage()) {
+        notify("Load an image first.", "warning");
+        return;
+    }
+    showOverlay("Detecting reference lines…");
+    postDetection("/detect-lines/", getImagePayload())
+        .then((result) => {
+            hideOverlay();
+            const r = state.plateRegion;
+            const place = (type, y) => {
+                // Lines must stay inside a plate area, as when placed by hand.
+                const yy = r ? clamp(y, r.y, r.y + r.height) : y;
+                const existing = state.lines.find((l) => l.type === type);
+                if (existing) existing.y = yy;
+                else state.lines.push({ id: Date.now() + state.lineSeq++, type, y: yy, text: type });
+            };
+            place("min", result.minY);
+            place("max", result.maxY);
+            commitChange(); // both lines are one undo step
+            if (result.estimated) {
+                const which = result.estimated === "min" ? "Min (baseline)" : "Max (solvent front)";
+                notify("Only one line was found; " + which + " is an estimate — drag it into place.", "warning");
+            } else {
+                notify("Placed Min and Max lines. Review and drag to adjust.", "success");
+            }
+        })
+        .catch((error) => {
+            hideOverlay();
+            console.error("Error detecting lines:", error);
+            notify(error.message || "Line detection failed.", "error");
         });
 }
 

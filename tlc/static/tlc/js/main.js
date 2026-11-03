@@ -51,6 +51,7 @@ import {
     handlePointerUp,
 } from "./interaction.js";
 import {
+    autoDetectLines,
     autoDetectSpots,
     calculateRF,
     csvToEln,
@@ -70,6 +71,7 @@ const ACTIONS = {
     selectImageSource,
     triggerFileInput,
     addSpots,
+    autoDetectLines,
     autoDetectSpots,
     selectPlateArea,
     rotateCW,
@@ -112,32 +114,6 @@ function init() {
     });
 
     initTheme();
-
-    // Persist the "center on ring marks" detection preference.
-    const ringToggle = document.getElementById("ring-center");
-    if (ringToggle) {
-        try {
-            ringToggle.checked = localStorage.getItem("tlc-ring-center") === "1";
-        } catch (err) {
-            /* localStorage unavailable */
-        }
-        ringToggle.addEventListener("change", () => {
-            try {
-                localStorage.setItem("tlc-ring-center", ringToggle.checked ? "1" : "0");
-            } catch (err) {
-                /* ignore */
-            }
-            // Apply the change immediately: if spots were already auto-detected,
-            // drop those (keeping any manual spots) and re-detect with the new
-            // setting. Do nothing if the user hasn't auto-detected yet.
-            if (hasImage() && state.spots.some((s) => s.auto)) {
-                state.spots = state.spots.filter((s) => !s.auto);
-                markResultsStale(); // spots changed -> any prior result is stale
-                redrawCanvas();
-                autoDetectSpots();
-            }
-        });
-    }
 
     // "Crop view" preference: persisted; re-applies the crop on toggle.
     const cropToggle = document.getElementById("crop-plate");

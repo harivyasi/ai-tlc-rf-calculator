@@ -81,12 +81,10 @@ export function updateHint() {
     let msg = "";
     if (!hasImage()) {
         msg = "";
-    } else if (!state.plateRegion) {
-        msg = "Tip: click Plate Area and drag a box around the plate — this makes Auto-detect far more reliable.";
+    } else if (!hasMinAndMax()) {
+        msg = "Start with Detect Lines to place Min and Max (or place them yourself).";
     } else if (state.spots.length === 0) {
-        msg = "Now click Auto-detect to find spots automatically (or Add Spots to place them yourself).";
-    } else if (!state.lines.some((l) => l.type === "min") || !state.lines.some((l) => l.type === "max")) {
-        msg = "Add Min and Max reference lines, then Calculate RF.";
+        msg = "Now click Detect Spots — it searches between Min and Max (or Add Spots to place them yourself).";
     } else {
         msg = "Ready — click Calculate RF.";
     }
@@ -94,15 +92,23 @@ export function updateHint() {
     hint.classList.toggle("show", msg !== "");
 }
 
+export function hasMinAndMax() {
+    return state.lines.some((l) => l.type === "min") && state.lines.some((l) => l.type === "max");
+}
+
 export function updateCalculateEnabled() {
     const btn = document.getElementById("calculate-btn");
     if (!btn) return;
-    const ready =
-        hasImage() &&
-        state.lines.some((l) => l.type === "min") &&
-        state.lines.some((l) => l.type === "max") &&
-        state.spots.length > 0;
-    btn.disabled = !ready;
+    btn.disabled = !(hasImage() && hasMinAndMax() && state.spots.length > 0);
+}
+
+// Detect Lines needs only an image; Detect Spots also needs Min and Max,
+// because spot inference is restricted to the band between them.
+export function updateDetectEnabled() {
+    const lines = document.getElementById("detect-lines-btn");
+    if (lines) lines.disabled = !hasImage();
+    const spots = document.getElementById("detect-spots-btn");
+    if (spots) spots.disabled = !(hasImage() && hasMinAndMax());
 }
 
 // Rotation is only allowed on a clean image (no annotations to invalidate),
@@ -175,6 +181,7 @@ function refreshUndoRedo() {
 export function refreshUI() {
     updateHint();
     updateCalculateEnabled();
+    updateDetectEnabled();
     updateRotateEnabled();
     refreshUndoRedo();
 }

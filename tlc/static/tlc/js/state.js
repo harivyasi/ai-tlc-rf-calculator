@@ -44,7 +44,7 @@ export const state = {
     lineDragOffsetY: 0,
     justDragged: false,
 
-    // Optional plate region-of-interest that constrains auto-detect.
+    // Optional plate region-of-interest; limits Detect Spots to its x-range.
     plateRegion: null, // {x, y, width, height} in original-image coordinates
     selectingRegion: false, // the "Plate Area" tool is armed
     draggingRegion: false, // a region drag is in progress

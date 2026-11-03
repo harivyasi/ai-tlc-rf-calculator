@@ -11,8 +11,10 @@ urlpatterns = [
     path("healthz", views.healthz, name="healthz"),
     # URL for calculating RF values based on image data and user annotations
     path("calculate_rf/", views.calculate_rf, name="calculate_rf"),
-    # URL for assisted spot detection (returns candidate spots to annotate)
+    # Candidate detection with TLC-SpotDet (spots, inside the Min/Max band) and
+    # TLC-LineDet (baseline and solvent front)
     path("detect-spots/", views.detect_spots, name="detect_spots"),
+    path("detect-lines/", views.detect_lines, name="detect_lines"),
     # URL for fetching and saving an image from a remote URL
     path("fetch-image/", views.fetch_and_save_image, name="fetch_image"),
     # URL for serving an image file to the client

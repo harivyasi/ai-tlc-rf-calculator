@@ -32,7 +32,7 @@ export function selectPlateArea(event) {
     disableOtherActions();
     state.selectingRegion = true;
     if (event && event.currentTarget) setActiveButton(event.currentTarget);
-    notify("Drag a box around the plate, then Auto-detect. Click once to clear.", "info");
+    notify("Drag a box around the plate. Click once to clear.", "info");
 }
 
 // Note: the plate region is a detection ROI only. The Min (baseline) and Max
@@ -150,10 +150,9 @@ export function addSpot(origX, origY, auto = false) {
                Math.abs(s.y - origY) < 12 * window.scaleFactor
     );
     if (duplicate) return false;
-    // `auto` marks spots placed by Auto-detect, so re-running detection (e.g.
-    // when the "ring marks" preference changes) can replace only those. This is
-    // a plain mutator — callers commit at the gesture boundary (a single history
-    // entry per click / per Auto-detect batch).
+    // `auto` marks spots proposed by Detect Spots (model candidates, as opposed
+    // to spots placed by hand). This is a plain mutator — callers commit at the
+    // gesture boundary (a single history entry per click / per detection batch).
     state.spots.push({ id: Date.now() + state.spotSeq++, x: origX, y: origY, auto });
     return true;
 }

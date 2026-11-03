@@ -490,40 +490,89 @@ def _parse_region(raw: Any) -> tuple[int, int, int, int] | None:
     return x, y, width, height
 
 
-def detect_spots(request: HttpRequest) -> JsonResponse:
-    """Detect candidate TLC spots and return them as editable suggestions.
+def _parse_detection_request(
+    request: HttpRequest,
+) -> tuple[dict[str, Any], np.ndarray | None, JsonResponse | None]:
+    """Shared front half of the detection views: method, JSON, image."""
+    if request.method != "POST":
+        return {}, None, JsonResponse({"error": "Invalid request"}, status=405)
+    try:
+        data: dict[str, Any] = json.loads(request.body)
+    except json.JSONDecodeError:
+        return {}, None, JsonResponse({"error": "Invalid JSON format"}, status=400)
+    if not isinstance(data, dict):
+        return {}, None, JsonResponse({"error": "Invalid JSON format"}, status=400)
+    image, _, error = _load_annotation_image(data)
+    return data, image, error
 
-    Accepts the same image payload as :func:`calculate_rf` (base64 ``imageData``
-    for local uploads or ``imageSrc`` for ELN images) and returns spot centres
-    in original-image coordinates, ready to drop into the annotation ``spots``
-    array. An optional ``region`` (``{x, y, width, height}``) confines detection
-    to a user-drawn plate area. Detection is best-effort — the user reviews it.
+
+def detect_spots(request: HttpRequest) -> JsonResponse:
+    """Propose candidate spots with TLC-SpotDet, inside the Min/Max band.
+
+    Accepts the same image payload as :func:`calculate_rf` plus ``minY`` and
+    ``maxY`` (the baseline and solvent front, original-image px), which are
+    required: inference is restricted to the band between them (SI section 4).
+    An optional ``region`` (``{x, y, width, height}``, the Plate Area) also
+    limits the x-range. Candidates are suggestions the user reviews.
+
+    Args:
+        request: The HTTP request carrying the JSON payload.
+
+    Returns:
+        ``{"spots": [{"x", "y", "conf"}], "count", "roi", "model"}``, or an
+        ``error``.
+    """
+    data, image, error = _parse_detection_request(request)
+    if error is not None:
+        return error
+    assert image is not None  # guaranteed when error is None
+
+    try:
+        min_y, max_y = float(data["minY"]), float(data["maxY"])
+    except KeyError, TypeError, ValueError:
+        return JsonResponse(
+            {"error": "Place the Min and Max lines before detecting spots."}, status=400
+        )
+
+    try:
+        result = detection.detect_spots(
+            image, min_y=min_y, max_y=max_y, region=_parse_region(data.get("region"))
+        )
+    except detection.DetectionError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception:
+        logger.exception("Spot detection failed")
+        return JsonResponse({"error": "Spot detection failed."}, status=500)
+    return JsonResponse({**result, "count": len(result["spots"])})
+
+
+def detect_lines(request: HttpRequest) -> JsonResponse:
+    """Propose the baseline (Min) and solvent front (Max) with TLC-LineDet.
+
+    Accepts the same image payload as :func:`calculate_rf`. The two lines are
+    assigned by position, not by class label (see :mod:`tlc.detection`).
 
     Args:
         request: The HTTP request carrying the JSON image payload.
 
     Returns:
-        A JSON response with ``spots`` (a list of ``{"x", "y"}``) and ``count``.
+        ``{"minY", "maxY", "estimated", "model"}`` in original-image px, or an
+        ``error``. ``estimated`` names a line that was guessed because only
+        the other one was detected.
     """
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request"}, status=405)
-
-    try:
-        data: dict[str, Any] = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON format"}, status=400)
-
-    image, _, error = _load_annotation_image(data)
+    _, image, error = _parse_detection_request(request)
     if error is not None:
         return error
     assert image is not None  # guaranteed when error is None
 
-    spots = detection.detect_spots(
-        image,
-        region=_parse_region(data.get("region")),
-        ring_center=bool(data.get("ringCenter")),
-    )
-    return JsonResponse({"spots": spots, "count": len(spots)})
+    try:
+        result = detection.detect_lines(image)
+    except detection.DetectionError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception:
+        logger.exception("Line detection failed")
+        return JsonResponse({"error": "Line detection failed."}, status=500)
+    return JsonResponse(result)
 
 
 # ---------------------------------------------------------------------------

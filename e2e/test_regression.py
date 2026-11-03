@@ -237,7 +237,8 @@ def test_deleting_result_row_marks_results_stale(page, servers, test_image_path)
 
 
 def test_auto_detect_populates_spots(page, servers, blob_image_path):
-    """New feature: Auto-detect finds the drawn spots and they flow into RF calc."""
+    """Detect Spots (TLC-SpotDet) finds the drawn spots between Min and Max, and
+    they flow into the RF calculation."""
     _stub_cdn(page)
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
@@ -250,7 +251,7 @@ def test_auto_detect_populates_spots(page, servers, blob_image_path):
     page.click("button:has-text('Max Line')")
     canvas.click(position={"x": 200, "y": 40})
 
-    page.click("button:has-text('Auto-detect')")
+    page.click("button:has-text('Detect Spots')")
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
     rows = page.locator("#values-table tbody tr").count()
@@ -258,7 +259,7 @@ def test_auto_detect_populates_spots(page, servers, blob_image_path):
 
 
 def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
-    """Drawing a plate area limits Auto-detect to that region (2 of 3 blobs)."""
+    """Drawing a plate area limits Detect Spots to that region (2 of 3 blobs)."""
     _stub_cdn(page)
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
@@ -279,7 +280,7 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
     page.mouse.move(box["x"] + 260, box["y"] + 190, steps=8)
     page.mouse.up()
 
-    page.click("button:has-text('Auto-detect')")
+    page.click("button:has-text('Detect Spots')")
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
     rows = page.locator("#values-table tbody tr").count()
@@ -305,35 +306,6 @@ def test_rotate_reorients_and_locks_after_annotation(page, servers, blob_image_p
     page.click("button:has-text('Add Spots')")
     page.locator("#image-canvas").click(position={"x": 150, "y": 150})
     page.wait_for_function("() => document.querySelector(\"[data-action='rotateCW']\").disabled")
-
-
-def test_ring_center_preference_persists(page, servers):
-    """The 'Center on ring marks' checkbox remembers its state across reloads."""
-    _stub_cdn(page)
-    page.goto(servers["new"] + "/")
-    page.wait_for_selector("#ring-center")
-    assert not page.is_checked("#ring-center")
-
-    page.check("#ring-center")
-    page.reload()
-    page.wait_for_selector("#ring-center")
-    assert page.is_checked("#ring-center"), "ring-center preference was not persisted"
-
-
-def test_toggling_ring_marks_reruns_autodetect(page, servers, blob_image_path):
-    """After Auto-detect, toggling 'ring marks' re-runs detection automatically."""
-    _stub_cdn(page)
-    page.goto(servers["new"] + "/")
-    page.click("#local-source-btn")
-    page.set_input_files("#local-image-input", blob_image_path)
-    page.wait_for_function(_IMAGE_READY)
-
-    page.click("button:has-text('Auto-detect')")
-    page.wait_for_selector("text=Detected", timeout=20000)  # first detection added auto spots
-
-    # Toggling the checkbox must fire a second /detect-spots/ request on its own.
-    with page.expect_request("**/detect-spots/**", timeout=10000):
-        page.check("#ring-center")
 
 
 def test_deleting_vline_closes_annotation_popup(page, servers, test_image_path):
@@ -378,8 +350,8 @@ def test_theme_toggle_switches_and_persists(page, servers):
 
 def test_plate_area_does_not_create_reference_lines(page, servers, blob_image_path):
     """A Plate Area is a detection region only — it must NOT create Min/Max lines
-    (the plate edges are not the baseline / solvent front). RF needs the user to
-    place them; once placed, it computes."""
+    (the plate edges are not the baseline / solvent front). Without them neither
+    Detect Spots nor Calculate RF is available; once placed, both work."""
     _stub_cdn(page)
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
@@ -394,23 +366,109 @@ def test_plate_area_does_not_create_reference_lines(page, servers, blob_image_pa
     page.mouse.move(box["x"] + 380, box["y"] + 270, steps=8)
     page.mouse.up()
 
-    page.click("button:has-text('Auto-detect')")
-    page.wait_for_selector("text=Detected", timeout=20000)  # spots were added
-    # Spots exist, but the plate area created no Min/Max — so RF stays disabled.
-    assert page.locator("#calculate-btn").is_disabled(), (
-        "plate area must not seed Min/Max — Calculate RF should stay disabled"
+    assert page.locator("#detect-spots-btn").is_disabled(), (
+        "plate area must not seed Min/Max — Detect Spots should stay disabled"
     )
+    assert page.locator("#calculate-btn").is_disabled()
 
-    # Placing Min/Max by hand enables it and computes normally. (Both clicks must
-    # be inside the plate area, which now confines the reference lines.)
+    # Placing Min/Max by hand (inside the plate area, which confines them)
+    # enables detection and the calculation.
     page.click("button:has-text('Min Line')")
     canvas.click(position={"x": 200, "y": 250})
     page.click("button:has-text('Max Line')")
     canvas.click(position={"x": 200, "y": 45})
+    page.click("button:has-text('Detect Spots')")
+    page.wait_for_selector("text=/Detected \\d+ spot/", timeout=20000)
     page.wait_for_function("() => !document.getElementById('calculate-btn').disabled")
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
     assert page.locator("#values-table tbody tr").count() == 3
+
+
+def test_detect_spots_needs_min_and_max(page, servers, blob_image_path):
+    """Shilpa's workflow: spot inference is restricted to the Min/Max band, so
+    Detect Spots is disabled until both lines exist, while Detect Lines is
+    available as soon as an image is loaded."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    assert page.locator("#detect-lines-btn").is_disabled()  # no image yet
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    assert not page.locator("#detect-lines-btn").is_disabled()
+    assert page.locator("#detect-spots-btn").is_disabled()
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 200, "y": 280})
+    assert page.locator("#detect-spots-btn").is_disabled(), "Max is still missing"
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 200, "y": 40})
+    page.wait_for_function("() => !document.getElementById('detect-spots-btn').disabled")
+
+    # The request carries the band.
+    with page.expect_request("**/detect-spots/") as request_info:
+        page.click("button:has-text('Detect Spots')")
+    body = request_info.value.post_data_json
+    assert body["minY"] > body["maxY"], body
+
+
+def _route_detect_lines(page: Page, body: dict) -> None:
+    """Answer /detect-lines/ with ``body``: the model needs a real plate photo
+    to find lines, so the browser side is tested against a stubbed response."""
+    import json
+
+    page.route(
+        "**/detect-lines/",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(body)
+        ),
+    )
+
+
+def test_detect_lines_places_min_and_max(page, servers, blob_image_path):
+    """Detect Lines places editable Min/Max lines (one undo step), after which
+    Detect Spots and Calculate RF work as with hand-placed lines."""
+    _stub_cdn(page)
+    _route_detect_lines(page, {"minY": 280, "maxY": 40, "estimated": None, "model": {}})
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    page.click("#detect-lines-btn")
+    page.wait_for_selector("text=Placed Min and Max", timeout=10000)
+    lines = page.evaluate(
+        "() => import('/static/tlc/js/state.js').then(m => "
+        "m.state.lines.map(l => [l.type, Math.round(l.y)]))"
+    )
+    assert sorted(lines) == [["max", 40], ["min", 280]], lines
+
+    page.click("button:has-text('Detect Spots')")
+    page.wait_for_selector("text=/Detected \\d+ spot/", timeout=20000)
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert page.locator("#values-table tbody tr").count() == 3
+
+    # Both lines came from one detection, so a single undo removes both.
+    page.click("#undo-btn")
+    page.click("#undo-btn")  # the spot batch, then the line pair
+    remaining = page.evaluate(
+        "() => import('/static/tlc/js/state.js').then(m => m.state.lines.length)"
+    )
+    assert remaining == 0, remaining
+
+
+def test_detect_lines_warns_when_one_line_is_estimated(page, servers, blob_image_path):
+    _stub_cdn(page)
+    _route_detect_lines(page, {"minY": 270, "maxY": 30.0, "estimated": "max", "model": {}})
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    page.click("#detect-lines-btn")
+    page.wait_for_selector("text=is an estimate", timeout=10000)
 
 
 def test_crop_view_zooms_to_plate(page, servers, blob_image_path):

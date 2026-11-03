@@ -23,7 +23,7 @@ from django.urls import reverse
 from PIL import Image
 
 from config.env import csrf_origins_from_hosts, env_bool, env_int, env_list, host_of
-from tlc.detection import detect_spots
+from tlc.detection import assign_lines
 from tlc.views import (
     _decode_data_url,
     _draw_annotations,
@@ -273,65 +273,206 @@ class SecurityHeaderTests(SimpleTestCase):
         self.assertNotIn("unsafe-eval", csp)
 
 
+_BLOBS = [(120, 120), (360, 130), (240, 360)]
+
+
+def _post_json(client: Client, name: str, payload: dict[str, Any]) -> Any:
+    return client.post(reverse(name), data=payload, content_type="application/json")
+
+
 class DetectSpotsTests(SimpleTestCase):
+    """TLC-SpotDet through /detect-spots/ (loads the real model).
+
+    The synthetic circles are not TLC spots, but the model reliably finds them
+    (confidence ~0.95), which is enough to pin the band and region logic.
+    """
+
     def setUp(self) -> None:
         self.client = Client()
 
-    def test_detects_expected_number_of_spots(self) -> None:
-        centers = [(120, 120), (360, 130), (240, 360)]
-        payload = {"isLocalImage": True, "imageData": _blobs_data_url(centers)}
-        response = self.client.post(
-            reverse("detect_spots"), data=payload, content_type="application/json"
-        )
+    def _detect(self, centers: list[tuple[int, int]], **extra: Any) -> Any:
+        payload = {"isLocalImage": True, "imageData": _blobs_data_url(centers), **extra}
+        return _post_json(self.client, "detect_spots", payload)
+
+    def test_finds_spots_between_min_and_max(self) -> None:
+        response = self._detect(_BLOBS, minY=480, maxY=20)
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["count"], len(centers))
-        # Each detected centre should lie near a drawn blob.
+        self.assertEqual(body["count"], len(_BLOBS))
         for spot in body["spots"]:
             self.assertTrue(
-                any(abs(spot["x"] - cx) < 15 and abs(spot["y"] - cy) < 15 for cx, cy in centers),
+                any(abs(spot["x"] - cx) < 6 and abs(spot["y"] - cy) < 6 for cx, cy in _BLOBS),
                 f"unexpected spot {spot}",
             )
+            self.assertGreaterEqual(spot["conf"], 0.25)
+
+    def test_only_the_band_between_the_lines_is_searched(self) -> None:
+        # The blob at y=360 lies below the baseline at y=300.
+        body = self._detect(_BLOBS, minY=300, maxY=50).json()
+        self.assertEqual(sorted(round(s["y"], -1) for s in body["spots"]), [120, 130])
+        self.assertEqual(body["roi"], [0, 50 - 12, 500, 300 + 12])  # TLC_BAND_MARGIN
+
+    def test_line_order_does_not_matter_for_the_band(self) -> None:
+        a = self._detect(_BLOBS, minY=300, maxY=50).json()["spots"]
+        b = self._detect(_BLOBS, minY=50, maxY=300).json()["spots"]
+        self.assertEqual(a, b)
+
+    def test_plate_area_limits_the_x_range(self) -> None:
+        region = {"x": 0, "y": 0, "width": 300, "height": 500}  # excludes x=360
+        body = self._detect(_BLOBS, minY=480, maxY=20, region=region).json()
+        self.assertEqual(sorted(round(s["x"], -1) for s in body["spots"]), [120, 240])
+        self.assertTrue(all(s["x"] < 300 for s in body["spots"]))
 
     def test_blank_image_yields_no_spots(self) -> None:
-        payload = {"isLocalImage": True, "imageData": _blobs_data_url([])}
-        response = self.client.post(
-            reverse("detect_spots"), data=payload, content_type="application/json"
-        )
+        response = self._detect([], minY=480, maxY=20)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["count"], 0)
 
-    def test_ring_center_beats_centroid_on_open_ring(self) -> None:
-        # An open/gappy ring: its pixel centroid is pulled toward the arc mass,
-        # while the bounding-box centre (ring_center) stays near the true centre.
-        img = np.full((500, 500, 3), 245, np.uint8)
-        cv2.ellipse(img, (250, 250), (60, 60), 0, -60, 240, (40, 40, 40), 4)
+    def test_min_and_max_are_required(self) -> None:
+        for extra in ({}, {"minY": 400}, {"minY": "a", "maxY": 20}):
+            response = self._detect(_BLOBS, **extra)
+            self.assertEqual(response.status_code, 400, extra)
+            self.assertIn("Min and Max", response.json()["error"])
 
-        centroid = detect_spots(img, ring_center=False)
-        ring = detect_spots(img, ring_center=True)
-        self.assertEqual(len(centroid), 1)
-        self.assertEqual(len(ring), 1)
+    def test_a_band_outside_the_image_is_rejected(self) -> None:
+        # Shilpa's rule: the strip (band +/- margin, clipped to the image) must
+        # be more than 2 px tall. Here it lies wholly above the image.
+        response = self._detect(_BLOBS, minY=-50, maxY=-100)
+        self.assertEqual(response.status_code, 400)
 
-        def dist(spots: list) -> float:
-            return ((spots[0]["x"] - 250) ** 2 + (spots[0]["y"] - 250) ** 2) ** 0.5
+    def test_a_degenerate_band_still_searches_the_margin(self) -> None:
+        # Min == Max still leaves a 24 px strip, as in Shilpa's tool; calculate_rf
+        # is what refuses coincident lines.
+        body = self._detect(_BLOBS, minY=120, maxY=120).json()
+        self.assertEqual(body["roi"], [0, 108, 500, 132])
 
-        self.assertLess(dist(ring), dist(centroid))
+    def test_response_identifies_the_model(self) -> None:
+        model = self._detect([], minY=480, maxY=20).json()["model"]
+        self.assertEqual(model["name"], "TLC-SpotDet")
+        self.assertEqual(model["file"], "spot_best.onnx")
+        self.assertEqual(model["sha256"], SPOT_SHA256)
+        self.assertEqual(model["imgsz"], 1280)
 
-    def test_region_confines_detection(self) -> None:
-        # Three blobs; a region covering only the top two must yield two spots.
-        centers = [(120, 120), (360, 130), (240, 360)]
-        payload = {
-            "isLocalImage": True,
-            "imageData": _blobs_data_url(centers),
-            "region": {"x": 0, "y": 0, "width": 500, "height": 280},
-        }
-        response = self.client.post(
-            reverse("detect_spots"), data=payload, content_type="application/json"
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["count"], 2)
-        self.assertTrue(all(spot["y"] < 280 for spot in body["spots"]))
+
+SPOT_SHA256 = "cc0d979487ef228d5cb106c7e75d80787d94b41d67653b08ee70d60e028019c5"
+LINE_SHA256 = "895bd9e1971ed74c58bbb03fe78a6ba84b6f46747775e88c20d8239dd38b3869"
+
+
+def _det(cls: int, y: float, conf: float) -> dict[str, Any]:
+    return {"x1": 0.0, "y1": y - 60, "x2": 100.0, "y2": y + 60, "conf": conf, "cls": cls}
+
+
+class LineAssignmentTests(SimpleTestCase):
+    """Shilpa's baseline/front rules, without the model (tlc.detection.assign_lines)."""
+
+    MIN, MAX = 1, 0  # the deployed model's ids (SI Table S2)
+
+    def _assign(self, dets: list[dict[str, Any]], height: int = 1000) -> Any:
+        return assign_lines(dets, height, min_cls=self.MIN, max_cls=self.MAX)
+
+    def test_lower_line_is_the_baseline_whatever_its_class(self) -> None:
+        # Classes swapped relative to position: position wins.
+        result = self._assign([_det(self.MIN, 100, 0.9), _det(self.MAX, 800, 0.8)])
+        self.assertEqual(result, {"minY": 800, "maxY": 100, "estimated": None})
+
+    def test_most_confident_box_per_class_is_used(self) -> None:
+        dets = [
+            _det(self.MIN, 850, 0.3),
+            _det(self.MIN, 820, 0.7),
+            _det(self.MAX, 150, 0.6),
+            _det(self.MAX, 90, 0.2),
+        ]
+        self.assertEqual(self._assign(dets), {"minY": 820, "maxY": 150, "estimated": None})
+
+    def test_single_upper_line_is_the_front_and_baseline_is_estimated(self) -> None:
+        result = self._assign([_det(self.MAX, 120, 0.9)])
+        self.assertEqual(result, {"minY": 900.0, "maxY": 120, "estimated": "min"})
+
+    def test_single_lower_line_is_the_baseline_and_front_is_estimated(self) -> None:
+        result = self._assign([_det(self.MAX, 700, 0.9)])
+        self.assertEqual(result, {"minY": 700, "maxY": 100.0, "estimated": "max"})
+
+    def test_unknown_classes_and_no_detections_give_none(self) -> None:
+        self.assertIsNone(self._assign([]))
+        self.assertIsNone(self._assign([_det(7, 500, 0.9)]))
+
+
+class DetectLinesTests(SimpleTestCase):
+    """/detect-lines/ contract. The model needs a real plate to find lines, so
+    the success path stubs inference; the class mapping is checked on the real
+    session."""
+
+    def setUp(self) -> None:
+        self.client = Client()
+
+    def test_real_model_declares_max_then_min(self) -> None:
+        from tlc.inference import line_model
+
+        model, info = line_model()
+        self.assertEqual(model.names, {0: "max_line", 1: "min_line"})
+        self.assertEqual((model.class_id("min_line"), model.class_id("max_line")), (1, 0))
+        self.assertEqual(info.sha256, LINE_SHA256)
+        self.assertEqual(info.imgsz, 1024)
+
+    def test_blank_image_reports_no_lines(self) -> None:
+        payload = {"isLocalImage": True, "imageData": _blobs_data_url([])}
+        response = _post_json(self.client, "detect_lines", payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("No reference lines", response.json()["error"])
+
+    def test_detected_lines_are_returned_in_image_coordinates(self) -> None:
+        from tlc.inference import line_model
+
+        model, _ = line_model()
+        fake = [_det(1, 430, 0.8), _det(0, 60, 0.7)]
+        with mock.patch.object(model, "predict", return_value=fake):
+            payload = {"isLocalImage": True, "imageData": _blobs_data_url([])}
+            body = _post_json(self.client, "detect_lines", payload).json()
+        self.assertEqual((body["minY"], body["maxY"], body["estimated"]), (430, 60, None))
+        self.assertEqual(body["model"]["name"], "TLC-LineDet")
+
+    def test_inference_failure_is_a_500_without_details(self) -> None:
+        from tlc.inference import line_model
+
+        model, _ = line_model()
+        with mock.patch.object(model, "predict", side_effect=RuntimeError("secret detail")):
+            payload = {"isLocalImage": True, "imageData": _blobs_data_url([])}
+            with self.assertLogs("tlc.views", level="ERROR"):
+                response = _post_json(self.client, "detect_lines", payload)
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn("secret", response.json()["error"])
+
+
+class ModelLoadingTests(SimpleTestCase):
+    def test_concurrent_first_use_builds_one_session(self) -> None:
+        import threading
+
+        from tlc import inference
+
+        built: list[str] = []
+
+        class Fake:
+            imgsz = 1
+
+            def __init__(self, path: str, sess_options: object = None) -> None:
+                built.append(path)
+                time.sleep(0.05)  # widen the race window
+                self.sess = mock.Mock()
+                self.sess.get_modelmeta.return_value.custom_metadata_map = {}
+
+        with mock.patch.dict(inference._sessions, clear=True):
+            threads = [
+                threading.Thread(
+                    target=inference._load,
+                    args=("k", "Fake", settings.SPOT_MODEL_PATH, Fake),
+                )
+                for _ in range(8)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(len(built), 1)
 
 
 class ServeImageSecurityTests(SimpleTestCase):
@@ -510,6 +651,13 @@ class SettingsDerivationTests(SimpleTestCase):
         self.assertIn("CSRF ['https://tlc.example.org']", out)  # derived from ALLOWED_HOSTS
 
 
+class SpotThresholdTests(SimpleTestCase):
+    def test_setting_states_the_cutoff_built_into_the_model(self) -> None:
+        """spot_best.onnx returns no scores below 0.25, so a lower setting
+        would claim a sensitivity it does not have."""
+        self.assertEqual(settings.SPOT_CONF_DEFAULT, 0.25)
+
+
 class TextScaleTests(SimpleTestCase):
     """Annotation text-size multiplier: parsing/clamping and its effect."""
 
@@ -652,6 +800,7 @@ class DetectSpotsErrorTests(SimpleTestCase):
 
     def test_get_is_rejected(self) -> None:
         self.assertEqual(self.client.get(reverse("detect_spots")).status_code, 405)
+        self.assertEqual(self.client.get(reverse("detect_lines")).status_code, 405)
 
     def test_invalid_json_is_rejected(self) -> None:
         response = self.client.post(

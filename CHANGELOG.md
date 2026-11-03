@@ -4,6 +4,41 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] — Unreleased
+
+Joins Shilpa Bai Thotli's ONNX-based TLC Analyser (the tool described in the
+paper's Supplementary Information) with the version-2 stack and UI. Results
+follow the SI; candidate detection is Shilpa's.
+
+### Changed (breaking)
+
+- Candidate detection uses the trained models **TLC-SpotDet**
+  (`spot_best.onnx`) and **TLC-LineDet** (`line_best.onnx`) instead of the
+  LoG / lane-peak detector. scikit-image and SciPy are no longer dependencies.
+- `POST /detect-spots/` requires `minY` and `maxY`: spots are searched only
+  between the baseline and the solvent front (±12 px), as in Shilpa's tool. A
+  Plate Area additionally limits the x-range. The response adds `conf` per
+  spot, `roi`, and `model`. Candidates need a confidence of at least 0.25,
+  the cutoff built into `spot_best.onnx` (it returns no lower scores; the
+  0.15 of Shilpa's tool therefore found no more).
+- The "ring marks" detection option is removed (it applied only to the LoG
+  detector).
+
+### Added
+
+- `POST /detect-lines/` and a **Detect Lines** button: proposes the baseline
+  and solvent front, assigned by position, with an estimate (flagged in the
+  response and the UI) when only one line is found.
+- Detection responses identify the model (name, file, SHA-256, export date).
+- `ONNX_INTRA_OP_THREADS` caps ONNX Runtime's per-inference threads; the
+  server is sized for the models (2 workers x 4 threads).
+
+### Fixed
+
+- The TLC-LineDet class ids were hard-coded the wrong way round in Shilpa's
+  view; they are now read from the model (no effect on results, which are
+  assigned by position).
+
 ## [2.0.0] — 2026-07-27
 
 A full hardening, modernization, and feature overhaul of the v1 tool.

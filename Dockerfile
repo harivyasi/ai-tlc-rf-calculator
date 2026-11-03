@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 # uv is copied from its official image (pinned by tag).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /bin/uv
 
 WORKDIR /code
 
@@ -33,7 +33,11 @@ FROM python:3.14-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    # Cap native thread pools (OpenBLAS in the cv2 wheel, OpenMP). ONNX Runtime
+    # has its own cap, ONNX_INTRA_OP_THREADS (default 2).
+    OMP_NUM_THREADS=2 \
+    OPENBLAS_NUM_THREADS=2
 
 # opencv-python-headless needs libglib2.0 at runtime (no OpenGL required).
 # Create an unprivileged user to run the app.
