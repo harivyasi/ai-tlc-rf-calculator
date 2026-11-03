@@ -6,10 +6,12 @@ spot. Images arrive either from an Electronic Lab Notebook (ELN) via a remote
 URL, or as a local upload whose bytes are sent base64-encoded in the request
 body.
 
-RF is defined as the distance travelled by a spot divided by the distance
-travelled by the solvent front::
+RF is the distance travelled by a spot divided by the distance travelled by
+the solvent front, both measured from the baseline (SI Eq. 8)::
 
-    rf = (spot_y - min_line_y) / (max_line_y - min_line_y)
+    rf = (y_baseline - y_spot) / (y_baseline - y_front)
+
+Image y grows downwards, so the baseline (Min line) has the larger y.
 """
 
 from __future__ import annotations
@@ -287,6 +289,30 @@ def _oversize_error(image: np.ndarray) -> JsonResponse | None:
 # RF calculation
 # ---------------------------------------------------------------------------
 
+
+def _number(raw: Any) -> float | None:
+    """Return ``raw`` as a finite float, or ``None`` (bools are not numbers)."""
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        return None
+    value = float(raw)
+    return value if np.isfinite(value) else None
+
+
+def rf_from_positions(*, y_baseline: float, y_front: float, y_spot: float) -> float | None:
+    """Rf of a spot, or ``None`` if it lies outside the baseline-to-front interval.
+
+    Implements SI Eq. 8, ``Rf = (y_baseline - y_spot) / (y_baseline - y_front)``,
+    and keeps the spot when ``0 <= Rf <= 1`` (Eq. 9). The test is made on the
+    unrounded value; rounding to two decimals is for reporting only, so a spot
+    at Rf 0.996 is kept (reported as 1.0) and one exactly on the baseline is kept
+    as Rf 0.0. Requires ``y_baseline > y_front``.
+    """
+    rf = (y_baseline - y_spot) / (y_baseline - y_front)
+    if rf < 0.0 or rf > 1.0:
+        return None
+    return round(rf, 2)
+
+
 _RED = (0, 0, 255)
 _BLUE = (255, 0, 0)
 _ORANGE = (0, 165, 255)
@@ -399,10 +425,24 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     if not min_line or not max_line:
         return JsonResponse({"error": 'Please add "min" and "max" lines.'}, status=400)
 
-    min_y = min_line["y"]
-    max_y = max_line["y"]
-    if max_y == min_y:
-        return JsonResponse({"error": '"min" and "max" lines must differ.'}, status=400)
+    # Submitted coordinates must be numbers (SI 11.1).
+    min_y = _number(min_line.get("y"))
+    max_y = _number(max_line.get("y"))
+    points = [(_number(spot.get("x")), _number(spot.get("y"))) for spot in spots]
+    if min_y is None or max_y is None or any(x is None or y is None for x, y in points):
+        return JsonResponse({"error": "Line and spot positions must be numbers."}, status=400)
+
+    # Image y grows downwards, so the baseline (Min) must have the larger y
+    # (SI 5.2, Eq. 4). This also refuses coincident lines, which would make the
+    # solvent-front distance zero.
+    if min_y <= max_y:
+        return JsonResponse(
+            {
+                "error": "Min must be the baseline below the Max line (the solvent front). "
+                "Swap or move the lines."
+            },
+            status=400,
+        )
 
     # Load the source image from the appropriate origin.
     image, base_name, error = _load_annotation_image(data)
@@ -411,14 +451,11 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     assert image is not None  # guaranteed when error is None
 
     rf_values: list[dict[str, Any]] = []
-    for spot in spots:
-        x = spot["x"]
-        y = spot["y"]
-        rf_value = round((y - min_y) / (max_y - min_y), 2)
-
-        # Keep only physically meaningful values strictly between 0 and 1.
-        if rf_value <= 0.0 or rf_value >= 1.0:
-            continue
+    for x, y in points:
+        assert x is not None and y is not None  # checked above
+        rf_value = rf_from_positions(y_baseline=min_y, y_front=max_y, y_spot=y)
+        if rf_value is None:
+            continue  # below the baseline or above the front (SI 7.6)
 
         closest_vertical = min(
             (line for line in lines if line.get("type") == "vertical"),

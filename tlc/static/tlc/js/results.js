@@ -57,15 +57,7 @@ export function calculateRF() {
     const data = Object.assign({ lines: state.lines, spots: state.spots }, getImagePayload());
     showOverlay("Calculating RF values…");
 
-    fetch("/calculate_rf/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
-        body: JSON.stringify(data),
-    })
-        .then((response) => {
-            if (!response.ok) throw new Error("HTTP " + response.status);
-            return response.json();
-        })
+    postJson("/calculate_rf/", data)
         .then((result) => {
             hideOverlay();
             if (result.rf_values && result.rf_values.length > 0) {
@@ -85,12 +77,14 @@ export function calculateRF() {
         .catch((error) => {
             hideOverlay();
             console.error("Error calculating RF:", error);
-            notify("Failed to calculate RF values.", "error");
+            notify(error.message || "Failed to calculate RF values.", "error");
         });
 }
 
 // --- Candidate detection (TLC-SpotDet / TLC-LineDet) ---------------------
-function postDetection(url, payload) {
+// POST JSON; on failure, reject with the server's user-facing ``error`` when
+// it sent one (the 400s explain what to fix), else a generic HTTP status.
+function postJson(url, payload) {
     return fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
@@ -125,7 +119,7 @@ export function autoDetectSpots() {
     payload.minY = minLine.y;
     payload.maxY = maxLine.y;
     if (state.plateRegion) payload.region = state.plateRegion;
-    postDetection("/detect-spots/", payload)
+    postJson("/detect-spots/", payload)
         .then((result) => {
             hideOverlay();
             let added = 0;
@@ -156,7 +150,7 @@ export function autoDetectLines() {
         return;
     }
     showOverlay("Detecting reference lines…");
-    postDetection("/detect-lines/", getImagePayload())
+    postJson("/detect-lines/", getImagePayload())
         .then((result) => {
             hideOverlay();
             const r = state.plateRegion;

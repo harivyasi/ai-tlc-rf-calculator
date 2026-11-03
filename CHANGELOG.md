@@ -28,6 +28,10 @@ gives identical detection results.
   (±12 px); a Plate Area also limits the x-range. Responses name the model
   (file, SHA-256, export date). Candidates need a confidence of at least
   0.25, the cutoff built into `spot_best.onnx` (it returns no lower scores).
+- A spot is kept when **0 ≤ Rf ≤ 1**, tested before rounding; before, 0 and
+  1 were excluded after rounding, so a spot on the baseline was dropped.
+- Calculate RF refuses a baseline at or above the solvent front, and
+  positions that are not numbers, with a message.
 
 ### Added
 
