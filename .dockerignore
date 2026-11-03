@@ -1,0 +1,28 @@
+# Version control / meta
+.git
+.gitignore
+.dockerignore
+Dockerfile
+
+# Python caches / local env
+.venv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.python-version
+
+# Regenerated in the image / runtime-only
+staticfiles/
+media/*
+!media/.gitkeep
+
+# Dev-, test-, and docs-only (not needed at runtime)
+e2e/
+eln_related_docs/
+docs/
+.github/
+.gitlab-ci.yml
+.pre-commit-config.yaml
+*.md
