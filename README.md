@@ -495,6 +495,7 @@ circle_detector/ml_models/line_best.onnx
 
 ## License
 
+Released under the MIT License. See [LICENSE](LICENSE).
 
 ## Maintainer
 
