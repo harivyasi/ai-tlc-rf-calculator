@@ -23,6 +23,11 @@ follow the SI; candidate detection is Shilpa's.
   0.15 of Shilpa's tool therefore found no more).
 - The "ring marks" detection option is removed (it applied only to the LoG
   detector).
+- Rf retention follows SI Eq. 9: spots with **0 ≤ Rf ≤ 1** are kept, tested
+  before rounding. Previously 0 and 1 were excluded after rounding, so a spot
+  on the baseline was dropped.
+- `calculate_rf` rejects a Min line above the Max line (SI Eq. 4) and
+  non-numeric positions.
 
 ### Added
 

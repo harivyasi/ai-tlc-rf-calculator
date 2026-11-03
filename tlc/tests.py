@@ -32,6 +32,7 @@ from tlc.views import (
     _parse_region,
     _parse_text_scale,
     _resolve_within_media,
+    rf_from_positions,
 )
 
 
@@ -680,6 +681,33 @@ class TextScaleTests(SimpleTestCase):
         self.assertGreater(red_label_pixels(3.0), red_label_pixels(1.0))
 
 
+class RfEquationTests(SimpleTestCase):
+    """SI section 7.3: Eq. 8 and the retention rule of Eq. 9."""
+
+    def rf(self, spot: float, baseline: float = 900, front: float = 100) -> float | None:
+        return rf_from_positions(y_baseline=baseline, y_front=front, y_spot=spot)
+
+    def test_equation_8(self) -> None:
+        # d_spot / d_front = (900 - 500) / (900 - 100)
+        self.assertEqual(self.rf(500), 0.5)
+        self.assertEqual(self.rf(700), 0.25)
+        self.assertEqual(self.rf(260), 0.8)
+
+    def test_retention_is_inclusive_and_tested_before_rounding(self) -> None:
+        self.assertEqual(self.rf(900), 0.0)
+        self.assertEqual(self.rf(100), 1.0)
+        self.assertEqual(self.rf(103), 1.0)  # Rf 0.99625: kept, reported as 1.0
+        self.assertIsNone(self.rf(900.5))  # just below the baseline
+        self.assertIsNone(self.rf(99.5))  # just above the front
+
+    def test_matches_shilpas_tool_inside_the_open_interval(self) -> None:
+        # Her rule (round, then keep 0 < Rf < 1) agrees everywhere it kept a spot.
+        for spot in range(105, 896, 7):
+            shilpa = round((900 - spot) / (900 - 100), 2)
+            if 0.0 < shilpa < 1.0:
+                self.assertEqual(self.rf(spot), shilpa, spot)
+
+
 class CalculateRfValidationTests(SimpleTestCase):
     """Request-validation and image-loading error branches of calculate_rf."""
 
@@ -754,13 +782,38 @@ class CalculateRfValidationTests(SimpleTestCase):
         with mock.patch("tlc.views.MAX_IMAGE_PIXELS", 1000):  # 300x300 exceeds this
             self.assertEqual(self._post(_valid_payload()).status_code, 400)
 
-    def test_rf_outside_zero_to_one_is_skipped(self) -> None:
+    def test_spots_outside_the_interval_are_skipped_but_its_ends_kept(self) -> None:
+        # SI Eq. 9: 0 <= Rf <= 1 is kept. On the baseline is Rf 0 (the compound
+        # did not move); on the front is Rf 1. Below/above them is excluded.
         payload = _valid_payload()
         payload["lines"] = [{"type": "min", "y": 200}, {"type": "max", "y": 0}]
-        payload["spots"] = [{"x": 150, "y": 200}]  # rf == 0 -> filtered out
+        payload["spots"] = [
+            {"x": 10, "y": 200},  # on the baseline -> 0.0
+            {"x": 20, "y": 0},  # on the front -> 1.0
+            {"x": 30, "y": 201},  # below the baseline -> excluded
+            {"x": 40, "y": -1},  # above the front -> excluded
+        ]
         response = self._post(payload)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["rf_values"], [])
+        self.assertEqual([v["rf"] for v in response.json()["rf_values"]], [0.0, 1.0])
+
+    def test_min_above_max_is_rejected(self) -> None:
+        # SI Eq. 4: the baseline must be below the solvent front.
+        payload = _valid_payload()
+        payload["lines"] = [{"type": "min", "y": 0}, {"type": "max", "y": 200}]
+        response = self._post(payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("baseline below", response.json()["error"])
+
+    def test_non_numeric_positions_are_rejected(self) -> None:
+        for lines, spots in (
+            ([{"type": "min", "y": "200"}, {"type": "max", "y": 0}], [{"x": 1, "y": 100}]),
+            ([{"type": "min", "y": 200}, {"type": "max", "y": 0}], [{"x": 1}]),
+            ([{"type": "min", "y": 200}, {"type": "max", "y": 0}], [{"x": True, "y": 100}]),
+        ):
+            payload = _valid_payload()
+            payload["lines"], payload["spots"] = lines, spots
+            self.assertEqual(self._post(payload).status_code, 400, (lines, spots))
 
     def test_rotation_180_swaps_nothing_270_swaps_dims(self) -> None:
         # 180° keeps WxH; 270° swaps them. Exercises both _rotate_image branches.

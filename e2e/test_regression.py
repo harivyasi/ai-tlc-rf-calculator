@@ -1034,3 +1034,24 @@ def test_export_eln_shows_all_four(page, servers, test_image_path):
     page.goto(servers["new"] + "/?url=http%3A%2F%2Feln.example%2Fplate.png")
     page.wait_for_function(_IMAGE_READY)
     assert page.evaluate(_EXPORT_VISIBLE) == 4
+
+
+def test_min_above_max_is_explained_not_computed(page, servers, test_image_path):
+    """SI Eq. 4: the baseline must lie below the solvent front. Swapped lines
+    get the server's explanation instead of a generic failure."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 50})  # Min near the top: wrong
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("text=baseline below", timeout=10000)
+    assert page.locator("#values-table tbody tr").count() == 0
