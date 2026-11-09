@@ -54,6 +54,38 @@ follow the SI; candidate detection is Shilpa's.
   placing; "full labels" option for the saved image; compact numbered table
   with lane/compound type columns. Min/Max buttons hide once placed. H-lines
   are black.
+- `POST /upload-image/`: a local image is stored once and later requests
+  refer to it by name, instead of each carrying the whole image (~17 MB for a
+  13 MB phone photo). Requests fall back to sending it inline if the upload
+  fails.
+- Files in `MEDIA_ROOT` are deleted automatically once unused for
+  `MEDIA_MAX_AGE_HOURS` (default 24), checked at most every
+  `MEDIA_SWEEP_MINUTES` (default 15); no cron job needed. An image counts as
+  used whenever a request reads it. `cleanup_media` shares the code and
+  defaults to the same age.
+- Image jobs start only when the memory they need is free (estimated from
+  the pixel count and whether the image is already decoded: ~760 MB for a
+  50 MP photo decoded afresh; read from the container's cgroup, else
+  `/proc/meminfo`; claims shared between workers). Otherwise they wait up to
+  30 s, then get 503 "busy, try again". In a container with 2 workers x 4
+  threads, 1.5 GB served eight 50 MP requests at once (peak 1.26 GB).
+  Settings: `IMAGE_JOB_RESERVE_MB`, `IMAGE_JOB_WAIT_SECONDS`,
+  `IMAGE_JOB_CLAIMS_FILE`.
+- Each worker keeps recently decoded images (`IMAGE_CACHE_MB`, default 256),
+  so Detect Lines, Detect Spots and Calculate RF decode a plate once: on a
+  50 MP photo the three steps take 7.3 s instead of 10.4 s, and peak memory
+  halves.
+
+### Changed
+
+- ONNX Runtime's CPU memory arena is off (`ONNX_CPU_MEM_ARENA`): it held
+  ~500 MB per worker after a large plate; results are identical and speed
+  the same within noise. Freed memory is returned to the system after each
+  image job.
+- `SECRET_KEY` is optional: nothing in the app signs data with it, so a
+  random key is made at start-up when it is not set. A deployment needs only
+  `ALLOWED_HOSTS` and `ELN_ORIGIN`. Should logins, sessions or messages be
+  added later, production refuses to start until a fixed key is set.
 
 ### Fixed
 
@@ -69,6 +101,12 @@ follow the SI; candidate detection is Shilpa's.
 - Uploads to the ELN no longer send this app's CSRF token to Chemotion, and
   name the file (`TLC_Rf_2026-11-09_14-32.csv`) instead of a bare timestamp.
   A refused upload is reported as a failure; it used to say "Saved".
+- Image size limits are checked from the file header, before decoding;
+  an oversized image used to be decoded in full first. ELN images are
+  validated the same way (they were decoded in full only to check them)
+  and stored under their real format.
+- `/healthz` answers over plain HTTP in production instead of redirecting to
+  HTTPS, so health probes from inside a cluster or host see "ok".
 
 ### Removed
 

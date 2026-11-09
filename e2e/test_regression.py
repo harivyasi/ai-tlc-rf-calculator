@@ -1387,6 +1387,48 @@ def test_full_labels_switch_reaches_the_server(page, servers, test_image_path):
     assert info.value.post_data_json["labelMode"] == "full"
 
 
+# --- Local image uploaded once -------------------------------------------------
+
+
+def test_local_image_is_uploaded_once_then_referenced(page, servers, test_image_path):
+    """The image travels once; detection and calculation send only its name."""
+    uploads, bodies = [], []
+    page.on("request", lambda r: "/upload-image/" in r.url and uploads.append(r))
+    page.on(
+        "request",
+        lambda r: (
+            any(p in r.url for p in ("/calculate_rf/", "/detect-"))
+            and bodies.append(r.post_data_json)
+        ),
+    )
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Detect Spots')")
+    page.wait_for_selector("text=/spot/i", timeout=20000)
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+
+    assert len(uploads) == 1
+    assert len(bodies) == 2
+    for body in bodies:
+        assert body["imageData"] is None and body["imageSrc"].endswith(".png"), body
+    assert float(_cell(page, "rf")) == 0.5
+
+
+def test_failed_upload_falls_back_to_sending_the_image(page, servers, test_image_path):
+    page.route("**/upload-image/", lambda route: route.fulfill(status=500, body="{}"))
+    bodies = []
+    page.on("request", lambda r: "/calculate_rf/" in r.url and bodies.append(r.post_data_json))
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert bodies[0]["imageData"].startswith("data:image/"), "fallback did not send the image"
+    assert float(_cell(page, "rf")) == 0.5
+
+
 def test_placing_a_line_across_another_does_not_move_it(page, servers, test_image_path):
     """With a line tool armed, clicking where it crosses an existing line places
     the new line only. It used to start a drag of the existing line too (nudging

@@ -15,32 +15,43 @@ import { commitChange, redrawCanvas } from "./canvas.js";
 import { commitHistory } from "./history.js";
 
 // --- Image payload (shared by calculate + detection) ----------------------
+// Resolves to the image fields of a request. A local image is referred to by
+// the name it was uploaded under (sources.js); only if that upload failed is
+// the whole image sent inline, as before.
 export function getImagePayload() {
-    let payload;
+    const extras = (payload) => {
+        payload.rotation = state.rotation; // backend re-orients to match the displayed image
+        payload.textScale = textScale(); // label text-size multiplier for the saved image
+        const full = document.getElementById("label-full");
+        payload.labelMode = full && full.checked ? "full" : "numbers";
+        return payload;
+    };
     if (state.isLocalImage) {
-        payload = {
-            imageSrc: window.currentImageFileName || "local_upload.png",
-            isLocalImage: true,
-            imageData: state.image.src,
-        };
-    } else {
-        try {
-            const parsed = new URL(state.image.src);
-            const filePath = parsed.searchParams.get("file_path");
-            payload = {
-                imageSrc: decodeURIComponent(filePath).split("/").pop(),
-                isLocalImage: false,
-                imageData: null,
-            };
-        } catch (err) {
-            payload = { imageSrc: "unknown_image.png", isLocalImage: false, imageData: null };
-        }
+        return Promise.resolve(state.localImageUpload).then((stored) =>
+            extras(
+                stored
+                    ? { imageSrc: stored, isLocalImage: true, imageData: null }
+                    : {
+                          imageSrc: window.currentImageFileName || "local_upload.png",
+                          isLocalImage: true,
+                          imageData: state.image.src,
+                      },
+            ),
+        );
     }
-    payload.rotation = state.rotation; // backend re-orients to match the displayed image
-    payload.textScale = textScale(); // label text-size multiplier for the saved image
-    const full = document.getElementById("label-full");
-    payload.labelMode = full && full.checked ? "full" : "numbers";
-    return payload;
+    let payload;
+    try {
+        const parsed = new URL(state.image.src);
+        const filePath = parsed.searchParams.get("file_path");
+        payload = {
+            imageSrc: decodeURIComponent(filePath).split("/").pop(),
+            isLocalImage: false,
+            imageData: null,
+        };
+    } catch (err) {
+        payload = { imageSrc: "unknown_image.png", isLocalImage: false, imageData: null };
+    }
+    return Promise.resolve(extras(payload));
 }
 
 // --- RF calculation -------------------------------------------------------
@@ -56,10 +67,11 @@ export function calculateRF() {
         return;
     }
 
-    const data = Object.assign({ lines: state.lines, spots: state.spots }, getImagePayload());
     showOverlay("Calculating RF values…");
-
-    postJson("/calculate_rf/", data)
+    getImagePayload()
+        .then((image) =>
+            postJson("/calculate_rf/", Object.assign({ lines: state.lines, spots: state.spots }, image)),
+        )
         .then((result) => {
             hideOverlay();
             if (result.rf_values && result.rf_values.length > 0) {
@@ -118,11 +130,13 @@ export function autoDetectSpots() {
         return;
     }
     showOverlay("Detecting spots…");
-    const payload = getImagePayload();
-    payload.minY = minLine.y;
-    payload.maxY = maxLine.y;
-    if (state.plateRegion) payload.region = state.plateRegion;
-    postJson("/detect-spots/", payload)
+    getImagePayload()
+        .then((payload) => {
+            payload.minY = minLine.y;
+            payload.maxY = maxLine.y;
+            if (state.plateRegion) payload.region = state.plateRegion;
+            return postJson("/detect-spots/", payload);
+        })
         .then((result) => {
             hideOverlay();
             let added = 0;
@@ -153,9 +167,11 @@ export function autoDetectLines() {
         return;
     }
     showOverlay("Detecting reference lines…");
-    const payload = getImagePayload();
-    if (state.plateRegion) payload.region = state.plateRegion;
-    postJson("/detect-lines/", payload)
+    getImagePayload()
+        .then((payload) => {
+            if (state.plateRegion) payload.region = state.plateRegion;
+            return postJson("/detect-lines/", payload);
+        })
         .then((result) => {
             hideOverlay();
             const r = state.plateRegion;

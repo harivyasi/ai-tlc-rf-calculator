@@ -6,7 +6,7 @@
 "use strict";
 
 import { elnUrl, state } from "./state.js";
-import { notify } from "./ui-kit.js";
+import { getCookie, notify } from "./ui-kit.js";
 import {
     clearResultsStale,
     collapseImageSource,
@@ -57,11 +57,27 @@ export function handleLocalImageFile(file) {
         return;
     }
     const reader = new FileReader();
-    reader.onload = (e) => loadLocalImage(e.target.result, file.name);
+    reader.onload = (e) => loadLocalImage(e.target.result, file.name, file);
     reader.readAsDataURL(file);
 }
 
-function loadLocalImage(dataURL, fileName) {
+// Store the file on the server once. Resolves to its stored name, or null if
+// the upload fails -- requests then fall back to sending the image inline.
+function uploadLocalImage(file) {
+    const form = new FormData();
+    form.append("image", file, file.name);
+    return fetch("/upload-image/", {
+        method: "POST",
+        headers: { "X-CSRFToken": getCookie("csrftoken") },
+        body: form,
+    })
+        .then((response) => response.json().then((body) => (response.ok ? body.imagePath : null)))
+        .catch(() => null);
+}
+
+function loadLocalImage(dataURL, fileName, file) {
+    // Start the upload while the image is decoded and drawn.
+    state.localImageUpload = file ? uploadLocalImage(file) : Promise.resolve(null);
     state.rotation = 0;
     state.image = new Image();
     state.image.onload = function () {

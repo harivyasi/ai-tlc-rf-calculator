@@ -6,11 +6,14 @@ import base64
 import csv
 import glob
 import io
+import json
 import os
 import shutil
 import socket
 import tempfile
+import threading
 import time
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -18,13 +21,14 @@ import cv2
 import numpy as np
 import requests
 from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client, SimpleTestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
 from config.env import csrf_origins_from_hosts, env_bool, env_int, env_list, host_of
-from tlc import results
+from tlc import admission, imagecache, media, results
 from tlc.detection import assign_lines
 from tlc.views import (
     _decode_data_url,
@@ -480,6 +484,26 @@ class DetectLinesTests(SimpleTestCase):
         self.assertNotIn("secret", response.json()["error"])
 
 
+class OnnxArenaTests(SimpleTestCase):
+    def test_sessions_are_built_without_the_memory_arena(self) -> None:
+        """The arena held ~500 MB per worker after a 50 MP plate."""
+        from tlc import inference
+
+        captured = []
+
+        class Fake:
+            imgsz = 640
+
+            def __init__(self, path: str, sess_options: Any) -> None:
+                captured.append(sess_options)
+                self.sess = mock.Mock()
+                self.sess.get_modelmeta.return_value.custom_metadata_map = {}
+
+        with mock.patch.dict(inference._sessions, {}, clear=True):
+            inference._load("x", "X", Path(settings.LINE_MODEL_PATH), Fake)
+        self.assertFalse(captured[0].enable_cpu_mem_arena)
+
+
 class ModelLoadingTests(SimpleTestCase):
     def test_concurrent_first_use_builds_one_session(self) -> None:
         import threading
@@ -670,6 +694,403 @@ class CleanupMediaCommandTests(SimpleTestCase):
             shutil.rmtree(tmp)
 
 
+class MediaSweepTests(SimpleTestCase):
+    """Automatic pruning of MEDIA_ROOT (tlc/media.py)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        media._last_sweep = 0.0
+        self.addCleanup(setattr, media, "_last_sweep", 0.0)
+
+    def _file(self, name: str, age_hours: float) -> str:
+        path = os.path.join(self.tmp, name)
+        open(path, "w").close()
+        stamp = time.time() - age_hours * 3600
+        os.utime(path, (stamp, stamp))
+        return path
+
+    def test_write_prunes_files_unused_for_the_max_age(self) -> None:
+        old = self._file("old.png", 30)
+        recent = self._file("recent.png", 2)
+        keep = self._file(".gitkeep", 300)
+        with self.settings(MEDIA_ROOT=self.tmp, MEDIA_MAX_AGE_HOURS=24):
+            media.write("new.csv", "x")
+        self.assertFalse(os.path.exists(old))
+        self.assertTrue(os.path.exists(recent))
+        self.assertTrue(os.path.exists(keep))
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "new.csv")))
+
+    def test_sweeps_at_most_once_per_interval(self) -> None:
+        with self.settings(MEDIA_ROOT=self.tmp, MEDIA_MAX_AGE_HOURS=24, MEDIA_SWEEP_MINUTES=15):
+            media.write("a.png", b"x")
+            old = self._file("old.png", 30)
+            media.write("b.png", b"x")
+            self.assertTrue(os.path.exists(old))  # swept a moment ago
+            media._last_sweep -= 16 * 60
+            media.write("c.png", b"x")
+            self.assertFalse(os.path.exists(old))
+
+    def test_zero_max_age_turns_sweeps_off(self) -> None:
+        old = self._file("old.png", 1000)
+        with self.settings(MEDIA_ROOT=self.tmp, MEDIA_MAX_AGE_HOURS=0):
+            media.write("a.png", b"x")
+        self.assertTrue(os.path.exists(old))
+
+    def test_an_image_in_use_is_kept(self) -> None:
+        """Age counts from the last request that read the image."""
+        name = "plate.png"
+        path = os.path.join(self.tmp, name)
+        cv2.imwrite(path, np.full((40, 40, 3), 255, np.uint8))
+        stamp = time.time() - 30 * 3600
+        os.utime(path, (stamp, stamp))
+        with self.settings(MEDIA_ROOT=self.tmp, MEDIA_MAX_AGE_HOURS=24):
+            _post_json(self.client, "detect_lines", {"imageSrc": name})
+            media.write("other.csv", "x")
+        self.assertTrue(os.path.exists(path))
+
+    def test_a_pruned_image_asks_to_load_it_again(self) -> None:
+        with self.settings(MEDIA_ROOT=self.tmp):
+            response = _post_json(self.client, "detect_lines", {"imageSrc": "gone.png"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("load it again", response.json()["error"])
+
+    def test_upload_endpoint_triggers_a_sweep(self) -> None:
+        old = self._file("old.png", 30)
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8)).save(buffer, "PNG")
+        upload = SimpleUploadedFile("p.png", buffer.getvalue(), content_type="image/png")
+        with self.settings(MEDIA_ROOT=self.tmp, MEDIA_MAX_AGE_HOURS=24):
+            response = self.client.post(reverse("upload_image_file"), {"image": upload})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(os.path.exists(old))
+
+
+class AdmissionTests(SimpleTestCase):
+    """Image jobs start when the memory they need is free (tlc/admission.py)."""
+
+    MB = 1024 * 1024
+
+    def setUp(self) -> None:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        self.claims_file = os.path.join(tmp, "claims.json")
+        override = self.settings(IMAGE_JOB_CLAIMS_FILE=self.claims_file)
+        override.enable()
+        self.addCleanup(override.disable)
+        # A large machine, so the reserve is the configured one everywhere.
+        for name, value in (("_cgroup_limit", None), ("_meminfo_field", 64 * 1024 * self.MB)):
+            patcher = mock.patch(f"tlc.admission.{name}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_another_workers_claim_counts(self) -> None:
+        """Two workers checking at once must not both take the same memory."""
+        with open(self.claims_file, "w") as fh:
+            json.dump({str(os.getppid()): 1000 * self.MB}, fh)  # a live process
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=2000 * self.MB),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=0),
+            self.assertRaises(admission.Busy),
+            admission.admit(1000 * self.MB),
+        ):
+            pass
+
+    def test_a_dead_workers_claim_is_dropped(self) -> None:
+        dead = 2**22 + 12345  # above Linux's pid_max default: never alive
+        with open(self.claims_file, "w") as fh:
+            json.dump({str(dead): 1000 * self.MB}, fh)
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=2000 * self.MB),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=0),
+            admission.admit(1000 * self.MB),
+        ):
+            with open(self.claims_file) as fh:
+                self.assertEqual(json.load(fh), {str(os.getpid()): 1000 * self.MB})
+        with open(self.claims_file) as fh:
+            self.assertEqual(json.load(fh), {})
+
+    def test_the_estimate_is_renewed_while_waiting(self) -> None:
+        estimates = iter([1500 * self.MB, 500 * self.MB])
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=1000 * self.MB),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=2),
+            admission.admit(lambda: next(estimates)),
+        ):
+            pass
+
+    def test_runs_when_it_fits(self) -> None:
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=2000 * self.MB),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=0),
+            admission.admit(1000 * self.MB),
+        ):
+            pass
+
+    def test_busy_when_it_does_not_fit_in_time(self) -> None:
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=1200 * self.MB),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=0),
+            self.assertRaises(admission.Busy),
+            admission.admit(1000 * self.MB),  # 1200 - 300 reserve < 1000
+        ):
+            pass
+
+    def test_running_jobs_count_against_free_memory(self) -> None:
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=2000 * self.MB),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=0),
+            admission.admit(1000 * self.MB),
+            self.assertRaises(admission.Busy),
+            admission.admit(1000 * self.MB),  # 2000 - 300 - 1000 claimed < 1000
+        ):
+            pass
+
+    def test_a_waiting_job_starts_when_one_finishes(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def first() -> None:
+            with admission.admit(1000 * self.MB):
+                started.set()
+                release.wait(5)
+
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=2000 * self.MB),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=5),
+        ):
+            thread = threading.Thread(target=first)
+            thread.start()
+            started.wait(5)
+            threading.Timer(0.2, release.set).start()
+            with admission.admit(1000 * self.MB):
+                self.assertTrue(release.is_set())
+            thread.join()
+
+    def test_job_bytes_follow_the_measurements(self) -> None:
+        mp50 = 6120 * 8160
+        self.assertEqual(admission.job_bytes(6120, 8160), 16 * mp50)
+        self.assertEqual(admission.job_bytes(6120, 8160, cached=True), 7 * mp50)
+        self.assertEqual(admission.job_bytes(6120, 8160, kind="lines", cached=True), 2 * mp50)
+        self.assertEqual(admission.job_bytes(6120, 8160, kind="spots", cached=True), 5 * mp50)
+
+    def test_reserve_is_at_most_a_tenth_of_the_total(self) -> None:
+        mock.patch.stopall()  # this test sets the totals itself
+        with (
+            self.settings(IMAGE_JOB_RESERVE_MB=300),
+            mock.patch("tlc.admission._cgroup_limit", return_value=1500 * self.MB),
+            mock.patch("tlc.admission._meminfo_field", return_value=8000 * self.MB),
+        ):
+            self.assertEqual(admission.reserve_bytes(), 150 * self.MB)
+        with (
+            self.settings(IMAGE_JOB_RESERVE_MB=300),
+            mock.patch("tlc.admission._cgroup_limit", return_value=None),
+            mock.patch("tlc.admission._meminfo_field", return_value=8000 * self.MB),
+        ):
+            self.assertEqual(admission.reserve_bytes(), 300 * self.MB)
+        self.assertEqual(
+            admission.job_bytes(10, 10, load_models=True, extra=5),
+            1600 + admission.MODEL_LOAD_BYTES + 5,
+        )
+
+    def test_cache_is_released_once_before_waiting(self) -> None:
+        readings = iter([1000 * self.MB, 2000 * self.MB])
+        release = mock.Mock()
+        with (
+            mock.patch("tlc.admission.free_bytes", side_effect=lambda: next(readings)),
+            self.settings(IMAGE_JOB_RESERVE_MB=300, IMAGE_JOB_WAIT_SECONDS=0),
+            admission.admit(1000 * self.MB, release=release),
+        ):
+            pass
+        release.assert_called_once_with()
+
+    def test_no_reading_admits(self) -> None:
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=None),
+            self.settings(IMAGE_JOB_WAIT_SECONDS=0),
+            admission.admit(10**15),
+        ):
+            pass
+
+    def _cgroup(self, files: dict[str, str]) -> str:
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        for name, text in files.items():
+            path = os.path.join(root, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write(text)
+        return root
+
+    def test_cgroup_v2_counts_reclaimable_cache_as_free(self) -> None:
+        from pathlib import Path
+
+        root = self._cgroup(
+            {
+                "memory.max": "4000\n",
+                "memory.current": "3000\n",
+                "memory.stat": "anon 2000\ninactive_file 500\n",
+            }
+        )
+        self.assertEqual(admission._cgroup_free(Path(root)), 1500)
+
+    def test_cgroup_without_limit(self) -> None:
+        from pathlib import Path
+
+        root = self._cgroup({"memory.max": "max\n", "memory.current": "3000\n"})
+        self.assertIsNone(admission._cgroup_free(Path(root)))
+
+    def test_cgroup_v1(self) -> None:
+        from pathlib import Path
+
+        root = self._cgroup(
+            {
+                "memory/memory.limit_in_bytes": "4000\n",
+                "memory/memory.usage_in_bytes": "3500\n",
+                "memory/memory.stat": "total_inactive_file 100\n",
+            }
+        )
+        self.assertEqual(admission._cgroup_free(Path(root)), 600)
+
+    def test_busy_server_answers_503(self) -> None:
+        with (
+            mock.patch("tlc.admission.free_bytes", return_value=0),
+            self.settings(IMAGE_JOB_WAIT_SECONDS=0),
+        ):
+            payload = {"isLocalImage": True, "imageData": _blobs_data_url([])}
+            response = _post_json(self.client, "detect_lines", payload)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response["Retry-After"], "10")
+        self.assertIn("busy", response.json()["error"])
+
+
+class ImageCacheTests(SimpleTestCase):
+    """Recently decoded images are kept per worker (tlc/imagecache.py)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        imagecache.clear()
+        self.addCleanup(imagecache.clear)
+        self.path = os.path.join(self.tmp, "plate.png")
+        cv2.imwrite(self.path, np.full((300, 200, 3), 200, np.uint8))
+
+    def test_second_load_does_not_decode(self) -> None:
+        from tlc.views import _decode_image_bytes
+
+        decode = mock.Mock(side_effect=_decode_image_bytes)
+        first = imagecache.load(self.path, decode)
+        second = imagecache.load(self.path, decode)
+        self.assertIs(first, second)
+        self.assertEqual(decode.call_count, 1)
+
+    def test_cached_image_is_read_only(self) -> None:
+        from tlc.views import _decode_image_bytes
+
+        image = imagecache.load(self.path, _decode_image_bytes)
+        assert image is not None
+        with self.assertRaises(ValueError):
+            image[0, 0] = 0
+
+    def test_a_replaced_file_is_decoded_again(self) -> None:
+        from tlc.views import _decode_image_bytes
+
+        imagecache.load(self.path, _decode_image_bytes)
+        os.remove(self.path)
+        cv2.imwrite(self.path, np.full((300, 200, 3), 10, np.uint8))
+        stamp = time.time() + 5
+        os.utime(self.path, (stamp, stamp))
+        image = imagecache.load(self.path, _decode_image_bytes)
+        assert image is not None
+        self.assertEqual(int(image[0, 0, 0]), 10)
+
+    def test_budget_drops_least_recently_used(self) -> None:
+        from tlc.views import _decode_image_bytes
+
+        other = os.path.join(self.tmp, "other.png")
+        cv2.imwrite(other, np.full((300, 200, 3), 50, np.uint8))
+        decode = mock.Mock(side_effect=_decode_image_bytes)
+        with self.settings(IMAGE_CACHE_MB=0.2):  # room for one 300x200x3 image
+            imagecache.load(self.path, decode)
+            imagecache.load(other, decode)
+            imagecache.load(self.path, decode)
+        self.assertEqual(decode.call_count, 3)
+
+    def test_contains_and_release_keep_the_one_in_use(self) -> None:
+        from tlc.views import _decode_image_bytes
+
+        other = os.path.join(self.tmp, "other.png")
+        cv2.imwrite(other, np.full((30, 20, 3), 50, np.uint8))
+        self.assertFalse(imagecache.contains(self.path))
+        imagecache.load(self.path, _decode_image_bytes)
+        imagecache.load(other, _decode_image_bytes)
+        self.assertTrue(imagecache.contains(self.path))
+        imagecache.release(keep=self.path)
+        self.assertTrue(imagecache.contains(self.path))
+        self.assertFalse(imagecache.contains(other))
+        self.assertFalse(imagecache.contains(os.path.join(self.tmp, "missing.png")))
+
+    def test_calculate_after_detect_draws_on_a_copy(self) -> None:
+        """Detect Lines caches the image; Calculate RF must not draw on it."""
+        payload = {
+            "imageSrc": "plate.png",
+            "lines": [{"type": "min", "y": 250}, {"type": "max", "y": 50}],
+            "spots": [{"x": 100, "y": 150}],
+        }
+        with self.settings(MEDIA_ROOT=self.tmp):
+            _post_json(self.client, "detect_lines", {"imageSrc": "plate.png"})
+            response = _post_json(self.client, "calculate_rf", payload)
+            self.assertEqual(response.status_code, 200)
+            # From the cache (decoding again would raise), and still plain.
+            cached = imagecache.load(self.path, mock.Mock(side_effect=AssertionError))
+            assert cached is not None
+            self.assertTrue((cached == 200).all())
+
+
+class HeaderCheckTests(SimpleTestCase):
+    """Size limits are checked from the header, before any decoding."""
+
+    def test_oversized_image_is_refused_without_decoding(self) -> None:
+        with (
+            mock.patch("tlc.views.MAX_IMAGE_PIXELS", 1000),
+            mock.patch("tlc.views._decode_image_bytes") as decode,
+        ):
+            payload = {"isLocalImage": True, "imageData": _blobs_data_url([])}
+            response = _post_json(self.client, "detect_lines", payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("too large", response.json()["error"])
+        decode.assert_not_called()
+
+    def test_eln_image_is_stored_under_its_real_format(self) -> None:
+        buffer = io.BytesIO()
+        Image.new("RGB", (40, 30), (200, 200, 200)).save(buffer, "JPEG")
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        with (
+            self.settings(MEDIA_ROOT=tmp),
+            mock.patch("tlc.views._is_safe_remote_url", return_value=True),
+            mock.patch(
+                "tlc.views._fetch_following_safe_redirects",
+                return_value=_fake_response(200, body=buffer.getvalue()),
+            ),
+        ):
+            response = self.client.get(reverse("fetch_image"), {"url": "https://eln.example/a"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["imagePath"].endswith(".jpg"))
+
+    def test_eln_resource_that_is_not_an_image_is_refused(self) -> None:
+        with (
+            mock.patch("tlc.views._is_safe_remote_url", return_value=True),
+            mock.patch(
+                "tlc.views._fetch_following_safe_redirects",
+                return_value=_fake_response(200, body=b"<html>login</html>"),
+            ),
+        ):
+            response = self.client.get(reverse("fetch_image"), {"url": "https://eln.example/a"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not a valid image", response.json()["error"])
+
+
 class EnvHelperTests(SimpleTestCase):
     def test_env_bool(self) -> None:
         with mock.patch.dict(os.environ, {"TLC_X": "yes"}):
@@ -732,11 +1153,51 @@ class SettingsDerivationTests(SimpleTestCase):
         self.assertIn("CSRF ['https://tlc.example.org']", out)  # derived from ALLOWED_HOSTS
 
 
+class HealthzRedirectTests(SimpleTestCase):
+    @override_settings(SECURE_SSL_REDIRECT=True)
+    def test_health_check_answers_over_plain_http(self) -> None:
+        """Probes use plain HTTP; everything else still goes to HTTPS."""
+        self.assertEqual(self.client.get("/healthz").status_code, 200)
+        self.assertEqual(self.client.get("/").status_code, 301)
+
+
 class SpotThresholdTests(SimpleTestCase):
     def test_setting_states_the_cutoff_built_into_the_model(self) -> None:
         """spot_best.onnx returns no scores below 0.25, so a lower setting
         would claim a sensitivity it does not have."""
         self.assertEqual(settings.SPOT_CONF_DEFAULT, 0.25)
+
+
+class SecretKeyTests(SimpleTestCase):
+    """SECRET_KEY is optional while nothing signs data with it."""
+
+    @staticmethod
+    def _settings(extra_env: dict[str, str]) -> str:
+        import subprocess
+        import sys
+
+        code = (
+            "import django; django.setup(); from django.conf import settings; "
+            "print(len(settings.SECRET_KEY), settings.SECRET_KEY_IS_RANDOM)"
+        )
+        env = {k: v for k, v in os.environ.items() if k != "SECRET_KEY"}
+        env.update({"DJANGO_SETTINGS_MODULE": "config.settings", "DEBUG": "False"}, **extra_env)
+        return subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, env=env, check=True
+        ).stdout
+
+    def test_production_starts_without_a_key(self) -> None:
+        self.assertEqual(self._settings({}).split(), ["50", "True"])
+
+    def test_a_set_key_is_used(self) -> None:
+        self.assertEqual(self._settings({"SECRET_KEY": "k" * 60}).split(), ["60", "False"])
+
+    def test_signing_apps_or_middleware_are_recognised(self) -> None:
+        from config.env import signs_data
+
+        self.assertFalse(signs_data(settings.INSTALLED_APPS, settings.MIDDLEWARE))
+        self.assertTrue(signs_data(["django.contrib.sessions"], []))
+        self.assertTrue(signs_data([], ["django.contrib.messages.middleware.MessageMiddleware"]))
 
 
 class TextScaleTests(SimpleTestCase):
@@ -1227,3 +1688,92 @@ class ImageLimitTests(SimpleTestCase):
     def test_page_passes_the_file_cap_to_the_browser(self) -> None:
         html = Client().get(reverse("upload_image")).content.decode()
         self.assertIn(f'data-max-image-mb="{settings.MAX_IMAGE_MB}"', html)
+
+
+class UploadImageTests(SimpleTestCase):
+    """POST /upload-image/: a local image is stored once and used by name."""
+
+    def setUp(self) -> None:
+        self.client = Client()
+        self.stored: list[str] = []
+
+    def tearDown(self) -> None:
+        for pattern in [*self.stored, "annotated_*.png", "rf_values_*.csv"]:
+            for path in glob.glob(os.path.join(settings.MEDIA_ROOT, pattern)):
+                os.remove(path)
+
+    def _upload(self, raw: bytes, name: str = "plate.jpg") -> Any:
+        response = self.client.post(
+            reverse("upload_image_file"), {"image": SimpleUploadedFile(name, raw)}
+        )
+        if response.status_code == 200:
+            self.stored.append(response.json()["imagePath"])
+        return response
+
+    @staticmethod
+    def _jpeg(size: tuple[int, int] = (300, 200), orientation: int = 1) -> bytes:
+        image = Image.new("RGB", size, (230, 230, 230))
+        exif = image.getexif()
+        exif[274] = orientation
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", exif=exif)
+        return buf.getvalue()
+
+    def test_stored_once_then_used_by_name_upright(self) -> None:
+        # A sideways phone photo (EXIF 6): stored as uploaded, analysed upright.
+        raw = self._jpeg(orientation=6)
+        response = self._upload(raw, "../../etc/evil name.jpg")
+        self.assertEqual(response.status_code, 200)
+        name = response.json()["imagePath"]
+        self.assertRegex(name, r"^[0-9a-f]{32}\.jpg$")  # client name is not used
+        with open(os.path.join(settings.MEDIA_ROOT, name), "rb") as fh:
+            self.assertEqual(fh.read(), raw)
+
+        payload = {
+            "isLocalImage": True,
+            "imageSrc": name,
+            "imageData": None,
+            "lines": [{"type": "min", "y": 250}, {"type": "max", "y": 50}],
+            "spots": [{"x": 100, "y": 150}],
+        }
+        result = self.client.post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        ).json()
+        self.assertEqual(result["rf_values"][0]["rf"], 0.5)
+        out = cv2.imread(
+            os.path.join(settings.MEDIA_ROOT, result["annotated_image_url"].split("/")[-1])
+        )
+        assert out is not None
+        self.assertEqual(out.shape[:2], (300, 200))
+
+    def test_png_keeps_its_extension(self) -> None:
+        buf = io.BytesIO()
+        Image.new("RGB", (10, 10)).save(buf, format="PNG")
+        self.assertTrue(self._upload(buf.getvalue(), "x.jpg").json()["imagePath"].endswith(".png"))
+
+    def test_refusals(self) -> None:
+        cases = {
+            "not an image": b"<html><script>alert(1)</script></html>",
+            "truncated": self._jpeg()[:200],
+        }
+        for label, raw in cases.items():
+            self.assertEqual(self._upload(raw).status_code, 400, label)
+        tiff = io.BytesIO()
+        Image.new("RGB", (10, 10)).save(tiff, format="TIFF")  # browsers cannot show it
+        self.assertEqual(self._upload(tiff.getvalue()).status_code, 400)
+        with mock.patch("tlc.views.MAX_IMAGE_BYTES", 100):
+            self.assertEqual(self._upload(self._jpeg()).status_code, 400)
+        with mock.patch("tlc.views.MAX_IMAGE_PIXELS", 1000):
+            self.assertEqual(self._upload(self._jpeg()).status_code, 400)
+        self.assertEqual(self.client.post(reverse("upload_image_file")).status_code, 400)
+        self.assertEqual(self.client.get(reverse("upload_image_file")).status_code, 405)
+        self.assertEqual(self.stored, [])
+
+    def test_csrf_is_enforced(self) -> None:
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        client = Client(enforce_csrf_checks=True)
+        response = client.post(
+            reverse("upload_image_file"), {"image": SimpleUploadedFile("a.jpg", self._jpeg())}
+        )
+        self.assertEqual(response.status_code, 403)
