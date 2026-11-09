@@ -26,7 +26,7 @@ export function getImagePayload() {
         const full = document.getElementById("label-full");
         payload.labelMode = full && full.checked ? "full" : "numbers";
         // Recorded in the CSV's provenance block (how the result was made).
-        payload.imageName = state.isLocalImage ? window.currentImageFileName || "" : "";
+        payload.imageName = state.imageName || "";
         payload.plateRegion = state.plateRegion;
         return payload;
     };
@@ -321,7 +321,7 @@ export function elnAttachmentName(kind, ext, date = new Date()) {
 
 // Sent cross-origin to the ELN's token URL. No CSRF header: the token is ours,
 // means nothing to the ELN, and a custom header would force a CORS preflight.
-function postToEln(blob, kind, ext) {
+export function postToEln(blob, kind, ext) {
     if (!elnUrl) {
         notify("No ELN target configured.", "warning");
         return;

@@ -507,8 +507,9 @@ body {
     border-radius: var(--radius); font: inherit;
 }
 .source-summary.shown { display: flex; }
-.source-summary-actions { display: inline-flex; align-items: center; gap: 0.5rem; }
-.rotation { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.source-summary-actions { display: inline-flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+.source-summary { flex-wrap: wrap; gap: 0.5rem; }
+.rotation { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
 .rotation-label { font-size: 0.85rem; font-weight: 600; }
 .rotation-nudge { padding: 0.35rem 0.5rem; }
 #rotation-preset, #rotation-fine {
@@ -563,8 +564,18 @@ body {
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow-sm); }
 .panel-title { margin: 0 0 0.75rem; font-size: 1rem; font-weight: 600; text-align: center; }
 .table-scroll { overflow-x: auto; }
-.export-row { display: flex; gap: 0.5rem; margin-top: 1rem; }
-.export-row .lab-btn { flex: 1; }
+/* Downloads on the first row, ELN uploads (when shown) on the second. */
+.export-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 1rem; }
+.export-row .lab-btn { min-width: 0; justify-content: center; }
+
+/* A saved draft for this image, offered (never restored by itself) */
+.draft-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    flex-wrap: wrap; margin-bottom: 1rem; padding: 0.6rem 0.9rem;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--primary); border-radius: var(--radius-sm); font-size: 0.88rem;
+}
+.draft-actions { display: inline-flex; gap: 0.5rem; }
 
 /* Help drawer (modal overlay) */
 .help-drawer { position: fixed; inset: 0; z-index: 1200; display: none; align-items: center; justify-content: center; padding: 1rem; background: rgba(0, 0, 0, 0.45); }

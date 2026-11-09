@@ -19,6 +19,7 @@ import {
     updateWorkAreaLayout,
 } from "./ui.js";
 import { deleteLine, editLine, isHorizontalLine, markerCaption, setActiveButton } from "./annotations.js";
+import { deleteDraft, saveDraft } from "./drafts.js";
 import { commitHistory, redoHistory, resetHistory, undoHistory } from "./history.js";
 
 // Draw an image into the w x h canvas frame, turned clockwise by the preset
@@ -364,6 +365,7 @@ export function resetCanvas() {
     updateAnnotatedHeading("editing");
     setActiveButton(null);
     resetHistory(); // clean slate becomes the undo baseline
+    deleteDraft(); // the draft goes with the annotations
     applyCrop(); // region cleared -> exit crop view (redraws + refreshUI)
     notify("Canvas reset.", "info");
 }
@@ -374,6 +376,7 @@ export function resetCanvas() {
 // applyCrop() is a harmless reshape when the plate region is unchanged, so it is
 // safe for every edit — this is the one place the "single funnel" lives.
 function afterAnnotationChange() {
+    saveDraft();
     markResultsStale();
     applyCrop();
 }

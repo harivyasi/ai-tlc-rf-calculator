@@ -59,6 +59,14 @@ import {
     saveCSV,
     saveImage,
 } from "./results.js";
+import {
+    annotationsToEln,
+    discardDraft,
+    handleAnnotationsFile,
+    openAnnotations,
+    restoreDraft,
+    saveAnnotations,
+} from "./annotations-io.js";
 import { handleLocalImageFile, handleLocalImageUpload, selectImageSource, triggerFileInput } from "./sources.js";
 
 // Maps the `data-action` attribute on a control to its handler. Handlers that
@@ -75,6 +83,11 @@ const ACTIONS = {
     autoDetectSpots,
     selectPlateArea,
     nudgeRotation,
+    restoreDraft,
+    discardDraft,
+    openAnnotations,
+    saveAnnotations,
+    annotationsToEln,
     addMinLine,
     addMaxLine,
     addHorizontalLine,
@@ -194,6 +207,8 @@ function init() {
 
     const fileInput = document.getElementById("local-image-input");
     if (fileInput) fileInput.addEventListener("change", handleLocalImageUpload);
+    const annotationsInput = document.getElementById("annotations-input");
+    if (annotationsInput) annotationsInput.addEventListener("change", handleAnnotationsFile);
 
     const uploadArea = document.querySelector(".upload-area");
     if (uploadArea) {

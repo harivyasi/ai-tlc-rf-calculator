@@ -77,6 +77,11 @@ gives identical detection results.
 - **Rotation**: a quarter turn plus a fine-tune of up to ±45° (0.5° steps),
   to straighten a tilted plate before annotating; Rf assumes a level
   baseline. The browser and the server apply the same turn.
+- **Annotation files**: the annotations are exported as versioned JSON next
+  to the CSV (download or ELN). **Open annotations** loads one back onto the
+  same image, checked by SHA-256, to check or continue a result.
+- **Drafts**: annotations are kept in the browser as you work; loading the
+  same image again offers to restore them. Reset deletes the draft.
 
 ### Changed
 
