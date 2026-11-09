@@ -117,10 +117,10 @@
                     <input type="checkbox" id="crop-plate"> <span class="lbl-full">crop view</span><span class="lbl-short">crop</span>
                 </label>
                 <span class="tool-divider" aria-hidden="true"></span>
-                <button class="lab-btn btn-lab-outline" data-action="addMinLine" title="Mark the baseline / origin — the line where the samples were spotted.">
+                <button class="lab-btn btn-lab-outline" id="min-line-btn" data-action="addMinLine" title="Mark the baseline / origin — the line where the samples were spotted.">
                     <svg class="icon"><use href="#i-hline"/></svg> Min Line
                 </button>
-                <button class="lab-btn btn-lab-outline" data-action="addMaxLine" title="Mark the solvent front — how far the mobile phase travelled.">
+                <button class="lab-btn btn-lab-outline" id="max-line-btn" data-action="addMaxLine" title="Mark the solvent front — how far the mobile phase travelled.">
                     <svg class="icon"><use href="#i-hline"/></svg> Max Line
                 </button>
                 <button class="lab-btn btn-lab-secondary" data-action="autoDetectLines" id="detect-lines-btn" title="Propose the Min (baseline) and Max (solvent front) lines with TLC-LineDet. Review and drag them into place." disabled>
@@ -151,6 +151,9 @@
                     <span class="lbl-full">text size</span><span class="lbl-short">size</span>
                     <input type="number" id="text-scale" min="10" max="500" step="10" value="100" inputmode="numeric" aria-label="Annotation text size (percent)">
                     <span aria-hidden="true">%</span>
+                </label>
+                <label class="check-row" title="Saved image: show each spot's Rf, compound and lane next to its number. Off: numbers only, which stay readable on crowded plates; the details are in the table and CSV.">
+                    <input type="checkbox" id="label-full"> <span class="lbl-full">full labels</span><span class="lbl-short">full</span>
                 </label>
             </div>
             <div class="tool-group tool-group--center">
@@ -199,10 +202,13 @@
                     <table id="values-table">
                         <thead>
                             <tr>
-                                <th>Mixture (X)</th>
-                                <th>Substance (Y)</th>
-                                <th>RF</th>
-                                <th></th>
+                                <th class="col-n" title="Number shown next to the spot on the annotated image">#</th>
+                                <th>Lane (V)</th>
+                                <th class="col-lane-type">Lane type</th>
+                                <th>Compound (H)</th>
+                                <th class="col-compound-type">Compound type</th>
+                                <th class="col-rf">Rf</th>
+                                <th><span class="sr-only">Delete</span></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -250,19 +256,24 @@
                         them yourself. Drag them into place if needed.</li>
                     <li>Click <span class="highlight">Detect Spots</span> — it searches only between Min and
                         Max — or <span class="highlight">Add Spots</span> to mark spots. Review and adjust.</li>
-                    <li>Optionally add <span class="highlight">V-Line</span> / <span class="highlight">H-Line</span>
-                        labels to name lanes and compounds. An unlabelled lane is left blank; an unmarked
-                        compound shows as “Unknown”.</li>
+                    <li>Optionally add <span class="highlight">V-Line</span> (lane) and
+                        <span class="highlight">H-Line</span> (compound) markers. Pick a type from the list, add
+                        free text, or both; click the <strong>&#x270E;</strong> beside a marker to change it later.
+                        Each spot is assigned to the nearest lane and compound marker. An unlabelled lane is left
+                        blank; an unmarked compound shows as “Unknown”.</li>
                     <li>Click <span class="highlight">Calculate RF</span>, then export as CSV / image or send to the ELN.</li>
                 </ol>
                 <p class="muted text-sm">Drag spots or lines to reposition; double-click (or double-tap on touch) a spot to delete it.
-                    RF values fall between 0 and 1.</p>
+                    Rf runs from 0 (on the baseline) to 1 (at the solvent front); spots outside that range are
+                    left out.</p>
                 <p class="muted text-sm"><strong>Crop view</strong> zooms the work area to the plate box for
                     easier marking. It only affects what you see here — the saved image keeps its full
                     original dimensions (including any rotation).</p>
-                <p class="muted text-sm"><strong>Text size</strong> (10–500%) scales the annotation labels in
-                    both the preview and the saved image, relative to the size auto-computed from the plate
-                    resolution.</p>
+                <p class="muted text-sm">Results are <strong>numbered</strong>: the number beside each spot on
+                    the annotated image is the row number in the table and the CSV, sorted by lane label and then
+                    by Rf. Tick <strong>full labels</strong> to also print each spot's Rf, compound and lane on
+                    the image. <strong>Text size</strong> (10–500%) scales the labels in both the preview and
+                    the saved image, relative to the size auto-computed from the plate resolution.</p>
                 <p class="muted text-sm"><strong>Rotate</strong> is available on a freshly loaded image (before
                     you annotate) to correct its orientation.</p>
                 <p class="muted text-sm">Detected lines and spots are <strong>candidates</strong> from two
@@ -278,8 +289,10 @@
     </div>
 
     <!-- Line label popup -->
-    <div id="line-popup" class="popup">
-        <input type="text" id="line-text" placeholder="Enter annotation text">
+    <div id="line-popup" class="popup" role="dialog" aria-labelledby="line-popup-title">
+        <div id="line-popup-title" class="popup-title">Label</div>
+        <select id="line-kind" aria-label="Type"></select>
+        <input type="text" id="line-text" placeholder="Label (optional), e.g. compound name" aria-label="Label" maxlength="100">
         <div class="popup-actions">
             <button class="lab-btn btn-lab-outline" data-action="cancelAnnotation">Cancel</button>
             <button class="lab-btn btn-lab-primary" data-action="submitAnnotation">Submit</button>

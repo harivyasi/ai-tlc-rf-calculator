@@ -39,7 +39,7 @@ import {
     addVerticalLine,
     cancelAnnotation,
     disableOtherActions,
-    hidePopup,
+    popupOpen,
     selectPlateArea,
     submitAnnotation,
 } from "./annotations.js";
@@ -133,6 +133,25 @@ function init() {
         });
     }
 
+    // "Full labels" on the saved image: persisted; like the text size it is
+    // burned into the server-rendered image, so changing it marks results stale.
+    const fullLabels = document.getElementById("label-full");
+    if (fullLabels) {
+        try {
+            fullLabels.checked = localStorage.getItem("tlc-label-full") === "1";
+        } catch (err) {
+            /* localStorage unavailable */
+        }
+        fullLabels.addEventListener("change", () => {
+            try {
+                localStorage.setItem("tlc-label-full", fullLabels.checked ? "1" : "0");
+            } catch (err) {
+                /* ignore */
+            }
+            markResultsStale();
+        });
+    }
+
     // Annotation text size (%): persisted, and redraws the preview live so it
     // matches the size that will be burned into the saved image.
     const textScaleInput = document.getElementById("text-scale");
@@ -183,6 +202,14 @@ function init() {
     state.canvas.addEventListener("pointercancel", handlePointerCancel);
     state.canvas.addEventListener("dblclick", handleDoubleClick);
 
+    // Enter in the label popup submits it.
+    document.getElementById("line-popup").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            submitAnnotation();
+        }
+    });
+
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
             // Escape closes the help drawer first if it's open (it's a modal).
@@ -192,7 +219,7 @@ function init() {
                 return;
             }
             disableOtherActions();
-            hidePopup();
+            if (popupOpen()) cancelAnnotation(); // a new line stays, unlabelled
             return;
         }
         // Undo / redo (ignore while typing in the line-label input).

@@ -35,6 +35,15 @@ gives identical detection results.
 - Image limits: 25 MB per file (`MAX_IMAGE_MB`) and 64 megapixels
   (`MAX_IMAGE_MEGAPIXELS`), enough for phone photos of plates (13 MB, 50 MP);
   the page reads the file limit from the server.
+- The CSV is written by the server and its columns follow the results
+  table: `spot, mixture_label, mixture_type, substance_label,
+  substance_type, RF value` (before: `mixture_label, substance_label, RF
+  value`). The `CHMO:0001007` line and the `Details:` line are kept. Labels
+  are quoted, so a comma no longer shifts the columns; cells cannot start a
+  spreadsheet formula.
+- Results are numbered: the number is drawn next to each spot on the
+  annotated image and is the row in the table and the CSV; rows are sorted
+  by lane label, then Rf.
 
 ### Added
 
@@ -44,6 +53,11 @@ gives identical detection results.
   is not put on the background of an uncropped photo.
 - `tools/legacy_equivalence.py`: plate-by-plate comparison of detection with
   version 1 (223 plates, 4,941 spot candidates, identical).
+- Marker types: H- and V-lines get a type from a list (for example
+  *starting material*, *product 1*) next to the free text, and can be edited
+  after placing. The table shows lane and compound type columns; "full
+  labels" prints Rf, compound and lane on the image. Min and Max buttons hide
+  once placed; H-lines are black.
 
 ### Changed
 

@@ -23,6 +23,7 @@ export function setActiveButton(button) {
 
 export function disableOtherActions() {
     state.addingSpots = false;
+    state.placingLine = false;
     state.selectingRegion = false;
     state.canvas.removeEventListener("click", drawSpot);
     state.canvas.removeEventListener("click", drawLine);
@@ -43,6 +44,7 @@ function startLine(type, horizontal, event) {
     disableOtherActions();
     state.lineType = type;
     state.isHorizontal = horizontal;
+    state.placingLine = true;
     state.canvas.addEventListener("click", drawLine);
     if (event && event.currentTarget) setActiveButton(event.currentTarget);
 }
@@ -75,31 +77,69 @@ export function drawLine(event) {
     if (isRef && state.lines.some((l) => l.type === state.lineType)) {
         notify('A "' + state.lineType + '" line already exists.', "warning");
         state.canvas.removeEventListener("click", drawLine);
+        state.placingLine = false;
         return;
     }
 
     state.currentLine = state.isHorizontal
-        ? { id: Date.now(), type: state.lineType, y: oy, text: isRef ? state.lineType : "" }
-        : { id: Date.now(), type: state.lineType, x: ox, text: "" };
+        ? { id: Date.now(), type: state.lineType, y: oy, text: isRef ? state.lineType : "", kind: "" }
+        : { id: Date.now(), type: state.lineType, x: ox, text: "", kind: "" };
     state.lines.push(state.currentLine);
     state.canvas.removeEventListener("click", drawLine);
+    state.placingLine = false;
 
     if (isRef) {
         commitChange(); // no label popup -> commit the add now
     } else {
-        showPopup(event.pageX, event.pageY); // label popup -> commit on submit/cancel
+        showPopup(event.pageX, event.pageY, state.currentLine, false); // commit on submit/cancel
         redrawCanvas();
     }
 }
 
-function showPopup(x, y) {
+// Marker types offered in the label popup, by line direction (reviewer
+// request). Mirrored in tlc/results.py. Free text stays available alongside.
+export const LABEL_TYPES = {
+    horizontal: ["starting material", "expected product", "confirmed product", "by-product", "reagent"],
+    vertical: ["starting material", "product 1", "product 2", "by-product", "reagent"],
+};
+
+// How a marker is captioned on the canvas and the saved image.
+export function markerCaption(line) {
+    const text = line.text || "";
+    const kind = line.kind || "";
+    if (text && kind) return text + " (" + kind + ")";
+    return text || kind;
+}
+
+// The popup labels a new H/V line or edits an existing one. For an edit, the
+// previous label is kept so Cancel can restore it.
+function showPopup(x, y, line, editing) {
     const popup = document.getElementById("line-popup");
     const input = document.getElementById("line-text");
+    const select = document.getElementById("line-kind");
+    state.currentLine = line;
+    state.popupEdit = editing ? { text: line.text || "", kind: line.kind || "" } : null;
+
+    select.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "— type (optional) —";
+    select.appendChild(none);
+    (LABEL_TYPES[line.type] || []).forEach((kind) => {
+        const option = document.createElement("option");
+        option.value = kind;
+        option.textContent = kind;
+        select.appendChild(option);
+    });
+    select.value = line.kind || "";
+    input.value = line.text || "";
+    document.getElementById("line-popup-title").textContent =
+        (editing ? "Edit " : "Label ") + (line.type === "vertical" ? "lane (V-Line)" : "compound (H-Line)");
+
     popup.style.left = x + "px";
     popup.style.top = y + "px";
     popup.style.display = "block";
-    input.value = "";
-    setTimeout(() => input.focus(), 100);
+    setTimeout(() => select.focus(), 50);
 }
 
 export function hidePopup() {
@@ -108,18 +148,43 @@ export function hidePopup() {
     const input = document.getElementById("line-text");
     if (input) input.value = "";
     state.currentLine = null;
+    state.popupEdit = null;
+}
+
+export function popupOpen() {
+    const popup = document.getElementById("line-popup");
+    return !!popup && popup.style.display === "block";
 }
 
 export function submitAnnotation() {
-    const text = document.getElementById("line-text").value.trim();
-    if (state.currentLine && text !== "") state.currentLine.text = text;
+    const line = state.currentLine;
+    if (line) {
+        line.text = document.getElementById("line-text").value.trim();
+        line.kind = document.getElementById("line-kind").value;
+    }
+    const edit = state.popupEdit;
+    const changed = !edit || !line || edit.text !== line.text || edit.kind !== line.kind;
     hidePopup();
-    commitChange(); // the new (labelled) line is now final
+    if (changed) commitChange(); // a new line, or a changed label
+    else redrawCanvas();
 }
 
 export function cancelAnnotation() {
+    const edit = state.popupEdit;
     hidePopup();
-    commitChange(); // keep the unlabelled line, but record it for undo
+    if (edit) {
+        redrawCanvas(); // editing: nothing was changed
+    } else {
+        commitChange(); // new line: keep it unlabelled, but record it for undo
+    }
+}
+
+// Reopen the popup for an existing H/V line (the pencil icon beside it).
+export function editLine(id, x, y) {
+    const line = state.lines.find((l) => l.id === id);
+    if (!line || line.type === "min" || line.type === "max") return;
+    disableOtherActions();
+    showPopup(x, y, line, true);
 }
 
 export function deleteLine(id) {
