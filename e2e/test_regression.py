@@ -254,6 +254,40 @@ def test_deleting_result_row_marks_results_stale(page, servers, test_image_path)
     assert page.locator("#values-table tbody tr").count() == 1
 
 
+def test_spot_sources_reach_the_results(page, servers, test_image_path):
+    """Each spot is recorded as manual, detected, or detected then moved."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    scale = page.evaluate("window.scaleFactor")
+    candidates = [
+        {"x": 150 * scale, "y": 150 * scale, "conf": 0.6},
+        {"x": 80 * scale, "y": 120 * scale, "conf": 0.5},
+    ]
+    page.route(
+        "**/detect-spots/",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"spots": candidates, "count": 2, "roi": [0, 0, 1, 1], "model": {}}),
+        ),
+    )
+    with page.expect_response("**/detect-spots/"):
+        page.click("#detect-spots-btn")
+    page.wait_for_selector("text=Detected 2 spot(s)")
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 220, "y": 180})  # manual
+
+    box = canvas.bounding_box()
+    page.mouse.move(box["x"] + 150, box["y"] + 150)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 150, box["y"] + 110, steps=10)  # move a detected spot
+    page.mouse.up()
+
+    with page.expect_response("**/calculate_rf/") as response_info:
+        page.click("button:has-text('Calculate RF')")
+    rows = response_info.value.json()["rf_values"]
+    assert sorted(row["source"] for row in rows) == ["detected", "detected, moved", "manual"]
+
+
 def test_auto_detect_populates_spots(page, servers, blob_image_path):
     """Detect Spots (TLC-SpotDet) finds the drawn spots between Min and Max, and
     they flow into the RF calculation."""

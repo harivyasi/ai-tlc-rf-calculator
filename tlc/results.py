@@ -11,7 +11,9 @@ computes each spot's Rf (:func:`tlc.views.rf_from_positions`); this module
 * draws the annotated image: the baseline, solvent front and markers it was
   calculated from (SI 8.2), and each retained spot with its number, plus its
   Rf, compound and lane when full labels are requested;
-* writes the CSV, with the same columns in the same order as the table.
+* writes the CSV, with the same columns in the same order as the table, plus
+  how each spot was placed and a block recording how the results were made
+  (SI 10.3 / 11.4).
 """
 
 from __future__ import annotations
@@ -67,18 +69,29 @@ def _nearest(markers: list[dict[str, Any]], axis: str, value: float) -> dict[str
     return min(markers, key=lambda m: abs(m[axis] - value), default=None)
 
 
-def build_rows(
-    spots: list[tuple[float, float, float]], markers: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+# How a spot came to be, as recorded in the CSV.
+SPOT_SOURCES = ("manual", "detected", "detected, moved")
+
+
+def spot_source(spot: dict[str, Any]) -> str:
+    """ "manual", "detected" (a Detect Spots candidate kept as proposed), or
+    "detected, moved" (a candidate the user then dragged)."""
+    if spot.get("auto") is True:
+        return "detected, moved" if spot.get("moved") is True else "detected"
+    return "manual"
+
+
+def build_rows(spots: list[tuple[Any, ...]], markers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Assign context to each retained spot, sort, and number the rows.
 
     Args:
-        spots: ``(x, y, rf)`` per retained spot, original-image px.
+        spots: ``(x, y, rf)`` or ``(x, y, rf, source)`` per retained spot,
+            original-image px; the source defaults to "manual".
         markers: Validated H/V lines, each ``{"type", "x"|"y", "text", "kind"}``.
 
     Returns:
         Rows ``{"n", "x", "y", "rf", "solvent", "solvent_type", "compound",
-        "compound_type"}``; ``solvent`` is the lane (kept under its historical
+        "compound_type", "source"}``; ``solvent`` is the lane (kept under its historical
         key). An unlabelled lane is blank; a spot with no compound marker, or
         one carrying neither text nor type, is "Unknown" (decision D6).
     """
@@ -86,7 +99,7 @@ def build_rows(
     compounds = [m for m in markers if m["type"] == "horizontal"]
 
     rows: list[dict[str, Any]] = []
-    for x, y, rf in spots:
+    for x, y, rf, *rest in spots:
         lane = _nearest(lanes, "x", x)
         compound = _nearest(compounds, "y", y)
         compound_text = compound["text"] if compound else ""
@@ -100,6 +113,7 @@ def build_rows(
                 "solvent_type": lane["kind"] if lane else "",
                 "compound": compound_text or ("" if compound_type else "Unknown"),
                 "compound_type": compound_type,
+                "source": rest[0] if rest else "manual",
             }
         )
 
@@ -239,7 +253,8 @@ def draw_annotations(
 # CSV
 # ---------------------------------------------------------------------------
 
-# Same columns, same order as the results table. Chemotion stores an uploaded
+# Same columns, same order as the results table, then how each spot was
+# placed (kept out of the compact table). Chemotion stores an uploaded
 # CSV as a plain attachment and parses nothing in it (checked in
 # chemotion_ELN: upload_attachment_from_third_party_app), so the layout is
 # chosen for people. The column names, the CHMO line and the "Details" line
@@ -252,6 +267,7 @@ CSV_HEADER = [
     "substance_label (Y axis)",
     "substance_type",
     "RF value",
+    "spot source",
 ]
 
 
@@ -263,8 +279,12 @@ def _cell(value: Any) -> str:
     return text
 
 
-def csv_text(rows: list[dict[str, Any]]) -> str:
-    """The results CSV, as text."""
+def csv_text(rows: list[dict[str, Any]], provenance: list[tuple[str, str]] | None = None) -> str:
+    """The results CSV, as text.
+
+    ``provenance`` is written last as ``key;value`` lines, in the style of the
+    CHMO line at the top.
+    """
     out = io.StringIO()
     out.write("Measurement type;thin layer chromatography (TLC);CHMO:0001007\n\n")
     writer = csv.writer(out, lineterminator="\n")
@@ -278,8 +298,13 @@ def csv_text(rows: list[dict[str, Any]]) -> str:
                 _cell(row["compound"]),
                 _cell(row["compound_type"]),
                 row["rf"],
+                row.get("source", "manual"),
             ]
         )
     inline = ", ".join(f"{row['rf']} ({row['compound']})[h{row['n']}]" for row in rows)
     out.write(f"\nDetails:\nTLC (solvents); Rf (UV-Vis in nm, staining) = {inline}.\n")
+    if provenance:
+        out.write("\nProvenance:\n")
+        for key, value in provenance:
+            out.write(f"{key};{_cell(value)}\n")
     return out.getvalue()

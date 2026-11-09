@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import io
 import ipaddress
 import json
@@ -27,6 +28,7 @@ import socket
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -42,7 +44,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from config import __version__
 
 from . import admission, detection, imagecache, media, results
-from .inference import models_loaded
+from .inference import model_identities, models_loaded
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +233,17 @@ class _ImageSource:
             extra=2 * len(self.raw) if self.raw is not None else 0,
         )
 
+    def sha256(self) -> str:
+        """SHA-256 of the image file as stored or sent (~30 ms for 13 MB)."""
+        if self.raw is not None:
+            return hashlib.sha256(self.raw).hexdigest()
+        assert self.path is not None
+        digest = hashlib.sha256()
+        with open(self.path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
 
 def _inspect_image(raw: bytes | str, unreadable: str) -> tuple[str, int, int] | JsonResponse:
     """Format and size from an image's header, without decoding its pixels.
@@ -323,12 +336,12 @@ def _busy() -> JsonResponse:
 
 def _run_image_job(
     data: dict[str, Any],
-    job: Callable[[np.ndarray, str], JsonResponse],
+    job: Callable[[np.ndarray, _ImageSource], JsonResponse],
     kind: str,
 ) -> JsonResponse:
     """Check the payload's image, wait for memory, load it, and run ``job``.
 
-    ``job(image, base_name)`` does the work; it runs only once the memory the
+    ``job(image, source)`` does the work; it runs only once the memory the
     image needs is free (:mod:`tlc.admission`), else the client gets a 503.
     """
     source, error = _open_image_source(data)
@@ -349,7 +362,7 @@ def _run_image_job(
                     else "Failed to read the image file."
                 )
                 return JsonResponse({"error": message}, status=400)
-            return job(image, source.base_name)
+            return job(image, source)
     except admission.Busy:
         logger.warning("Busy: refused a %d MB image job", needed() // 2**20)
         return _busy()
@@ -539,22 +552,38 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Line and spot positions must be numbers."}, status=400)
 
     retained = []
-    for x, y in points:
+    for (x, y), spot in zip(points, spots, strict=True):
         assert x is not None and y is not None  # checked above
         rf_value = rf_from_positions(y_baseline=min_y, y_front=max_y, y_spot=y)
         if rf_value is not None:  # else below the baseline or above the front (SI 7.6)
-            retained.append((x, y, rf_value))
+            retained.append((x, y, rf_value, results.spot_source(spot)))
     rf_values = results.build_rows(retained, markers)
 
-    def render(image: np.ndarray, base_name: str) -> JsonResponse:
-        return _render_results(image, base_name, data, rf_values, min_y, max_y, markers)
+    def render(image: np.ndarray, source: _ImageSource) -> JsonResponse:
+        return _render_results(image, source, data, rf_values, min_y, max_y, markers)
 
     return _run_image_job(data, render, "render")
 
 
+def _provenance(source: _ImageSource, data: dict[str, Any]) -> list[tuple[str, str]]:
+    """How a result was made, for the CSV (SI 10.3 / 11.4)."""
+    region = _parse_region(data.get("plateRegion"))
+    rows = [
+        ("app", f"TLC RF Calculator {__version__}"),
+        ("image", results.clean_label(data.get("imageName")) or source.base_name),
+        ("image sha256", source.sha256()),
+        ("rotation", f"{_parse_rotation(data.get('rotation'))} degrees clockwise"),
+        ("plate area", "x={}, y={}, width={}, height={}".format(*region) if region else "none"),
+    ]
+    for model in model_identities():
+        rows.append((model["name"], f"{model['file']} sha256 {model['sha256']}"))
+    rows.append(("calculated", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")))
+    return rows
+
+
 def _render_results(
     image: np.ndarray,
-    base_name: str,
+    source: _ImageSource,
     data: dict[str, Any],
     rf_values: list[dict[str, Any]],
     min_y: float,
@@ -576,12 +605,12 @@ def _render_results(
 
     # Unique output names so concurrent requests never clobber each other.
     token = uuid.uuid4().hex
-    stem = os.path.splitext(base_name)[0]
+    stem = os.path.splitext(source.base_name)[0]
     annotated_name = f"annotated_{stem}_{token}.png"
     csv_name = f"rf_values_{stem}_{token}.csv"
 
     media.write(annotated_name, cv2.imencode(".png", image)[1].tobytes())
-    media.write(csv_name, results.csv_text(rf_values))
+    media.write(csv_name, results.csv_text(rf_values, _provenance(source, data)))
 
     return JsonResponse(
         {
@@ -649,7 +678,7 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
         )
     region = _parse_region(data.get("region"))
 
-    def detect(image: np.ndarray, _base_name: str) -> JsonResponse:
+    def detect(image: np.ndarray, _source: _ImageSource) -> JsonResponse:
         try:
             result = detection.detect_spots(image, min_y=min_y, max_y=max_y, region=region)
         except detection.DetectionError as exc:
@@ -682,7 +711,7 @@ def detect_lines(request: HttpRequest) -> JsonResponse:
         return error
     region = _parse_region(data.get("region"))
 
-    def detect(image: np.ndarray, _base_name: str) -> JsonResponse:
+    def detect(image: np.ndarray, _source: _ImageSource) -> JsonResponse:
         try:
             result = detection.detect_lines(image, region=region)
         except detection.DetectionError as exc:

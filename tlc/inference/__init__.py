@@ -87,6 +87,26 @@ def models_loaded() -> bool:
     return "spot" in _sessions and "line" in _sessions
 
 
+_identity_cache: dict[tuple[str, int, int], str] = {}
+
+
+def model_identities() -> list[dict[str, str]]:
+    """Name, file and SHA-256 of both models, without loading them.
+
+    For records written when no detection ran in this process; hashes are
+    cached by file path, size and modification time.
+    """
+    out = []
+    for name, setting in (("TLC-SpotDet", "SPOT_MODEL_PATH"), ("TLC-LineDet", "LINE_MODEL_PATH")):
+        path = Path(getattr(settings, setting))
+        stat = path.stat()
+        key = (str(path), stat.st_size, stat.st_mtime_ns)
+        if key not in _identity_cache:
+            _identity_cache[key] = _sha256(path)
+        out.append({"name": name, "file": path.name, "sha256": _identity_cache[key]})
+    return out
+
+
 def spot_model() -> tuple[SpotONNX, ModelInfo]:
     """Return the shared TLC-SpotDet session and its identity."""
     model, info = _load("spot", "TLC-SpotDet", Path(settings.SPOT_MODEL_PATH), SpotONNX)

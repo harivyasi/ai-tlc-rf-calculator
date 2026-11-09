@@ -75,6 +75,11 @@ follow the SI; candidate detection is Shilpa's.
   so Detect Lines, Detect Spots and Calculate RF decode a plate once: on a
   50 MP photo the three steps take 7.3 s instead of 10.4 s, and peak memory
   halves.
+- Results record how they were made (SI 10.3 / 11.4): a `spot source`
+  column (`manual`, `detected`, or `detected, moved`) and a closing
+  `Provenance:` block in the CSV with the app version, the original image
+  name and its SHA-256, rotation, Plate Area, both models' SHA-256 and the
+  time of calculation (UTC).
 
 ### Changed
 

@@ -1091,6 +1091,59 @@ class HeaderCheckTests(SimpleTestCase):
         self.assertIn("not a valid image", response.json()["error"])
 
 
+class ProvenanceTests(SimpleTestCase):
+    """The CSV records how each spot was placed and how the result was made."""
+
+    def test_spot_source(self) -> None:
+        self.assertEqual(results.spot_source({"x": 1, "y": 2}), "manual")
+        self.assertEqual(results.spot_source({"auto": True}), "detected")
+        self.assertEqual(results.spot_source({"auto": True, "moved": True}), "detected, moved")
+        self.assertEqual(results.spot_source({"auto": "yes"}), "manual")  # booleans only
+
+    def test_provenance_block_closes_the_csv(self) -> None:
+        rows = results.build_rows([(0, 0, 0.5, "detected")], [])
+        text = results.csv_text(rows, [("app", "TLC RF Calculator 9"), ("image", "=evil")])
+        self.assertTrue(text.endswith("\nProvenance:\napp;TLC RF Calculator 9\nimage;'=evil\n"))
+        self.assertIn(",0.5,detected\n", text)
+
+    def test_calculate_records_sources_and_provenance(self) -> None:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        payload = {
+            "isLocalImage": True,
+            "imageData": _png_data_url(300, 300),
+            "imageName": "plate 7.jpg",
+            "rotation": 90,
+            "plateRegion": {"x": 10, "y": 20, "width": 200, "height": 250},
+            "lines": [{"type": "min", "y": 250}, {"type": "max", "y": 50}],
+            "spots": [
+                {"x": 100, "y": 150},
+                {"x": 150, "y": 100, "auto": True},
+                {"x": 200, "y": 200, "auto": True, "moved": True},
+            ],
+        }
+        with self.settings(MEDIA_ROOT=tmp):
+            body = _post_json(self.client, "calculate_rf", payload).json()
+            name = body["csv_url"].rsplit("/", 1)[1]
+            with open(os.path.join(tmp, name), encoding="utf-8") as fh:
+                text = fh.read()
+        self.assertEqual(
+            sorted(row["source"] for row in body["rf_values"]),
+            ["detected", "detected, moved", "manual"],
+        )
+        provenance = dict(
+            line.split(";", 1) for line in text.split("Provenance:\n")[1].splitlines()
+        )
+        self.assertEqual(provenance["image"], "plate 7.jpg")
+        self.assertEqual(provenance["rotation"], "90 degrees clockwise")
+        self.assertEqual(provenance["plate area"], "x=10, y=20, width=200, height=250")
+        self.assertEqual(len(provenance["image sha256"]), 64)
+        self.assertIn(SPOT_SHA256, provenance["TLC-SpotDet"])
+        self.assertIn(LINE_SHA256, provenance["TLC-LineDet"])
+        self.assertRegex(provenance["calculated"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertTrue(provenance["app"].startswith("TLC RF Calculator "))
+
+
 class EnvHelperTests(SimpleTestCase):
     def test_env_bool(self) -> None:
         with mock.patch.dict(os.environ, {"TLC_X": "yes"}):
@@ -1306,7 +1359,7 @@ class ResultCsvTests(SimpleTestCase):
         self.assertEqual(
             lines[2],
             "spot,mixture_label (X axis),mixture_type,substance_label (Y axis),"
-            "substance_type,RF value",
+            "substance_type,RF value,spot source",
         )
         self.assertIn("Details:", lines)
         self.assertIn("TLC (solvents); Rf (UV-Vis in nm, staining) = ", text)
@@ -1316,11 +1369,12 @@ class ResultCsvTests(SimpleTestCase):
         table = text.split("\n\n")[1]
         rows = list(csv.reader(io.StringIO(table)))
         header, *body = rows
-        self.assertEqual(len(header), 6)
-        self.assertTrue(all(len(row) == 6 for row in body), body)
+        self.assertEqual(len(header), 7)
+        self.assertTrue(all(len(row) == 7 for row in body), body)
         by_lane = {row[1]: row for row in body}
         self.assertEqual(
-            by_lane["A, crude"], ["2", "A, crude", "product 1", "SM", "starting material", "0.5"]
+            by_lane["A, crude"],
+            ["2", "A, crude", "product 1", "SM", "starting material", "0.5", "manual"],
         )
         self.assertIn("'=HYPERLINK", next(k for k in by_lane if "HYPERLINK" in k))
 
@@ -1335,7 +1389,10 @@ class ResultCsvTests(SimpleTestCase):
             served = fh.read()
         os.remove(os.path.join(settings.MEDIA_ROOT, name))
         os.remove(os.path.join(settings.MEDIA_ROOT, body["annotated_image_url"].split("/")[-1]))
-        self.assertEqual(served, results.csv_text(body["rf_values"]))
+        table, provenance = served.split("\nProvenance:\n")
+        table = table.removesuffix("\n") + "\n"
+        self.assertEqual(table, results.csv_text(body["rf_values"]))
+        self.assertIn("app;TLC RF Calculator", provenance)
         self.assertEqual(body["rf_values"][0]["n"], 1)
 
 
