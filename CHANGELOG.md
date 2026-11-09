@@ -40,6 +40,8 @@ follow the SI; candidate detection is Shilpa's.
 - `ONNX_INTRA_OP_THREADS` caps ONNX Runtime's per-inference threads; the
   server is sized for the models (2 workers x 4 threads).
 - With a Plate Area set, **Detect Lines** searches only inside it.
+- `tools/legacy_equivalence.py`: plate-by-plate comparison with Shilpa's
+  tool (223 plates, 4,941 spot candidates, identical).
 
 ### Fixed
 
