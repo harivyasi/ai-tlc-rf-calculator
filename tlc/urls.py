@@ -11,6 +11,8 @@ urlpatterns = [
     path("healthz", views.healthz, name="healthz"),
     # URL for calculating RF values based on image data and user annotations
     path("calculate_rf/", views.calculate_rf, name="calculate_rf"),
+    # The CSV, annotated image and annotation file of one result, as one ZIP
+    path("download-results/", views.download_results, name="download_results"),
     # Candidate detection with TLC-SpotDet (spots, inside the Min/Max band) and
     # TLC-LineDet (baseline and solvent front)
     path("detect-spots/", views.detect_spots, name="detect_spots"),

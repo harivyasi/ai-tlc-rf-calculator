@@ -9,6 +9,10 @@
  *  - Drafts: kept in the browser after every change (drafts.js).
  *
  * The image itself is not in the file; its SHA-256 ties the file to it.
+ *
+ * Optional fields a version 1 file may lack (it then reads as before):
+ * `mobilePhase` and `stationaryPhase` (free text) and `estimated` on a Min or
+ * Max line that Suggest Lines guessed and nobody has moved yet.
  */
 
 "use strict";
@@ -23,6 +27,13 @@ const SOURCES = { manual: [false, false], detected: [true, false], "detected, mo
 function spotSource(spot) {
     if (!spot.auto) return "manual";
     return spot.moved ? "detected, moved" : "detected";
+}
+
+// Free text as one trimmed line, as the server cleans labels (clean_label).
+export const MAX_TEXT_CHARS = 100;
+
+export function cleanText(raw) {
+    return typeof raw === "string" ? raw.split(/\s+/).filter(Boolean).join(" ").slice(0, MAX_TEXT_CHARS) : "";
 }
 
 function round(value) {
@@ -46,6 +57,8 @@ export function serialize() {
         if (line.type === "horizontal" || line.type === "vertical") {
             out.text = line.text || "";
             out.kind = line.kind || "";
+        } else if (line.estimated) {
+            out.estimated = true;
         }
         return out;
     });
@@ -61,6 +74,8 @@ export function serialize() {
             width: state.image ? state.image.naturalWidth : null,
             height: state.image ? state.image.naturalHeight : null,
         },
+        mobilePhase: state.mobilePhase,
+        stationaryPhase: state.stationaryPhase,
         rotation: state.rotation,
         fineRotation: state.fineRotation,
         plateRegion: region
@@ -102,6 +117,11 @@ export function validate(data) {
             return { error: "The annotation file has an invalid spot." };
         }
     }
+    for (const key of ["mobilePhase", "stationaryPhase"]) {
+        if (data[key] !== undefined && typeof data[key] !== "string") {
+            return { error: "The annotation file has an invalid plate description." };
+        }
+    }
     const r = data.plateRegion;
     if (r !== null && r !== undefined && !(finite(r.x) && finite(r.y) && finite(r.width) && finite(r.height))) {
         return { error: "The annotation file has an invalid plate area." };
@@ -127,8 +147,10 @@ export function applyAnnotations(data) {
         const out = { id: id++, type: line.type, kind: "" };
         if (line.type === "vertical") out.x = line.x;
         else out.y = line.y;
-        if (line.type === "min" || line.type === "max") out.text = line.type;
-        else {
+        if (line.type === "min" || line.type === "max") {
+            out.text = line.type;
+            out.estimated = line.estimated === true;
+        } else {
             out.text = typeof line.text === "string" ? line.text : "";
             out.kind = typeof line.kind === "string" ? line.kind : "";
         }
@@ -140,4 +162,11 @@ export function applyAnnotations(data) {
     });
     const r = data.plateRegion;
     state.plateRegion = r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null;
+    state.mobilePhase = cleanText(data.mobilePhase);
+    state.stationaryPhase = cleanText(data.stationaryPhase);
+}
+
+// The file's text, as exported (download, ELN, or inside "Download all").
+export function annotationsText() {
+    return JSON.stringify(serialize(), null, 2) + "\n";
 }

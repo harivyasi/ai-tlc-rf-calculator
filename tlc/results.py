@@ -40,9 +40,13 @@ LANE_TYPES = ("starting material", "product 1", "product 2", "by-product", "reag
 
 MAX_LABEL_CHARS = 100
 
-# BGR colours, matching the live canvas (tlc/static/tlc/js/canvas.js).
-_GREEN = (62, 142, 30)  # Min / baseline
-_RED = (37, 48, 217)  # Max / solvent front
+# BGR colours, matching the live canvas (tlc/static/tlc/js/canvas.js). Min
+# and Max are yellow and magenta on a dark outline: the two differ clearly from
+# each other and show on white, dark and green fluorescent plates alike (a
+# green baseline nearly vanished on F254 plates under UV).
+_YELLOW = (0, 214, 255)  # Min / baseline, #ffd600
+_MAGENTA = (180, 0, 230)  # Max / solvent front, #e600b4
+_DARK = (32, 32, 32)  # outline of Min and Max, #202020
 _BLACK = (0, 0, 0)  # H-line / compound marker
 _BLUE = (192, 101, 21)  # V-line / lane marker
 _ORANGE = (0, 165, 255)  # spot ring
@@ -139,8 +143,9 @@ def _text(
     scale: float,
     thickness: int,
     color: tuple[int, int, int] = _BLACK,
+    halo_color: tuple[int, int, int] = _WHITE,
 ) -> None:
-    """Draw ``text`` with a white halo, so it reads on light and dark plates.
+    """Draw ``text`` with a halo (white by default), so it reads on light and dark plates.
 
     The halo is a dilation of the glyph mask, not a second, thicker
     ``putText``: OpenCV 5 draws text at the same weight whatever the
@@ -162,7 +167,7 @@ def _text(
     outline = cv2.dilate(mask, kernel)
     window = (slice(cy0 - y0, cy1 - y0), slice(cx0 - x0, cx1 - x0))
     region = image[cy0:cy1, cx0:cx1]
-    region[outline[window] > 0] = _WHITE
+    region[outline[window] > 0] = halo_color
     alpha = (mask[window].astype(np.float32) / 255.0)[..., None]
     region[:] = (region * (1 - alpha) + np.array(color, np.float32) * alpha).astype(np.uint8)
 
@@ -173,9 +178,10 @@ def _line(
     p2: tuple[int, int],
     color: tuple[int, int, int],
     thickness: int,
+    halo_color: tuple[int, int, int] = _WHITE,
 ) -> None:
-    """A line on a thin white halo, so dark and green lines show on any plate."""
-    cv2.line(image, p1, p2, _WHITE, thickness + 2)
+    """A line on a thin halo (white by default), so it shows on any plate."""
+    cv2.line(image, p1, p2, halo_color, thickness + 2)
     cv2.line(image, p1, p2, color, thickness)
 
 
@@ -213,9 +219,9 @@ def draw_annotations(
     pad = round(6 * s)
     row_gap = round(22 * s * text_scale)
 
-    for y, color, name in ((min_y, _GREEN, "Min"), (max_y, _RED, "Max")):
-        _line(image, (0, int(y)), (width, int(y)), color, line_t)
-        _text(image, name, (pad, int(y) - pad), font_scale, text_t, color)
+    for y, color, name in ((min_y, _YELLOW, "Min"), (max_y, _MAGENTA, "Max")):
+        _line(image, (0, int(y)), (width, int(y)), color, line_t, _DARK)
+        _text(image, name, (pad, int(y) - pad), font_scale, text_t, color, _DARK)
 
     # V-line captions sit along the bottom; neighbouring lanes are often closer
     # than a caption is wide, so a caption that would overlap the previous one
@@ -284,11 +290,25 @@ def _cell(value: Any) -> str:
     return text
 
 
-def csv_text(rows: list[dict[str, Any]], provenance: list[tuple[str, str]] | None = None) -> str:
+def details_sentence(rows: list[dict[str, Any]], mobile_phase: str = "") -> str:
+    """The Rf values as one sentence in the style of Chemotion's TLC free text.
+
+    ``TLC (<mobile phase>); Rf (UV-Vis in nm, staining) = 0.53 (A)[h1], ...``;
+    without a mobile phase, version 1's placeholder "solvents" stays.
+    """
+    inline = ", ".join(f"{row['rf']:.2f} ({row['compound']})[h{row['n']}]" for row in rows)
+    return f"TLC ({mobile_phase or 'solvents'}); Rf (UV-Vis in nm, staining) = {inline}."
+
+
+def csv_text(
+    rows: list[dict[str, Any]],
+    provenance: list[tuple[str, str]] | None = None,
+    mobile_phase: str = "",
+) -> str:
     """The results CSV, as text.
 
     ``provenance`` is written last as ``key;value`` lines, in the style of the
-    CHMO line at the top.
+    CHMO line at the top. ``mobile_phase`` fills the Details sentence.
     """
     out = io.StringIO()
     out.write("Measurement type;thin layer chromatography (TLC);CHMO:0001007\n\n")
@@ -306,8 +326,7 @@ def csv_text(rows: list[dict[str, Any]], provenance: list[tuple[str, str]] | Non
                 row.get("source", "manual"),
             ]
         )
-    inline = ", ".join(f"{row['rf']:.2f} ({row['compound']})[h{row['n']}]" for row in rows)
-    out.write(f"\nDetails:\nTLC (solvents); Rf (UV-Vis in nm, staining) = {inline}.\n")
+    out.write(f"\nDetails:\n{details_sentence(rows, mobile_phase)}\n")
     if provenance:
         out.write("\nProvenance:\n")
         for key, value in provenance:

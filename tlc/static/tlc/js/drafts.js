@@ -45,7 +45,13 @@ function forget(sha) {
 }
 
 function hasAnnotations() {
-    return state.lines.length > 0 || state.spots.length > 0 || !!state.plateRegion;
+    return (
+        state.lines.length > 0 ||
+        state.spots.length > 0 ||
+        !!state.plateRegion ||
+        !!state.mobilePhase ||
+        !!state.stationaryPhase
+    );
 }
 
 // Save (or, with nothing annotated, delete) the current image's draft.

@@ -14,8 +14,9 @@ import {
     hasImage,
     markResultsStale,
     refreshUI,
-    textScale,
+    syncPlateInfo,
     updateAnnotatedHeading,
+    updateAnnotatedHighlight,
     updateWorkAreaLayout,
 } from "./ui.js";
 import { deleteLine, editLine, isHorizontalLine, markerCaption, setActiveButton } from "./annotations.js";
@@ -69,16 +70,43 @@ export function fitAndDraw(img) {
     document.body.dataset.imageReady = "1"; // readiness signal (used by tests)
 }
 
-// Distinct colours per reference-line type (Min vs Max were both red before).
-const LINE_COLORS = {
-    min: "#1e8e3e", // green — baseline / origin
-    max: "#d93025", // red — solvent front
-    horizontal: "#000000", // black (with a white halo) — compound marker; purple read as grey
-    vertical: "#1565c0", // blue — lane label
+// Colours per line type, as on the saved image (tlc/results.py). Min and Max
+// are yellow and magenta on a dark outline: they differ from each other and
+// show on white, dark and green fluorescent plates alike (a green baseline
+// nearly vanished on F254 plates under UV). `icon` colours the delete cross,
+// which sits on a white button where yellow does not read.
+const LINE_STYLES = {
+    min: { color: "#ffd600", halo: "#202020", icon: "#9a7b00" }, // baseline / origin
+    max: { color: "#e600b4", halo: "#202020", icon: "#e600b4" }, // solvent front
+    horizontal: { color: "#000000", halo: "#ffffff", icon: "#000000" }, // compound; purple read as grey
+    vertical: { color: "#1565c0", halo: null, icon: "#1565c0" }, // lane
 };
 
-function lineColor(line) {
-    return LINE_COLORS[line.type] || "#d93025";
+function lineStyle(line) {
+    return LINE_STYLES[line.type] || LINE_STYLES.max;
+}
+
+// Label size on the canvas, by the saved image's rule (tlc/results.py,
+// draw_annotations: Hershey scale 0.55 * s with s = max(1, min(h, w) / 1000);
+// its capitals are ~20 px tall per unit scale, a sans-serif em of ~28 px), so
+// the preview and the saved image look alike. Converted from image px to canvas
+// px, and never below MIN_LABEL_PX, which stays readable on a 500 px canvas.
+// The text-size setting is left out: it applies to the saved image only.
+const MIN_LABEL_PX = 11;
+
+export function plateFontPx(width, height, scaleFactor) {
+    const s = Math.max(1, Math.min(width, height) / 1000);
+    return Math.max(MIN_LABEL_PX, (0.55 * 28 * s) / (scaleFactor || 1));
+}
+
+// How a line is captioned: Min/Max as on the saved image, marked while they
+// are only an estimate; markers by their label.
+function lineCaption(line) {
+    if (line.type === "min" || line.type === "max") {
+        const name = line.type === "min" ? "Min" : "Max";
+        return line.estimated ? name + " (estimate)" : name;
+    }
+    return markerCaption(line);
 }
 
 export function redrawCanvas() {
@@ -87,15 +115,16 @@ export function redrawCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawImageRotated(ctx, state.image, state.rotation, canvas.width, canvas.height, state.fineRotation);
 
-    ctx.font = Math.round(16 * textScale()) + "px sans-serif";
+    const fontPx = plateFontPx(state.image.naturalWidth, state.image.naturalHeight, window.scaleFactor);
+    ctx.font = Math.round(fontPx) + "px sans-serif";
     ctx.lineWidth = 2;
 
     // Lines — each type has its own colour so Min and Max are told apart, and
-    // the matching delete cross is drawn in the same colour.
+    // the matching delete cross is drawn in the same colour. An estimated Min
+    // or Max (Suggest Lines found only the other) is dashed until it is moved.
     state.lines.forEach((line) => {
-        const color = lineColor(line);
-        const halo = line.type === "horizontal"; // black needs a halo on dark plates
-        const caption = line.type === "min" || line.type === "max" ? line.text : markerCaption(line);
+        const { color, halo } = lineStyle(line);
+        const caption = lineCaption(line);
         let from, to, at;
         if (isHorizontalLine(line)) {
             const y = line.y / window.scaleFactor;
@@ -105,15 +134,18 @@ export function redrawCanvas() {
             const x = line.x / window.scaleFactor;
             [from, to, at] = [[x, 0], [x, canvas.height], [x + 5, canvas.height - 6]];
         }
+        ctx.setLineDash(line.estimated ? [8, 6] : []);
         if (halo) {
             ctx.save();
-            ctx.strokeStyle = "#ffffff";
+            ctx.strokeStyle = halo;
             ctx.lineWidth = 4;
             ctx.beginPath();
             ctx.moveTo(...from);
             ctx.lineTo(...to);
             ctx.stroke();
+            ctx.setLineDash([]);
             ctx.lineJoin = "round";
+            ctx.lineWidth = Math.max(3, fontPx / 5);
             if (caption) ctx.strokeText(caption, ...at);
             ctx.restore();
         }
@@ -123,6 +155,7 @@ export function redrawCanvas() {
         ctx.moveTo(...from);
         ctx.lineTo(...to);
         ctx.stroke();
+        ctx.setLineDash([]);
         if (caption) ctx.fillText(caption, ...at);
     });
 
@@ -141,7 +174,7 @@ export function redrawCanvas() {
     const container = document.getElementById("canvas-container");
     const rightEdge = state.cropView ? container.clientWidth : ox + canvas.clientWidth;
     state.lines.forEach((line) => {
-        const color = lineColor(line);
+        const color = lineStyle(line).icon;
         const editable = line.type === "horizontal" || line.type === "vertical";
         if (isHorizontalLine(line)) {
             // Cross on the RIGHT (the label sits at the left), pencil beside it.
@@ -210,6 +243,7 @@ export function redrawCanvas() {
     }
 
     refreshUI();
+    updateAnnotatedHighlight();
 }
 
 export function addDeleteIcon(line, x, y, color) {
@@ -274,16 +308,32 @@ export function toContainer(dx, dy) {
 // Apply/clear the crop by CSS-zooming the canvas inside an overflow-hidden
 // container. The bitmap, annotation coordinates, and saved image are untouched;
 // pointer mapping stays correct because it reads getBoundingClientRect().
+// The crop view keeps this much of the photo around the Plate Area on each
+// side (a share of the box's size), so the plate's edges stay in view.
+export const CROP_MARGIN = 0.06;
+
+// The part of the canvas the crop view shows: the Plate Area plus the margin,
+// clipped to the canvas, in canvas px.
+export function cropRect(region, sf, canvasW, canvasH) {
+    const mx = (region.width / sf) * CROP_MARGIN;
+    const my = (region.height / sf) * CROP_MARGIN;
+    const x0 = Math.max(0, region.x / sf - mx);
+    const y0 = Math.max(0, region.y / sf - my);
+    const x1 = Math.min(canvasW, (region.x + region.width) / sf + mx);
+    const y1 = Math.min(canvasH, (region.y + region.height) / sf + my);
+    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
 export function applyCrop() {
     const canvas = state.canvas;
     const container = document.getElementById("canvas-container");
     const props = ["position", "left", "top", "width", "height", "maxWidth"];
     if (cropEnabled()) {
-        const sf = window.scaleFactor || 1;
-        const rcx = state.plateRegion.x / sf;
-        const rcy = state.plateRegion.y / sf;
-        const rcw = state.plateRegion.width / sf;
-        const rch = state.plateRegion.height / sf;
+        const view = cropRect(state.plateRegion, window.scaleFactor || 1, canvas.width, canvas.height);
+        const rcx = view.x;
+        const rcy = view.y;
+        const rcw = view.width;
+        const rch = view.height;
         const k = rch > 0 ? Math.min(3, 500 / rch) : 1;
         state.cropView = { rcx, rcy, k };
         container.style.overflow = "hidden";
@@ -370,6 +420,8 @@ export function resetCanvas() {
     clearResultsStale();
     updateAnnotatedHeading("editing");
     setActiveButton(null);
+    // The plate description stays: Reset clears the marks and results, not
+    // what the plate was run in.
     resetHistory(); // clean slate becomes the undo baseline
     deleteDraft(); // the draft goes with the annotations
     applyCrop(); // region cleared -> exit crop view (redraws + refreshUI)
@@ -398,6 +450,7 @@ export function commitChange() {
 function afterHistoryChange(presetBefore) {
     state.highlightedSpot = null; // may point at a spot that no longer exists
     syncRotationControls();
+    syncPlateInfo();
     if (state.rotation !== presetBefore) fitAndDraw(state.image); // 90/270 swap the frame
     afterAnnotationChange();
 }

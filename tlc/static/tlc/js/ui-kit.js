@@ -5,15 +5,16 @@
 
 "use strict";
 
-export function notify(message, type = "info") {
+// `ms`: how long the toast stays (longer for one carrying text to copy by hand).
+export function notify(message, type = "info", ms = 3000) {
     const container = document.getElementById("toast-container");
     if (!container) return;
     const toast = document.createElement("div");
     toast.className = "toast toast-" + type;
     toast.textContent = message;
     container.appendChild(toast);
-    setTimeout(() => toast.classList.add("toast-hide"), 3000);
-    setTimeout(() => toast.remove(), 3400);
+    setTimeout(() => toast.classList.add("toast-hide"), ms);
+    setTimeout(() => toast.remove(), ms + 400);
 }
 
 export function showOverlay(text) {

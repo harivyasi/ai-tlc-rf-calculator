@@ -260,6 +260,12 @@ body {
     box-shadow: var(--shadow-sm);
 }
 #annotated-image { margin: 0 auto; }
+/* The selected table row's spot, ringed over the annotated image (ui.js) */
+.annotated-wrap { position: relative; }
+.annotated-ring {
+    position: absolute; transform: translate(-50%, -50%); pointer-events: none;
+    border: 3px solid #2f6fed; border-radius: 50%; box-shadow: 0 0 0 2px #ffffff;
+}
 #annotated-image.stale { opacity: 0.45; filter: grayscale(0.3); }
 /* Let pointer drags reach the canvas on touch devices (no scroll/zoom steal). */
 #image-canvas { touch-action: none; height: auto; }
@@ -533,6 +539,17 @@ body {
 .source-summary-change:hover { text-decoration: underline; }
 .source-summary .icon { width: 16px; height: 16px; }
 
+/* Mobile / stationary phase: shown with the summary, once an image is loaded */
+.plate-info { display: none; flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0 1rem 0.6rem; }
+.source-summary.shown ~ .plate-info { display: flex; }
+.plate-field { display: inline-flex; align-items: center; gap: 0.4rem; flex: 1 1 16rem; min-width: 0; font-size: 0.85rem; font-weight: 600; }
+.plate-field span { white-space: nowrap; }
+.plate-field input {
+    flex: 1; min-width: 0; font: inherit; font-weight: 400; padding: 0.25rem 0.45rem;
+    border: 1px solid var(--border, #ccc); border-radius: 6px;
+    background: var(--surface); color: var(--text);
+}
+
 /* Toolbar */
 .toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.9rem;
@@ -575,6 +592,8 @@ body {
 /* Downloads on the first row, ELN uploads (when shown) on the second. */
 .export-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 1rem; }
 .export-row .lab-btn { min-width: 0; justify-content: center; }
+/* Download all + Copy Rf summary: their own row, two halves */
+.export-extra { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
 
 /* A saved draft for this image, offered (never restored by itself) */
 .draft-banner {
@@ -631,6 +650,9 @@ body {
     .toolbar .lbl-full { display: none; }
     .toolbar .lbl-short { display: inline; }
     .toolbar .lbl-hide { display: none; }
+    /* "Annotations" does not fit a third of a phone-wide export row. */
+    .export-row .lbl-full { display: none; }
+    .export-row .lbl-short { display: inline; }
 }
 
 /* Results table row interactions */

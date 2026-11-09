@@ -41,9 +41,10 @@ workflow and detection logic are kept unchanged and checked plate by plate (§7)
  ELN (?url=) ─► GET  /fetch-image/  ─────────────────► SSRF-guarded fetch → MEDIA
                 GET  /serve-image/  ◄────────────────  confined to MEDIA_ROOT
  rotate / plate area / annotate on <canvas>
- Detect Lines ─► POST /detect-lines/ ────────────────► TLC-LineDet → Min/Max
- Detect Spots ─► POST /detect-spots/ (minY, maxY) ───► TLC-SpotDet in the band
+ Suggest Lines ► POST /detect-lines/ ────────────────► TLC-LineDet → Min/Max
+ Suggest Spots ► POST /detect-spots/ (minY, maxY) ───► TLC-SpotDet in the band
  Calculate RF ─► POST /calculate_rf/ ────────────────► Rf, rows, image, CSV → MEDIA
+ Download all ─► POST /download-results/ ────────────► ZIP: CSV + image + annotations
  export ───────► download, or POST multipart to the ELN URL (cross-origin)
 ```
 
@@ -52,7 +53,7 @@ browser falls back to sending the image inline as a data URL.
 
 Endpoints (`tlc/urls.py` → `tlc/views.py`): the page, `upload-image/`,
 `fetch-image/`, `serve-image/`, `detect-lines/`, `detect-spots/`,
-`calculate_rf/`, `healthz`.
+`calculate_rf/`, `download-results/`, `healthz`.
 
 ## 3. Key design choices (and why)
 
@@ -96,6 +97,12 @@ The subtle core of the frontend. Three spaces:
 360 px). Delete/edit icons live in `#canvas-container` and are placed in display
 px.
 
+Canvas labels are sized by the saved image's rule (`plateFontPx`: the size
+`draw_annotations` uses, in image px, divided by `scaleFactor`, at least 11 px),
+so the preview and the saved image look alike; the text-size setting applies
+to the saved image only. The crop view shows the Plate Area plus 6 % of its
+size on each side (`cropRect`), clipped to the image.
+
 ### Rotation: a preset plus a fine-tune
 
 Rf compares heights, so the baseline must be level. The rotation is a preset
@@ -121,8 +128,14 @@ the image starts a new history, so marks never return in another frame.
 ### Stale-results guard
 
 The table and annotated image are a snapshot of the last Calculate RF. A later
-edit shows a banner, dims the image and **disables export** until
-recalculation, so an outdated image is never saved or sent to the ELN.
+edit (marks, Plate Area, mobile or stationary phase) shows a banner, dims the
+image and **disables export** until recalculation, so an outdated image is
+never saved or sent to the ELN. Text size and "full labels" change only the
+drawing: a change (debounced) redraws the image by calling `calculate_rf`
+again with the same annotations (`rerenderResults`), so the rows stay the
+same and the results never go stale; export waits for the new image. Every
+calculation and redraw is numbered and only the latest reply is shown; a
+redraw's reply is dropped if an edit made the results stale meanwhile.
 
 ### Plate Area: a detection region, not the Rf reference
 
@@ -139,7 +152,9 @@ fabricate data).
   the two are assigned **by position** (the lower is the baseline), because
   geometry, not the class label, defines the TLC meaning. With only one line
   found, the other is estimated at 10%/90% of the height and flagged
-  (`estimated`). Confidence 0.05.
+  (`estimated`); the browser draws that line dashed, captioned "Min
+  (estimate)" or "Max (estimate)", until the user moves it (the flag is kept
+  in undo, drafts and the annotation file). Confidence 0.05.
 - **Spots (TLC-SpotDet, 1280 px input, NMS in the graph):** inference only on
   the strip between baseline and front, widened by `TLC_BAND_MARGIN` (12 px);
   candidates whose centre lies outside the band itself are dropped. The model
@@ -174,28 +189,56 @@ candidates (x, y, confidence) (§7).
   last), then Rf, then x; numbered 1..n. The number is drawn next to each spot,
   so a crowded image stays readable; "full labels" adds Rf, compound and lane.
 - **Annotated image** (SI 8.2): drawn on the full-resolution image: Min
-  (green), Max (red), H-lines (black), V-lines (blue, captions staggered so
-  neighbours do not overlap), spot rings and labels, all on white halos.
-  OpenCV 5 ignores `putText` thickness, so halos are a dilated glyph mask.
-  Sizes scale with the image; *text size* is a multiplier on top.
+  (yellow) and Max (magenta) on a dark outline, which tell the two apart and
+  show on white, dark and green fluorescent plates alike; H-lines (black),
+  V-lines (blue, captions staggered so neighbours do not overlap), spot rings
+  and labels, on white halos. The canvas uses the same colours. OpenCV 5
+  ignores `putText` thickness, so halos are a dilated glyph mask. Sizes scale
+  with the image; *text size* is a multiplier on top.
 - **CSV:** the table's columns in the table's order (`spot`, lane label and
   type, compound label and type, `RF value`), then `spot source` (manual /
   detected / detected, moved), the CHMO line and the "Details" sentence kept
   from version 1, and a closing `Provenance:` block (app version, image
-  name and SHA-256, rotation, Plate Area, both models' SHA-256, UTC time).
-  Cells are guarded against spreadsheet formulas. Chemotion stores the CSV as
-  an attachment and parses nothing in it.
+  name and SHA-256, rotation, Plate Area, mobile and stationary phase, both
+  models' SHA-256, UTC time). Cells are guarded against spreadsheet formulas.
+  Chemotion stores the CSV as an attachment and parses nothing in it.
+- **Details sentence** (`details_sentence`): Chemotion's TLC free-text style,
+  `TLC (<mobile phase>); Rf (UV-Vis in nm, staining) = 0.53 (A)[h1], ...`,
+  with version 1's placeholder "solvents" when no mobile phase is given. The
+  response returns it as `details` for **Copy Rf summary**, so the browser
+  never rebuilds it.
+- **Mobile and stationary phase:** optional free text, cleaned like marker
+  labels (`clean_label`: one line, 100 characters).
 
 ### Annotation file and drafts (`annotation-file.js`, `drafts.js`)
 
 One versioned JSON (`tlc-rf-annotations`, version 1) holds everything needed to
-redo a result: image name and SHA-256, rotation, Plate Area, Min/Max, markers,
-spots with their source. It is exported next to the CSV (download or ELN),
+redo a result: image name and SHA-256, mobile and stationary phase, rotation,
+Plate Area, Min/Max (with `estimated` while a line is a guess), markers, spots
+with their source. The phases and `estimated` are optional, so a file without
+them still opens and the version stays 1. It is exported next to the CSV (download or ELN),
 opened back onto the same image (checked by SHA-256, refused for another),
 and kept in `localStorage` after every change as a draft keyed by the image
 hash. A draft is only ever *offered* (Restore / Discard), never restored by
 itself; Reset deletes it; the newest 20 are kept. The image is hashed in the
 browser (`crypto.subtle`); without it, drafts are off.
+
+### Exports: one name, one ZIP
+
+Every exported file, downloaded or uploaded to the ELN, is named
+`<stem>_<YYYY-MM-DD_HH-MM>_rf.csv`, `..._annotated.png` or
+`..._annotations.json` (`exportName` in `results.js`): the stem is the image's
+name without its extension (`tlc_plate` for an ELN image), the time that of
+the result, so the three files of one result sort together. **Download all**
+POSTs the CSV and image URLs of the last result plus the annotation file's text
+to `/download-results/`. The server accepts only the two files of one
+calculation (`rf_values_<token>.csv` and `annotated_<token>.png`, the same
+token), resolves them with `_resolve_within_media`, requires the annotations
+to parse as a `tlc-rf-annotations` object, cleans the stem, and streams a ZIP
+built in a temporary file (a 50 MP plate's PNG is tens of MB). Clicking a
+table row rings the spot on the canvas and, positioned from the row's image
+px, over the annotated image (`updateAnnotatedHighlight`, kept in place on
+resize).
 
 ### Images: one decoder, checked before decoding
 
@@ -268,11 +311,11 @@ Loaded as `<script type="module" src="js/main.js">`. Leaf → entry:
 | `history.js` | Undo/redo snapshot stack + cursor; snapshots carry the rotation. |
 | `ui-kit.js` | Toasts, busy overlay, cookie helper. |
 | `theme.js` | Light/dark toggle (persisted). |
-| `ui.js` | Headings, source card, hint, layout, enable states, stale-results controller, `textScale()`. |
-| `canvas.js` | Draw/redraw, rotation (`drawImageRotated`, `setRotation`), `pointerCanvas`, crop view, reset, `commitChange`, undo/redo. |
+| `ui.js` | Headings, source card, hint, layout, enable states, stale-results and export controller, plate description fields, highlight ring over the annotated image, `textScale()`. |
+| `canvas.js` | Draw/redraw (line colours, label size `plateFontPx`, estimated lines dashed), rotation (`drawImageRotated`, `setRotation`), `pointerCanvas`, crop view (`cropRect`), reset, `commitChange`, undo/redo. |
 | `annotations.js` | Line/spot tools, label popup (type list + text), edit, delete. |
 | `interaction.js` | Pointer drag, region box, double-click(-tap) delete, drag clamping. |
-| `results.js` | Image payload, detection and Rf requests, results table, CSV, ELN upload. |
+| `results.js` | Image payload, detection and Rf requests, redraw for text size, results table, export names, downloads, Download all, Copy Rf summary, ELN upload. |
 | `annotation-file.js` | The annotation JSON: serialise, validate, apply; image SHA-256. |
 | `drafts.js` | Drafts in `localStorage`, keyed by image hash. |
 | `annotations-io.js` | Image identity, draft banner, open/export annotation files. |
@@ -290,10 +333,10 @@ function declaration. Shared mutable state lives on `state`.
 | `config/settings.py` | Env-driven settings, CSP config, derivations, the `SECRET_KEY` rule. |
 | `config/env.py` | `env_bool/int/list`, `csrf_origins_from_hosts`, `host_of`, `signs_data`. |
 | `config/middleware.py` | `ContentSecurityPolicyMiddleware`. |
-| `tlc/views.py` | Endpoints; image checks, decoding, rotation; Rf (`rf_from_positions`); security helpers. |
+| `tlc/views.py` | Endpoints; image checks, decoding, rotation; Rf (`rf_from_positions`); the results ZIP (`download_results`); security helpers. |
 | `tlc/detection.py` | Spot and line detection (version 1's band and assignment logic). |
 | `tlc/inference/` | Lazy, locked ONNX sessions (`spot.py`, `line.py` wrappers); model identity. |
-| `tlc/results.py` | Rows, numbering, annotated image, CSV + provenance. |
+| `tlc/results.py` | Rows, numbering, annotated image, CSV + provenance, Details sentence. |
 | `tlc/admission.py` | Admits image jobs by free memory. |
 | `tlc/imagecache.py` | Recently decoded images per worker. |
 | `tlc/media.py` | Writes to `MEDIA_ROOT`; automatic pruning. |
@@ -302,17 +345,20 @@ function declaration. Shared mutable state lives on `state`.
 
 ## 6. Testing
 
-- **Unit** (`tlc/tests.py`, 171): Rf equations and validation, detection and
+- **Unit** (`tlc/tests.py`, 179): Rf equations and validation, detection and
   line assignment (model calls stubbed where needed), model loading, results
-  rows, CSV and provenance, the annotated image, rotation maths, image checks
-  and EXIF, upload/fetch, admission and cache, media pruning, security helpers,
-  settings derivation, `SECRET_KEY`.
-- **E2E** (`e2e/test_regression.py`, Playwright + Chromium, 75): drives the
-  real UI: the Rf flow, detection, labels and types, numbering, CSV, ELN upload,
-  rotation (canvas vs server), annotation files and drafts, touch, phone width,
-  stale results, undo/redo. `conftest.py` fails a test on
+  rows, CSV and provenance (with mobile and stationary phase), the annotated
+  image, the results ZIP, rotation maths, image checks and EXIF, upload/fetch,
+  admission and cache, media pruning, security helpers, settings derivation,
+  `SECRET_KEY`.
+- **E2E** (`e2e/test_regression.py`, Playwright + Chromium, 84): drives the
+  real UI: the Rf flow, detection, estimated lines, labels and types,
+  numbering, CSV, export names, Download all, Copy Rf summary, ELN upload,
+  rotation (canvas vs server), annotation files and drafts, plate
+  description, touch, phone width, stale results and the text-size redraw,
+  undo/redo. `conftest.py` fails a test on
   any uncaught page error.
-- **JS units without npm** (`e2e/test_js_units.py`): the page `import()`s
+- **JS units without npm** (`e2e/test_js_units.py`, 7): the page `import()`s
   modules and asserts on pure exports.
 
 Run: `DEBUG=True uv run python manage.py test` and `uv run pytest e2e`.
@@ -323,7 +369,7 @@ Lint and types: `uv run ruff check .`, `uv run ruff format --check .`,
 
 `tools/legacy_equivalence.py PLATES_DIR` builds version 1 from a git ref
 (`harden-for-deployment`: its detection code with lazy loading and a lockfile)
-in a temporary worktree, runs Detect Lines and Detect Spots of both apps on
+in a temporary worktree, runs the line and spot detection endpoints of both apps on
 every photo through Django's test client, and requires identical line
 positions and spot candidates (x, y, confidence; the box size that version 2
 adds is not compared). Photos with an EXIF orientation are written upright
@@ -405,8 +451,9 @@ Chemotion opens the tool with one signed URL (`?url=<jwt endpoint>`) used for
 **both** the image GET and the results POST. The server proxies the GET
 (`/fetch-image/`) to avoid browser CORS and to SSRF-guard it; results are POSTed
 cross-origin straight from the browser. Export offers three downloads (CSV,
-Image, Annotations) and, for an ELN-sourced plate, the same three as ELN
-uploads, each a separate one-file POST. Full contract and worked config:
+Image, Annotations), all three as one ZIP, a copy of the Rf summary and, for
+an ELN-sourced plate, the same three files as ELN uploads, each a separate
+one-file POST named like the download. Full contract and worked config:
 [eln-integration.md](eln-integration.md).
 
 ## 10. Possible future: in the browser

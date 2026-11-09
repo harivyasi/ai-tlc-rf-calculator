@@ -15,18 +15,18 @@ import { pageUrl, state } from "./state.js";
 import { preventDefaults } from "./ui-kit.js";
 import { initTheme, toggleTheme } from "./theme.js";
 import {
-    hasImage,
     markResultsStale,
     refreshUI,
     toggleHelp,
     toggleImageSource,
     updateAnnotatedHeading,
+    updateAnnotatedHighlight,
     updateExportButtons,
 } from "./ui.js";
 import {
     applyCrop,
+    commitChange,
     redoEdit,
-    redrawCanvas,
     resetCanvas,
     nudgeRotation,
     setRotation,
@@ -55,11 +55,15 @@ import {
     autoDetectLines,
     autoDetectSpots,
     calculateRF,
+    copyRfSummary,
     csvToEln,
     imageToEln,
+    rerenderResults,
+    saveAll,
     saveCSV,
     saveImage,
 } from "./results.js";
+import { cleanText } from "./annotation-file.js";
 import {
     annotationsToEln,
     discardDraft,
@@ -100,6 +104,8 @@ const ACTIONS = {
     updateAnnotatedHeading,
     saveCSV,
     saveImage,
+    saveAll,
+    copyRfSummary,
     csvToEln,
     imageToEln,
     submitAnnotation,
@@ -146,8 +152,15 @@ function init() {
         });
     }
 
-    // "Full labels" on the saved image: persisted; like the text size it is
-    // burned into the server-rendered image, so changing it marks results stale.
+    // Text size and "full labels" shape only the saved image: a change redraws
+    // it (debounced, so typing "250" is one redraw) without a recalculation.
+    let rerenderTimer = null;
+    const scheduleRerender = () => {
+        clearTimeout(rerenderTimer);
+        rerenderTimer = setTimeout(rerenderResults, 400);
+    };
+
+    // "Full labels" on the saved image: persisted.
     const fullLabels = document.getElementById("label-full");
     if (fullLabels) {
         try {
@@ -161,12 +174,12 @@ function init() {
             } catch (err) {
                 /* ignore */
             }
-            markResultsStale();
+            scheduleRerender();
         });
     }
 
-    // Annotation text size (%): persisted, and redraws the preview live so it
-    // matches the size that will be burned into the saved image.
+    // Annotation text size (%) of the saved image: persisted. The preview keeps
+    // the plate-proportional size (canvas.js, plateFontPx).
     const textScaleInput = document.getElementById("text-scale");
     if (textScaleInput) {
         try {
@@ -181,12 +194,34 @@ function init() {
             } catch (err) {
                 /* ignore */
             }
-            if (hasImage()) redrawCanvas(); // live preview of the label size
-            // The size is burned into the server-rendered annotated image, so a
-            // change makes a prior result out of date until it is recalculated.
-            markResultsStale();
+            scheduleRerender();
         });
     }
+
+    // Mobile and stationary phase: annotations like the marks. Typing updates
+    // the state and flags results stale at once (they are in the CSV); leaving
+    // the field records the change for undo and the draft.
+    [
+        ["mobile-phase", "mobilePhase"],
+        ["stationary-phase", "stationaryPhase"],
+    ].forEach(([id, key]) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.addEventListener("input", () => {
+            state[key] = cleanText(input.value);
+            markResultsStale();
+        });
+        input.addEventListener("change", () => {
+            state[key] = cleanText(input.value);
+            input.value = state[key];
+            commitChange();
+        });
+    });
+
+    // The highlight ring over the annotated image follows its displayed size.
+    window.addEventListener("resize", updateAnnotatedHighlight);
+    const annotatedImage = document.getElementById("annotated-image");
+    if (annotatedImage) annotatedImage.addEventListener("load", updateAnnotatedHighlight);
 
     // Rotation: a preset, plus a fine-tune previewed live while typing.
     const rotationPreset = document.getElementById("rotation-preset");

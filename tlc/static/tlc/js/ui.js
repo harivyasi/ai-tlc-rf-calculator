@@ -82,14 +82,23 @@ export function updateHint() {
     if (!hasImage()) {
         msg = "";
     } else if (!hasMinAndMax()) {
-        msg = "Start with Detect Lines to place Min and Max (or place them yourself).";
+        msg = "Start with Suggest Lines to place Min and Max (or place them yourself).";
+    } else if (estimatedLine()) {
+        const which = estimatedLine().type === "min" ? "Min (baseline)" : "Max (solvent front)";
+        msg = which + " is an estimate (dashed): drag it onto the plate's line.";
     } else if (state.spots.length === 0) {
-        msg = "Now click Detect Spots — it searches between Min and Max (or Add Spots to place them yourself).";
+        msg = "Now click Suggest Spots — it searches between Min and Max (or Add Spots to place them yourself).";
     } else {
         msg = "Ready — click Calculate RF.";
     }
     hint.textContent = msg;
     hint.classList.toggle("show", msg !== "");
+}
+
+// A Min or Max line Suggest Lines guessed (only the other was found), until
+// the user moves it.
+export function estimatedLine() {
+    return state.lines.find((l) => l.estimated) || null;
 }
 
 export function hasMinAndMax() {
@@ -111,7 +120,7 @@ export function updateReferenceButtons() {
     }
 }
 
-// Detect Lines needs only an image; Detect Spots also needs Min and Max,
+// Suggest Lines needs only an image; Suggest Spots also needs Min and Max,
 // because spot inference is restricted to the band between them.
 export function updateDetectEnabled() {
     const lines = document.getElementById("detect-lines-btn");
@@ -139,10 +148,21 @@ export function updateRotateEnabled() {
 // screen but flag them (banner + pulsing Calculate RF) and block export until
 // the user recalculates, so a stale image can't be saved / pushed to the ELN.
 
-function setExportDisabled(disabled) {
+// Export only fresh results that are not being redrawn.
+function updateExportEnabled() {
+    const disabled = !state.hasResults || state.resultsStale || state.rendering;
     document.querySelectorAll("#export-row .lab-btn").forEach((b) => {
         b.disabled = disabled;
     });
+}
+
+// While the annotated image is redrawn for a new text size or label mode, the
+// image on screen is not the one export would send.
+export function setResultsRendering(rendering) {
+    state.rendering = rendering;
+    const annotated = document.getElementById("annotated-image");
+    if (annotated) annotated.setAttribute("aria-busy", String(rendering));
+    updateExportEnabled();
 }
 
 // The "upload to ELN" export buttons only make sense for an ELN-sourced plate
@@ -156,25 +176,62 @@ export function updateExportButtons() {
 
 export function markResultsStale() {
     if (!state.hasResults) return; // nothing calculated yet; writes below are idempotent
+    state.resultsStale = true;
     const banner = document.getElementById("stale-banner");
     if (banner) banner.classList.add("show");
     const annotated = document.getElementById("annotated-image");
     if (annotated) annotated.classList.add("stale");
     const calc = document.getElementById("calculate-btn");
     if (calc) calc.classList.add("pulse");
-    setExportDisabled(true);
+    updateExportEnabled();
 }
 
 // Called on a fresh calculation (results now current) and on reset/new image
 // (no results). `hasResults` is set by the caller.
 export function clearResultsStale() {
+    state.resultsStale = false;
     const banner = document.getElementById("stale-banner");
     if (banner) banner.classList.remove("show");
     const annotated = document.getElementById("annotated-image");
     if (annotated) annotated.classList.remove("stale");
     const calc = document.getElementById("calculate-btn");
     if (calc) calc.classList.remove("pulse");
-    setExportDisabled(!state.hasResults); // export enabled only with fresh results
+    updateExportEnabled(); // export enabled only with fresh results
+}
+
+// Show the plate description held in state (after undo, a draft or a file).
+export function syncPlateInfo() {
+    const mobile = document.getElementById("mobile-phase");
+    const stationary = document.getElementById("stationary-phase");
+    if (mobile) mobile.value = state.mobilePhase;
+    if (stationary) stationary.value = state.stationaryPhase;
+}
+
+// The ring over the annotated image for the highlighted result row. Row
+// positions are full-resolution image px, the image is shown scaled; the ring
+// is placed over the image's content box, so borders and resizing are allowed for.
+export function updateAnnotatedHighlight() {
+    const ring = document.getElementById("annotated-ring");
+    const img = document.getElementById("annotated-image");
+    const wrap = document.getElementById("annotated-wrap");
+    if (!ring || !img || !wrap) return;
+    const spot = state.highlightedSpot;
+    if (!spot || !state.hasResults || !img.naturalWidth || !img.clientWidth) {
+        ring.hidden = true;
+        return;
+    }
+    const kx = img.clientWidth / img.naturalWidth;
+    const ky = img.clientHeight / img.naturalHeight;
+    const imgBox = img.getBoundingClientRect();
+    const wrapBox = wrap.getBoundingClientRect();
+    // The spot ring's radius on the saved image (tlc/results.py), a bit wider.
+    const s = Math.max(1, Math.min(img.naturalWidth, img.naturalHeight) / 1000);
+    const size = Math.max(18, 2 * 1.8 * Math.max(4, Math.round(9 * s)) * kx);
+    ring.style.left = imgBox.left - wrapBox.left + img.clientLeft + spot.x * kx + "px";
+    ring.style.top = imgBox.top - wrapBox.top + img.clientTop + spot.y * ky + "px";
+    ring.style.width = size + "px";
+    ring.style.height = size + "px";
+    ring.hidden = false;
 }
 
 function refreshUndoRedo() {

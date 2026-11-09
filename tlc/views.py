@@ -24,9 +24,12 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import socket
+import tempfile
 import time
 import uuid
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -37,7 +40,7 @@ import cv2
 import numpy as np
 import requests
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -709,6 +712,8 @@ def _provenance(source: _ImageSource, data: dict[str, Any]) -> list[tuple[str, s
         ("image sha256", source.sha256()),
         ("rotation", _rotation_text(data)),
         ("plate area", "x={}, y={}, width={}, height={}".format(*region) if region else "none"),
+        ("mobile phase", results.clean_label(data.get("mobilePhase")) or "not given"),
+        ("stationary phase", results.clean_label(data.get("stationaryPhase")) or "not given"),
     ]
     for model in model_identities():
         rows.append((model["name"], f"{model['file']} sha256 {model['sha256']}"))
@@ -745,15 +750,89 @@ def _render_results(
     annotated_name = f"annotated_{token}.png"
     csv_name = f"rf_values_{token}.csv"
 
+    mobile_phase = results.clean_label(data.get("mobilePhase"))
     media.write(annotated_name, cv2.imencode(".png", image)[1].tobytes())
-    media.write(csv_name, results.csv_text(rf_values, _provenance(source, data)))
+    media.write(csv_name, results.csv_text(rf_values, _provenance(source, data), mobile_phase))
 
     return JsonResponse(
         {
             "rf_values": rf_values,
             "annotated_image_url": settings.MEDIA_URL + annotated_name,
             "csv_url": settings.MEDIA_URL + csv_name,
+            # The CSV's Details sentence, for "Copy Rf summary".
+            "details": results.details_sentence(rf_values, mobile_phase),
         }
+    )
+
+
+# The files of one calculation share its random token (see _render_results).
+_RESULT_CSV = re.compile(r"rf_values_([0-9a-f]{32})\.csv")
+_RESULT_IMAGE = re.compile(r"annotated_([0-9a-f]{32})\.png")
+MAX_ANNOTATIONS_CHARS = 1_000_000  # a file with thousands of spots is ~200 kB
+
+
+def _export_stem(raw: Any) -> str:
+    """The client's base name for exported files, safe in a zip and a header."""
+    stem = re.sub(r"[^\w.-]+", "_", raw if isinstance(raw, str) else "").strip("._")[:120]
+    return stem or "tlc_plate"
+
+
+def download_results(request: HttpRequest) -> HttpResponse:
+    """Stream one ZIP with a calculation's CSV, annotated image and annotations.
+
+    Expects JSON ``{"csv", "image", "annotations", "name"}``: the CSV and image
+    URLs (or names) from a :func:`calculate_rf` response, the annotation file
+    as text (it lives in the browser), and the base name for the files in the
+    archive. The CSV and image must be the two files of one calculation, so
+    nothing else in ``MEDIA_ROOT`` can be read through this view.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=405)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+
+    def name_of(raw: Any) -> str:
+        return os.path.basename(urlsplit(raw).path) if isinstance(raw, str) else ""
+
+    csv_match = _RESULT_CSV.fullmatch(name_of(data.get("csv")))
+    image_match = _RESULT_IMAGE.fullmatch(name_of(data.get("image")))
+    if not (csv_match and image_match and csv_match[1] == image_match[1]):
+        return JsonResponse({"error": "These are not the files of one result."}, status=400)
+
+    annotations = data.get("annotations")
+    if not isinstance(annotations, str) or len(annotations) > MAX_ANNOTATIONS_CHARS:
+        annotations = ""
+    try:
+        parsed = json.loads(annotations)
+    except json.JSONDecodeError:
+        parsed = None
+    if not isinstance(parsed, dict) or parsed.get("format") != "tlc-rf-annotations":
+        return JsonResponse({"error": "The annotations are not a TLC annotation file."}, status=400)
+
+    csv_path = _resolve_within_media(csv_match[0])
+    image_path = _resolve_within_media(image_match[0])
+    if not (csv_path and image_path and os.path.exists(csv_path) and os.path.exists(image_path)):
+        return JsonResponse(
+            {"error": "The results are no longer stored. Calculate RF again."}, status=404
+        )
+
+    stem = _export_stem(data.get("name"))
+    # A 50 MP plate's PNG is tens of MB: build the archive in a temporary file,
+    # not in memory, and stream it. The PNG is already compressed.
+    archive = tempfile.TemporaryFile()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.write(csv_path, f"{stem}_rf.csv")
+        zf.write(image_path, f"{stem}_annotated.png", compress_type=zipfile.ZIP_STORED)
+        zf.writestr(f"{stem}_annotations.json", annotations)
+    for path in (csv_path, image_path):
+        media.touch(path)
+    archive.seek(0)
+    return FileResponse(
+        archive, as_attachment=True, filename=f"{stem}.zip", content_type="application/zip"
     )
 
 

@@ -8,10 +8,11 @@
 
 import { state } from "./state.js";
 import { notify } from "./ui-kit.js";
-import { applyAnnotations, imageMatch, serialize, sha256Hex, validate } from "./annotation-file.js";
+import { annotationsText, applyAnnotations, imageMatch, sha256Hex, validate } from "./annotation-file.js";
 import { deleteDraft, findDraft } from "./drafts.js";
 import { commitChange, fitAndDraw, syncRotationControls } from "./canvas.js";
-import { elnAttachmentName, postToEln } from "./results.js";
+import { syncPlateInfo } from "./ui.js";
+import { downloadBlob, exportName, postToEln } from "./results.js";
 
 // --- The loaded image's identity --------------------------------------------
 // Called when an image starts loading: forget the previous identity and hide
@@ -69,6 +70,7 @@ function replaceAnnotations(data) {
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
     applyAnnotations(data);
     syncRotationControls();
+    syncPlateInfo();
     fitAndDraw(state.image); // the rotation may change the frame
     commitChange(); // undoable, marks results stale, saves the draft
 }
@@ -84,7 +86,9 @@ export function restoreDraft() {
 export function discardDraft() {
     hideDraftBanner();
     deleteDraft();
-    if (state.lines.length || state.spots.length || state.plateRegion) commitChange(); // re-save current work
+    if (state.lines.length || state.spots.length || state.plateRegion || state.mobilePhase || state.stationaryPhase) {
+        commitChange(); // re-save current work
+    }
 }
 
 // --- Open an annotation file --------------------------------------------------
@@ -138,7 +142,7 @@ export function handleAnnotationsFile(event) {
 
 // --- Export -----------------------------------------------------------------
 function annotationsBlob() {
-    return new Blob([JSON.stringify(serialize(), null, 2) + "\n"], { type: "application/json" });
+    return new Blob([annotationsText()], { type: "application/json" });
 }
 
 export function saveAnnotations() {
@@ -146,14 +150,7 @@ export function saveAnnotations() {
         notify("Calculate RF values first.", "warning");
         return;
     }
-    const url = URL.createObjectURL(annotationsBlob());
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = elnAttachmentName("annotations", "json");
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadBlob(annotationsBlob(), exportName("annotations"));
     notify("Annotations downloaded.", "success");
 }
 
@@ -162,5 +159,5 @@ export function annotationsToEln() {
         notify("Calculate RF values first.", "warning");
         return;
     }
-    postToEln(annotationsBlob(), "annotations", "json");
+    postToEln(annotationsBlob(), exportName("annotations"));
 }

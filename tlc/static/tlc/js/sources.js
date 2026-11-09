@@ -11,6 +11,7 @@ import {
     clearResultsStale,
     collapseImageSource,
     refreshUI,
+    syncPlateInfo,
     updateAnnotatedHeading,
     updateExportButtons,
 } from "./ui.js";
@@ -95,6 +96,11 @@ function startImageSession(image, { name, label, isLocal, upload, bytes }) {
     state.spots = [];
     state.plateRegion = null;
     state.highlightedSpot = null;
+    // Another photo may be another plate: its description starts empty (a
+    // draft or annotation file brings it back).
+    state.mobilePhase = "";
+    state.stationaryPhase = "";
+    syncPlateInfo();
     document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
     const tbody = document.querySelector("#values-table tbody");
     if (tbody) tbody.innerHTML = "";

@@ -46,8 +46,9 @@ not a bug:
 - **POST** (`multipart/form-data`, fields `file` and `attachmentName`) →
   uploads a result file (annotated PNG, CSV or annotation JSON) back onto the
   same attachment/app. Chemotion names the new attachment `attachmentName`
-  (`TLC_Rf_<date>_<time>.csv`, `TLC_annotated_<date>_<time>.png`,
-  `TLC_annotations_<date>_<time>.json`); without it, `<app name>-<upload
+  (`tlc_plate_<date>_<time>_rf.csv`, `tlc_plate_<date>_<time>_annotated.png`,
+  `tlc_plate_<date>_<time>_annotations.json`, the names the downloads get;
+  `<time>` is the time of the result); without it, `<app name>-<upload
   name>`. One token allows 10 uploads. Chemotion stores the files as
   attachments and parses none of them. The request
   carries no custom headers (in particular not our CSRF token), so it is a
@@ -75,6 +76,9 @@ In the frontend this is a single `elnUrl` (`tlc/static/tlc/js/state.js`):
   canvas, confined to `MEDIA_ROOT`.
 - `POST /detect-lines/`, `POST /detect-spots/`, `POST /calculate_rf/` —
   same-origin; CSRF enforced. They refer to the image by its stored name.
+- `POST /download-results/` — same-origin, CSRF enforced: one ZIP with a
+  result's CSV and annotated image (by their stored names, which must belong
+  to one calculation) and the annotation file sent by the browser.
 - **Save back to ELN** — `postToEln()` POSTs directly from the browser to
   `elnUrl` (cross-origin to Chemotion), so it depends on the deployment config
   below.

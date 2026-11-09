@@ -1,6 +1,6 @@
 /*
- * Undo/redo of annotation state (reference/label lines, spots, plate region)
- * and the rotation they were made in: marks are coordinates in the rotated
+ * Undo/redo of annotation state (reference/label lines, spots, plate region,
+ * the plate description) and the rotation they were made in: marks are coordinates in the rotated
  * frame, so the two are always restored together.
  *
  * A stack of deep-copied snapshots with a cursor: `commit()` records the state
@@ -25,11 +25,14 @@ function snapshot() {
             y: l.y,
             text: l.text,
             kind: l.kind || "",
+            estimated: !!l.estimated,
         })),
         spots: state.spots.map((s) => ({ id: s.id, x: s.x, y: s.y, auto: s.auto, moved: !!s.moved })),
         plateRegion: state.plateRegion ? { ...state.plateRegion } : null,
         rotation: state.rotation,
         fineRotation: state.fineRotation,
+        mobilePhase: state.mobilePhase,
+        stationaryPhase: state.stationaryPhase,
     };
 }
 
@@ -39,6 +42,8 @@ function restore(snap) {
     state.plateRegion = snap.plateRegion ? { ...snap.plateRegion } : null;
     state.rotation = snap.rotation;
     state.fineRotation = snap.fineRotation;
+    state.mobilePhase = snap.mobilePhase;
+    state.stationaryPhase = snap.stationaryPhase;
 }
 
 // Baseline the history at the current state (call on load / reset / init).

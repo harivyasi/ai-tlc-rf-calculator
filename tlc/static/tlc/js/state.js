@@ -62,6 +62,16 @@ export const state = {
     highlightedSpot: null, // {x, y} of a result row highlighted on the canvas
     cropView: null, // when cropped-to-plate: {rcx, rcy, k} in canvas display px
 
+    // What the plate was run in: free text, part of the annotations (saved in
+    // drafts and annotation files, recorded in the CSV).
+    mobilePhase: "",
+    stationaryPhase: "",
+
     hasResults: false, // a calculation has produced a table + annotated image
+    resultsStale: false, // annotations changed since: export blocked until recalculated
+    rendering: false, // the annotated image is being redrawn (text size, full labels)
     csvUrl: null, // the server-written CSV of the current results
+    annotatedUrl: null, // the server-written annotated image of the current results
+    rfSummary: "", // the CSV's Details sentence, for "Copy Rf summary"
+    resultsTime: null, // when the current results were made: stamps the export names
 };

@@ -215,6 +215,8 @@ export function handlePointerUp(e) {
         const moved = wasDrag && (state.draggingSpot || state.draggingLine);
         // A detected spot the user moved is recorded as such in the CSV.
         if (wasDrag && state.draggingSpot && state.draggingSpot.auto) state.draggingSpot.moved = true;
+        // Moving an estimated Min/Max puts it where the user sees the line.
+        if (wasDrag && state.draggingLine) delete state.draggingLine.estimated;
         state.isDragging = false;
         state.draggingSpot = null;
         state.draggingLine = null;
