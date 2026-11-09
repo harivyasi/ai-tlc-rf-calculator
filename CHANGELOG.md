@@ -105,6 +105,10 @@ gives identical detection results.
   SHA-256, to check or continue a result.
 - **Drafts**: annotations are kept in the browser as you work; loading the
   same image again offers to restore them. Reset deletes the draft.
+- Tests and checks: Django unit tests (Rf rules, detection, results, image
+  handling, security helpers, settings) and Playwright browser tests of the
+  whole workflow, plus ruff and mypy, run in GitHub Actions on every push
+  and pull request.
 
 ### Changed
 
