@@ -104,6 +104,9 @@ gives identical detection results.
   redo keep annotations together with the rotation they were made in. An
   image that fails to load leaves the current work untouched, and loading
   the ELN image starts a clean session.
+- README and developer docs (`docs/architecture.md`,
+  `docs/eln-integration.md`) rewritten; the in-app Help covers rotation and
+  annotation files.
 
 ### Fixed
 
@@ -117,6 +120,8 @@ gives identical detection results.
   reported as a failure; it used to say "Saved".
 - Image size limits are checked from the file header before decoding.
   `/healthz` answers over plain HTTP so health probes work behind HTTPS.
+- At phone width the page no longer scrolls sideways; the canvas scales to
+  fit and taps land where shown.
 
 ### Security
 

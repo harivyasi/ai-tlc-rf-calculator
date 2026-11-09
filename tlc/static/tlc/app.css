@@ -84,6 +84,12 @@ body {
     padding: 1.5rem 2rem;
 }
 .header h1 { margin: 0; font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; }
+/* Keep the title clear of the version badge and theme toggle (top right). */
+.header h1, .header p { padding-right: 7.5rem; }
+@media (max-width: 480px) {
+    .header { padding: 1.25rem 1.25rem; }
+    .header h1 { font-size: 1.3rem; }
+}
 .header p { margin: 0.25rem 0 0; opacity: 0.85; font-size: 0.9rem; }
 .header-actions {
     position: absolute;
@@ -256,7 +262,7 @@ body {
 #annotated-image { margin: 0 auto; }
 #annotated-image.stale { opacity: 0.45; filter: grayscale(0.3); }
 /* Let pointer drags reach the canvas on touch devices (no scroll/zoom steal). */
-#image-canvas { touch-action: none; }
+#image-canvas { touch-action: none; height: auto; }
 
 /* "Results out of date" banner + pulsing Calculate RF while stale. */
 .stale-banner {
@@ -563,7 +569,9 @@ body {
 .work-area.layout-rows { grid-template-columns: 1fr; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow-sm); }
 .panel-title { margin: 0 0 0.75rem; font-size: 1rem; font-weight: 600; text-align: center; }
-.table-scroll { overflow-x: auto; }
+/* position: relative keeps absolutely positioned content (the screen-reader
+   column label) inside the scroll box instead of widening the page. */
+.table-scroll { overflow-x: auto; position: relative; }
 /* Downloads on the first row, ELN uploads (when shown) on the second. */
 .export-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 1rem; }
 .export-row .lab-btn { min-width: 0; justify-content: center; }
@@ -601,8 +609,15 @@ body {
 .help-close:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 .help-close .icon { width: 18px; height: 18px; }
 
+/* Grid items default to min-width: auto, so a wide canvas would hold its
+   column (and the page) wider than the screen; let them shrink instead. The
+   canvas then scales down (max-width: 100%) and taps are mapped through its
+   displayed size (pointerCanvas). */
+.work-area > *, .panel { min-width: 0; }
+
 @media (max-width: 760px) {
     .work-area.layout-columns { grid-template-columns: 1fr; }
+    .tool-group { flex-wrap: wrap; }
     .toolbar { position: static; }
     /* Reset both auto-margins together so the ribbon flows left-aligned. */
     .tool-group--center, .tool-group--actions { margin-left: 0; }
