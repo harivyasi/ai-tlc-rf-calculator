@@ -7,7 +7,7 @@
 "use strict";
 
 import { elnUrl, state } from "./state.js";
-import { getCookie, hideOverlay, notify, showOverlay, timestampedName } from "./ui-kit.js";
+import { getCookie, hideOverlay, notify, showOverlay } from "./ui-kit.js";
 import { clearResultsStale, hasImage, textScale, updateAnnotatedHeading } from "./ui.js";
 import { addSpot } from "./annotations.js";
 import { clamp } from "./geometry.js";
@@ -288,20 +288,33 @@ export function saveCSV() {
 }
 
 // --- Save back to the ELN -------------------------------------------------
-function postToEln(blob, filename) {
+// The name the file gets in Chemotion, e.g. "TLC_Rf_2026-11-09_14-32.csv".
+// Chemotion uses `attachmentName` as given; without it, it names the file
+// "<app name>-<upload name>".
+export function elnAttachmentName(kind, ext, date = new Date()) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp =
+        date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+        "_" + pad(date.getHours()) + "-" + pad(date.getMinutes());
+    return "TLC_" + kind + "_" + stamp + "." + ext;
+}
+
+// Sent cross-origin to the ELN's token URL. No CSRF header: the token is ours,
+// means nothing to the ELN, and a custom header would force a CORS preflight.
+function postToEln(blob, kind, ext) {
     if (!elnUrl) {
         notify("No ELN target configured.", "warning");
         return;
     }
+    const name = elnAttachmentName(kind, ext);
     const formData = new FormData();
-    formData.append("file", blob, filename);
-    fetch(elnUrl, {
-        method: "POST",
-        body: formData,
-        headers: { "X-CSRFToken": getCookie("csrftoken") },
-    })
-        .then((response) => response.json())
-        .then(() => notify("Saved to ELN.", "success"))
+    formData.append("file", blob, name);
+    formData.append("attachmentName", name);
+    fetch(elnUrl, { method: "POST", body: formData })
+        .then((response) => {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+        })
+        .then(() => notify('Saved to ELN as "' + name + '".', "success"))
         .catch((error) => {
             console.error("Error saving to ELN:", error);
             notify("Failed to save to ELN.", "error");
@@ -336,7 +349,7 @@ export function imageToEln() {
         exportCanvas.width = sourceImage.naturalWidth;
         exportCanvas.height = sourceImage.naturalHeight;
         exportCanvas.getContext("2d").drawImage(sourceImage, 0, 0);
-        exportCanvas.toBlob((blob) => postToEln(blob, timestampedName("png")), "image/png");
+        exportCanvas.toBlob((blob) => postToEln(blob, "annotated", "png"), "image/png");
     };
     sourceImage.onerror = () => notify("Failed to load annotated image.", "error");
     sourceImage.src = annotated.src;
@@ -353,6 +366,6 @@ export function csvToEln() {
             if (!response.ok) throw new Error("HTTP " + response.status);
             return response.blob();
         })
-        .then((blob) => postToEln(blob, timestampedName("csv")))
+        .then((blob) => postToEln(blob, "Rf", "csv"))
         .catch(() => notify("Failed to load the CSV.", "error"));
 }

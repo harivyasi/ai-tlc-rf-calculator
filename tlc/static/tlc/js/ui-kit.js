@@ -38,16 +38,6 @@ export function getCookie(name) {
     return match ? decodeURIComponent(match.pop()) : null;
 }
 
-export function timestampedName(ext) {
-    const dt = new Date()
-        .toLocaleString("en-GB", {
-            year: "2-digit", month: "2-digit", day: "2-digit",
-            hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-        })
-        .replace(/[/,: ]/g, "");
-    return "_" + dt + "." + ext;
-}
-
 export function preventDefaults(e) {
     e.preventDefault();
     e.stopPropagation();

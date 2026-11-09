@@ -71,6 +71,9 @@ gives identical detection results.
   read from the model (no effect on results, which are assigned by position).
 - Phone photos with an EXIF orientation are analysed the way the browser
   shows them; they used to be analysed sideways.
+- Uploads to the ELN no longer send this app's CSRF token to Chemotion, and
+  name the file (`TLC_Rf_2026-11-09_14-32.csv`). A refused upload is
+  reported as a failure; it used to say "Saved".
 
 ### Security
 
