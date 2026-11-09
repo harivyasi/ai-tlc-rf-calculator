@@ -1055,3 +1055,27 @@ def test_min_above_max_is_explained_not_computed(page, servers, test_image_path)
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("text=baseline below", timeout=10000)
     assert page.locator("#values-table tbody tr").count() == 0
+
+
+def test_detect_lines_is_confined_to_the_plate_area(page, servers, blob_image_path):
+    """With a Plate Area drawn, Detect Lines sends it, so the model only sees
+    the plate (photos with much background otherwise get a line on it)."""
+    _stub_cdn(page)
+    _route_detect_lines(page, {"minY": 250, "maxY": 60, "estimated": None, "model": {}})
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Plate Area')")
+    box = canvas.bounding_box()
+    page.mouse.move(box["x"] + 30, box["y"] + 30)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 380, box["y"] + 270, steps=8)
+    page.mouse.up()
+
+    with page.expect_request("**/detect-lines/") as request_info:
+        page.click("#detect-lines-btn")
+    region = request_info.value.post_data_json.get("region")
+    assert region and region["width"] > 300 and region["height"] > 200, region

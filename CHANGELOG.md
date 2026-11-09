@@ -28,6 +28,8 @@ follow the SI; candidate detection is Shilpa's.
   on the baseline was dropped.
 - `calculate_rf` rejects a Min line above the Max line (SI Eq. 4) and
   non-numeric positions.
+- Image limits: 25 MB per file (`MAX_IMAGE_MB`), 64 MP (`MAX_IMAGE_MEGAPIXELS`),
+  so phone photos of plates (13 MB / 50 MP) load.
 
 ### Added
 
@@ -37,12 +39,16 @@ follow the SI; candidate detection is Shilpa's.
 - Detection responses identify the model (name, file, SHA-256, export date).
 - `ONNX_INTRA_OP_THREADS` caps ONNX Runtime's per-inference threads; the
   server is sized for the models (2 workers x 4 threads).
+- With a Plate Area set, **Detect Lines** searches only inside it.
 
 ### Fixed
 
 - The TLC-LineDet class ids were hard-coded the wrong way round in Shilpa's
   view; they are now read from the model (no effect on results, which are
   assigned by position).
+- Phone photos with an EXIF orientation are analysed the way the browser
+  shows them: one decoder for uploads and ELN images applies the orientation.
+  Shilpa's tool analysed such photos sideways.
 
 ## [2.0.0] — 2026-07-27
 

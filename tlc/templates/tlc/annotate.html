@@ -8,7 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="{% static 'tlc/favicon.svg' %}">
     <link rel="stylesheet" href="{% static 'tlc/app.css' %}">
 </head>
-<body>
+<body data-max-image-mb="{{ max_image_mb }}">
 
 <!-- Icon sprite (Feather-style, stroked with currentColor) -->
 <svg width="0" height="0" class="icon-sprite" aria-hidden="true">
@@ -110,7 +110,7 @@
         <div class="toolbar" id="toolbar" role="toolbar" aria-label="Annotation tools">
             <div class="tool-group">
                 <span class="tool-label">Bounds</span>
-                <button class="lab-btn btn-lab-secondary" data-action="selectPlateArea" title="Optional: draw a box around the plate. Detect Spots then searches only inside it, and lines and spots stay within it. It does not place the reference lines.">
+                <button class="lab-btn btn-lab-secondary" data-action="selectPlateArea" title="Optional: draw a box around the plate. Detect Lines and Detect Spots then search only inside it, and lines and spots stay within it. Recommended for photos with a lot of background. It does not place the reference lines.">
                     <svg class="icon"><use href="#i-region"/></svg> <span class="lbl-full">Plate Area</span><span class="lbl-short">Plate</span>
                 </button>
                 <label class="check-row" title="Zoom the work area to the plate box. View only — the saved image keeps its full dimensions.">
@@ -239,8 +239,9 @@
                 <ol>
                     <li>Load a plate image from the ELN or by uploading a local file.</li>
                     <li><strong>Optional:</strong> click <span class="highlight">Plate Area</span> and drag a
-                        box around the plate. <span class="highlight">Detect Spots</span> then ignores everything
-                        to the left and right of it. It does not place the reference lines. While a plate area is
+                        box around the plate. <span class="highlight">Detect Lines</span> and
+                        <span class="highlight">Detect Spots</span> then ignore everything outside it, which
+                        helps a lot on photos with much background. It does not place the reference lines. While a plate area is
                         set, lines and spots must stay inside it — drawing or redrawing the box clamps the lines
                         to it and drops any spots that fall outside.</li>
                     <li>Click <span class="highlight">Detect Lines</span> to propose the

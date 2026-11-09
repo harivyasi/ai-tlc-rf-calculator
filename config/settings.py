@@ -11,8 +11,8 @@ run in development and production:
 
 A minimal deployment needs only SECRET_KEY, ALLOWED_HOSTS, and (for ELN
 save-back) ELN_ORIGIN. Advanced overrides — CSRF_TRUSTED_ORIGINS,
-CSP_CONNECT_SRC, ELN_ALLOWED_HOSTS, MAX_UPLOAD_MB, SECURE_* — are all optional
-and default sensibly from the three above.
+CSP_CONNECT_SRC, ELN_ALLOWED_HOSTS, MAX_IMAGE_MB, MAX_IMAGE_MEGAPIXELS,
+MAX_UPLOAD_MB, SECURE_* — are all optional and default sensibly.
 
 See https://docs.djangoproject.com/en/5.2/ref/settings/
 """
@@ -168,11 +168,16 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Local uploads are sent as a base64 data URL inside the JSON request body,
-# which inflates the payload ~33%. The frontend caps images at 10 MB, so the
-# request body must be allowed to exceed Django's 2.5 MB default. Configurable
-# via MAX_UPLOAD_MB (megabytes of request body).
-DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("MAX_UPLOAD_MB", 16) * 1024 * 1024
+# Image limits. Phone photos of plates reach 13 MB and 50 MP (6120x8160), so
+# the defaults admit them. MAX_IMAGE_MB caps a file (local upload or ELN
+# fetch) and is also enforced in the browser; MAX_IMAGE_MEGAPIXELS caps the
+# decoded size, bounding the ~3 bytes/pixel the OpenCV paths hold per request.
+MAX_IMAGE_MB = env_int("MAX_IMAGE_MB", 25)
+MAX_IMAGE_MEGAPIXELS = env_int("MAX_IMAGE_MEGAPIXELS", 64)
+
+# Local uploads travel as a base64 data URL inside the JSON body, inflating
+# them by a third, so the body cap must exceed MAX_IMAGE_MB by that much.
+DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("MAX_UPLOAD_MB", (MAX_IMAGE_MB * 4) // 3 + 2) * 1024 * 1024
 
 
 # Candidate detection: TLC-SpotDet and TLC-LineDet (SI section 6). The models

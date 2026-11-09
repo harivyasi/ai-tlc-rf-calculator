@@ -14,7 +14,9 @@ and ``auto_detect_lines`` views:
   upper one the solvent front -- because image geometry, not the class label,
   defines the TLC semantics. With only one line found, it is assigned by which
   half of the image it lies in and the other line is estimated at 10 % / 90 %
-  of the image height.
+  of the image height. If a Plate Area is set, the model sees only that box
+  (an addition to Shilpa's tool: on uncropped photos with a busy background
+  the model otherwise tends to put a line on the background).
 
 All coordinates in and out are original-image pixels (after any rotation).
 """
@@ -123,23 +125,48 @@ def assign_lines(
     return {"minY": y, "maxY": float(height * 0.10), "estimated": "max"}
 
 
-def detect_lines(image: np.ndarray) -> dict[str, Any]:
+def _crop(
+    image: np.ndarray, region: tuple[int, int, int, int] | None
+) -> tuple[np.ndarray, int, int]:
+    """Crop ``image`` to ``region`` (clipped to the image); return it and its offset."""
+    if region is None:
+        return image, 0, 0
+    height, width = image.shape[:2]
+    rx, ry, rw, rh = region
+    x1, y1 = max(0, rx), max(0, ry)
+    x2, y2 = min(width, rx + rw), min(height, ry + rh)
+    if x2 <= x1 + 2 or y2 <= y1 + 2:
+        raise DetectionError("The plate area is too small to search.")
+    return image[y1:y2, x1:x2], x1, y1
+
+
+def detect_lines(
+    image: np.ndarray, region: tuple[int, int, int, int] | None = None
+) -> dict[str, Any]:
     """Propose baseline (Min) and solvent-front (Max) positions.
 
+    Args:
+        image: BGR image in original-image orientation.
+        region: Optional Plate Area ``(x, y, width, height)``. Detection then
+            runs on that box only, and the 10 %/90 % estimate refers to it.
+
     Returns:
-        ``{"minY", "maxY", "estimated", "model"}``.
+        ``{"minY", "maxY", "estimated", "model"}`` in original-image px.
 
     Raises:
         DetectionError: If the model finds neither line.
     """
+    view, _, y0 = _crop(image, region)
     model, info = line_model()
-    detections = model.predict(image, conf=float(settings.LINE_CONF_DEFAULT))
+    detections = model.predict(view, conf=float(settings.LINE_CONF_DEFAULT))
     lines = assign_lines(
         detections,
-        image.shape[0],
+        view.shape[0],
         min_cls=model.class_id("min_line"),
         max_cls=model.class_id("max_line"),
     )
     if lines is None:
         raise DetectionError("No reference lines detected. Place Min and Max manually.")
+    lines["minY"] += y0
+    lines["maxY"] += y0
     return {**lines, "model": info.as_dict()}

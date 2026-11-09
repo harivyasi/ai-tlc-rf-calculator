@@ -46,11 +46,11 @@ logger = logging.getLogger(__name__)
 
 # Limits applied when fetching a remote (ELN) image.
 FETCH_TIMEOUT_SECONDS = 10
-MAX_IMAGE_BYTES = 25 * 1024 * 1024  # 25 MB
+MAX_IMAGE_BYTES = settings.MAX_IMAGE_MB * 1024 * 1024
 MAX_REDIRECTS = 3  # ELN attachment URLs often redirect to storage
 # Reject absurdly large images so a single request can't exhaust CPU/memory in
 # the OpenCV paths (decoded to ~3 bytes/pixel).
-MAX_IMAGE_PIXELS = 40_000_000  # 40 MP
+MAX_IMAGE_PIXELS = settings.MAX_IMAGE_MEGAPIXELS * 1_000_000
 
 
 def healthz(request: HttpRequest) -> JsonResponse:
@@ -78,7 +78,11 @@ def upload_image(request: HttpRequest) -> HttpResponse:
     Returns:
         The rendered annotation page.
     """
-    return render(request, "tlc/annotate.html", {"version": __version__})
+    return render(
+        request,
+        "tlc/annotate.html",
+        {"version": __version__, "max_image_mb": settings.MAX_IMAGE_MB},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +244,8 @@ def _load_annotation_image(
     if not image_path or not os.path.exists(image_path):
         logger.warning("Image not found for request: %r", image_src)
         return None, "", JsonResponse({"error": "Image not found."}, status=400)
-    image = cv2.imread(image_path)
+    with open(image_path, "rb") as fh:
+        image = _decode_image_bytes(fh.read())
     if image is None:
         return None, "", JsonResponse({"error": "Failed to read the image file."}, status=400)
     return _rotate_image(image, rotation), os.path.basename(image_src), _oversize_error(image)
@@ -265,6 +270,18 @@ def _decode_data_url(data_url: str) -> np.ndarray | None:
         raw = base64.b64decode(payload, validate=True)
     except binascii.Error, ValueError:
         return None
+    return _decode_image_bytes(raw)
+
+
+def _decode_image_bytes(raw: bytes) -> np.ndarray | None:
+    """Decode image bytes into an upright OpenCV image (BGR), or ``None``.
+
+    The one decoder for every image the analysis sees -- local uploads and ELN
+    images alike -- so both are oriented the way the browser shows them:
+    phone photos are often stored sideways with an EXIF Orientation tag, which
+    browsers apply and ``cv2`` applies only for some formats. Shilpa's original
+    tool ignored the tag, so it analysed such photos sideways.
+    """
     if len(raw) > MAX_IMAGE_BYTES:
         return None
     try:
@@ -586,7 +603,8 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
 def detect_lines(request: HttpRequest) -> JsonResponse:
     """Propose the baseline (Min) and solvent front (Max) with TLC-LineDet.
 
-    Accepts the same image payload as :func:`calculate_rf`. The two lines are
+    Accepts the same image payload as :func:`calculate_rf`, plus an optional
+    ``region`` (the Plate Area) to confine the search. The two lines are
     assigned by position, not by class label (see :mod:`tlc.detection`).
 
     Args:
@@ -597,13 +615,13 @@ def detect_lines(request: HttpRequest) -> JsonResponse:
         ``error``. ``estimated`` names a line that was guessed because only
         the other one was detected.
     """
-    _, image, error = _parse_detection_request(request)
+    data, image, error = _parse_detection_request(request)
     if error is not None:
         return error
     assert image is not None  # guaranteed when error is None
 
     try:
-        result = detection.detect_lines(image)
+        result = detection.detect_lines(image, region=_parse_region(data.get("region")))
     except detection.DetectionError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     except Exception:

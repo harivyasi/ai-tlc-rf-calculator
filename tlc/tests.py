@@ -432,6 +432,35 @@ class DetectLinesTests(SimpleTestCase):
         self.assertEqual((body["minY"], body["maxY"], body["estimated"]), (430, 60, None))
         self.assertEqual(body["model"]["name"], "TLC-LineDet")
 
+    def test_plate_area_crops_the_input_and_offsets_the_result(self) -> None:
+        from tlc.inference import line_model
+
+        model, _ = line_model()
+        fake = [_det(1, 150, 0.8), _det(0, 20, 0.7)]  # in plate-box coordinates
+        payload = {
+            "isLocalImage": True,
+            "imageData": _blobs_data_url([]),  # 500 x 500
+            "region": {"x": 100, "y": 200, "width": 300, "height": 250},
+        }
+        with mock.patch.object(model, "predict", return_value=fake) as predict:
+            body = _post_json(self.client, "detect_lines", payload).json()
+        self.assertEqual(predict.call_args.args[0].shape[:2], (250, 300))
+        self.assertEqual((body["minY"], body["maxY"]), (350, 220))
+
+    def test_plate_area_estimate_refers_to_the_box(self) -> None:
+        from tlc.inference import line_model
+
+        model, _ = line_model()
+        payload = {
+            "isLocalImage": True,
+            "imageData": _blobs_data_url([]),
+            "region": {"x": 0, "y": 100, "width": 500, "height": 200},
+        }
+        with mock.patch.object(model, "predict", return_value=[_det(0, 30, 0.9)]):
+            body = _post_json(self.client, "detect_lines", payload).json()
+        # Upper half of the box -> the front; baseline estimated at 90 % of it.
+        self.assertEqual((body["maxY"], body["minY"], body["estimated"]), (130, 280.0, "min"))
+
     def test_inference_failure_is_a_500_without_details(self) -> None:
         from tlc.inference import line_model
 
@@ -549,6 +578,50 @@ class DecodeExifTests(SimpleTestCase):
         assert decoded is not None
         self.assertEqual(decoded.shape[0], 100)  # height
         self.assertEqual(decoded.shape[1], 50)  # width
+
+    def test_both_image_sources_are_analysed_upright(self) -> None:
+        """A sideways-stored phone photo (EXIF 6 and 8, JPEG and WebP) is
+        analysed as the browser shows it, whether uploaded or from the ELN.
+        Checked through calculate_rf: the saved annotated image is upright."""
+        client = Client()
+        os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
+        for fmt, orientation in (("JPEG", 6), ("JPEG", 8), ("WEBP", 6)):
+            stored = Image.new("RGB", (300, 200), (230, 230, 230))  # landscape
+            exif = stored.getexif()
+            exif[274] = orientation
+            buf = io.BytesIO()
+            stored.save(buf, format=fmt, exif=exif)
+            raw = buf.getvalue()
+            name = f"exif_test_{orientation}.{fmt.lower()}"
+            with open(os.path.join(settings.MEDIA_ROOT, name), "wb") as fh:
+                fh.write(raw)
+            mime = f"image/{fmt.lower()}"
+            sources = {
+                "upload": {
+                    "isLocalImage": True,
+                    "imageSrc": name,
+                    "imageData": f"data:{mime};base64," + base64.b64encode(raw).decode(),
+                },
+                "eln": {"isLocalImage": False, "imageSrc": name},
+            }
+            try:
+                for source, image in sources.items():
+                    payload = image | {
+                        "lines": [{"type": "min", "y": 250}, {"type": "max", "y": 50}],
+                        "spots": [{"x": 100, "y": 150}],
+                    }
+                    response = client.post(
+                        reverse("calculate_rf"), data=payload, content_type="application/json"
+                    )
+                    self.assertEqual(response.status_code, 200, (fmt, orientation, source))
+                    out = response.json()["annotated_image_url"].split("/")[-1]
+                    saved = cv2.imread(os.path.join(settings.MEDIA_ROOT, out))
+                    assert saved is not None
+                    os.remove(os.path.join(settings.MEDIA_ROOT, out))
+                    os.remove(glob.glob(os.path.join(settings.MEDIA_ROOT, "rf_values_*.csv"))[0])
+                    self.assertEqual(saved.shape[:2], (300, 200), (fmt, orientation, source))
+            finally:
+                os.remove(os.path.join(settings.MEDIA_ROOT, name))
 
     def test_invalid_payload_returns_none(self) -> None:
         self.assertIsNone(_decode_data_url("data:image/png;base64,not-valid-base64!!"))
@@ -970,3 +1043,22 @@ class FetchRedirectTests(SimpleTestCase):
         with mock.patch("tlc.views.requests.get") as mock_get:
             mock_get.return_value = _fake_response(302, {"Location": "http://93.184.216.34/next"})
             self.assertIsNone(_fetch_following_safe_redirects("http://93.184.216.34/a"))
+
+
+class ImageLimitTests(SimpleTestCase):
+    """Real plate photos reach 13 MB / 50 MP; the limits must admit them, and
+    the browser must enforce the same file cap as the server."""
+
+    def test_defaults_admit_a_50_megapixel_13_megabyte_photo(self) -> None:
+        from tlc import views
+
+        self.assertGreaterEqual(views.MAX_IMAGE_PIXELS, 6120 * 8160)
+        self.assertGreaterEqual(views.MAX_IMAGE_BYTES, 13 * 1024 * 1024)
+
+    def test_request_body_cap_fits_a_base64_encoded_maximum_image(self) -> None:
+        encoded = -(-settings.MAX_IMAGE_MB * 1024 * 1024 // 3) * 4
+        self.assertGreater(settings.DATA_UPLOAD_MAX_MEMORY_SIZE, encoded)
+
+    def test_page_passes_the_file_cap_to_the_browser(self) -> None:
+        html = Client().get(reverse("upload_image")).content.decode()
+        self.assertIn(f'data-max-image-mb="{settings.MAX_IMAGE_MB}"', html)
