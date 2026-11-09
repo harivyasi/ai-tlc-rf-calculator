@@ -20,6 +20,7 @@ media/*
 
 # Dev-, test-, and docs-only (not needed at runtime)
 e2e/
+tools/
 eln_related_docs/
 docs/
 .github/

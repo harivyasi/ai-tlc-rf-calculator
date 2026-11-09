@@ -42,6 +42,8 @@ gives identical detection results.
   lines and spots kept inside it.
 - With a Plate Area set, **Detect Lines** searches only inside it, so a line
   is not put on the background of an uncropped photo.
+- `tools/legacy_equivalence.py`: plate-by-plate comparison of detection with
+  version 1 (223 plates, 4,941 spot candidates, identical).
 
 ### Changed
 
