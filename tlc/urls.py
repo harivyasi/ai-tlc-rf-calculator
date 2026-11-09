@@ -15,6 +15,8 @@ urlpatterns = [
     # TLC-LineDet (baseline and solvent front)
     path("detect-spots/", views.detect_spots, name="detect_spots"),
     path("detect-lines/", views.detect_lines, name="detect_lines"),
+    # Store a local image once; later requests refer to it by name
+    path("upload-image/", views.upload_image_file, name="upload_image_file"),
     # URL for fetching and saving an image from a remote URL
     path("fetch-image/", views.fetch_and_save_image, name="fetch_image"),
     # URL for serving an image file to the client

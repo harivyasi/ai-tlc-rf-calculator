@@ -25,6 +25,8 @@ import logging
 import os
 import socket
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -39,7 +41,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from config import __version__
 
-from . import detection, results
+from . import admission, detection, imagecache, media, results
+from .inference import models_loaded
 
 logger = logging.getLogger(__name__)
 
@@ -206,48 +209,150 @@ def _parse_rotation(raw: Any) -> int:
     return rotation if rotation in (0, 90, 180, 270) else 0
 
 
-def _load_annotation_image(
-    data: dict[str, Any],
-) -> tuple[np.ndarray | None, str, JsonResponse | None]:
-    """Load the source image referenced by an annotation payload.
+@dataclass(frozen=True)
+class _ImageSource:
+    """A request's image, checked from its header only (nothing decoded yet)."""
 
-    Local uploads carry the image as a base64 ``imageData`` data URL; ELN
-    images are referenced by ``imageSrc`` (a media file name). An optional
-    ``rotation`` (clockwise degrees) is applied so the backend image matches the
-    orientation the user annotated on.
+    base_name: str
+    width: int
+    height: int
+    raw: bytes | None = None  # sent inline (local image, fallback path)
+    path: str | None = None  # stored in MEDIA_ROOT
+
+    def job_bytes(self, kind: str) -> int:
+        """Memory a ``kind`` of job ("lines", "spots", "render") needs on it;
+        inline bytes are held while decoding."""
+        return admission.job_bytes(
+            self.width,
+            self.height,
+            kind=kind,
+            cached=self.path is not None and imagecache.contains(self.path),
+            load_models=not models_loaded(),
+            extra=2 * len(self.raw) if self.raw is not None else 0,
+        )
+
+
+def _inspect_image(raw: bytes | str, unreadable: str) -> tuple[str, int, int] | JsonResponse:
+    """Format and size from an image's header, without decoding its pixels.
+
+    Refuses files over ``MAX_IMAGE_BYTES`` and images over ``MAX_IMAGE_PIXELS``
+    before any memory is spent on them.
 
     Args:
-        data: The parsed JSON request body.
+        raw: The image bytes, or a path to the image file.
+        unreadable: The error message when it is not a readable image.
+    """
+    size = len(raw) if isinstance(raw, bytes) else os.path.getsize(raw)
+    if size > MAX_IMAGE_BYTES:
+        return JsonResponse({"error": "The image is too large."}, status=400)
+    try:
+        with Image.open(io.BytesIO(raw) if isinstance(raw, bytes) else raw) as pil_image:
+            image_format = pil_image.format or ""
+            width, height = pil_image.size
+            pil_image.verify()
+    except Image.DecompressionBombError:
+        return JsonResponse({"error": "Image is too large to process."}, status=400)
+    except UnidentifiedImageError, OSError, ValueError, SyntaxError:
+        return JsonResponse({"error": unreadable}, status=400)
+    if width * height > MAX_IMAGE_PIXELS:
+        logger.warning("Refused oversized image: %dx%d", width, height)
+        return JsonResponse({"error": "Image is too large to process."}, status=400)
+    return image_format, width, height
+
+
+def _open_image_source(
+    data: dict[str, Any],
+) -> tuple[_ImageSource | None, JsonResponse | None]:
+    """Find and check the image an annotation payload refers to.
+
+    A local image is referred to by ``imageSrc`` once uploaded (a media file
+    name), or sent inline as a base64 ``imageData`` data URL if the upload
+    failed; ELN images are always referred to by ``imageSrc``.
 
     Returns:
-        A ``(image, base_name, error)`` tuple. On success ``error`` is ``None``;
-        on failure ``image`` is ``None`` and ``error`` is a ready JsonResponse.
+        ``(source, None)``, or ``(None, error)`` with a ready JsonResponse.
     """
-    rotation = _parse_rotation(data.get("rotation"))
-
     if data.get("isLocalImage") and data.get("imageData"):
-        image = _decode_data_url(data["imageData"])
-        if image is None:
-            return (
-                None,
-                "",
-                JsonResponse({"error": "Could not decode the uploaded image."}, status=400),
-            )
+        unreadable = "Could not decode the uploaded image."
+        raw = _data_url_bytes(data["imageData"])
+        if raw is None:
+            return None, JsonResponse({"error": unreadable}, status=400)
+        info = _inspect_image(raw, unreadable)
+        if isinstance(info, JsonResponse):
+            return None, info
         base_name = os.path.basename(data.get("imageSrc") or "local_upload.png")
-        return _rotate_image(image, rotation), base_name, _oversize_error(image)
+        return _ImageSource(base_name, info[1], info[2], raw=raw), None
 
     image_src = data.get("imageSrc")
     if not image_src:
-        return None, "", JsonResponse({"error": 'Missing "imageSrc" data in request'}, status=400)
+        return None, JsonResponse({"error": 'Missing "imageSrc" data in request'}, status=400)
     image_path = _resolve_within_media(image_src)
     if not image_path or not os.path.exists(image_path):
         logger.warning("Image not found for request: %r", image_src)
-        return None, "", JsonResponse({"error": "Image not found."}, status=400)
-    with open(image_path, "rb") as fh:
-        image = _decode_image_bytes(fh.read())
-    if image is None:
-        return None, "", JsonResponse({"error": "Failed to read the image file."}, status=400)
-    return _rotate_image(image, rotation), os.path.basename(image_src), _oversize_error(image)
+        return None, JsonResponse(
+            {"error": "The image is no longer on the server. Please load it again."},
+            status=400,
+        )
+    info = _inspect_image(image_path, "Failed to read the image file.")
+    if isinstance(info, JsonResponse):
+        return None, info
+    media.touch(image_path)  # in use: keep it through the next sweep
+    return _ImageSource(os.path.basename(image_src), info[1], info[2], path=image_path), None
+
+
+def _load_image(source: _ImageSource, rotation: int) -> np.ndarray | None:
+    """Decode (or take from the cache) and rotate a checked image.
+
+    The result may be read-only (a cached image); copy it before drawing.
+    """
+    if source.raw is not None:
+        image = _decode_image_bytes(source.raw)
+    else:
+        assert source.path is not None
+        image = imagecache.load(source.path, _decode_image_bytes)
+    return None if image is None else _rotate_image(image, rotation)
+
+
+def _busy() -> JsonResponse:
+    response = JsonResponse(
+        {"error": "The server is busy. Please try again in a moment."}, status=503
+    )
+    response["Retry-After"] = "10"
+    return response
+
+
+def _run_image_job(
+    data: dict[str, Any],
+    job: Callable[[np.ndarray, str], JsonResponse],
+    kind: str,
+) -> JsonResponse:
+    """Check the payload's image, wait for memory, load it, and run ``job``.
+
+    ``job(image, base_name)`` does the work; it runs only once the memory the
+    image needs is free (:mod:`tlc.admission`), else the client gets a 503.
+    """
+    source, error = _open_image_source(data)
+    if error is not None:
+        return error
+    assert source is not None
+
+    def needed() -> int:  # re-estimated while waiting: the image may get cached
+        return source.job_bytes(kind)
+
+    try:
+        with admission.admit(needed, release=lambda: imagecache.release(keep=source.path)):
+            image = _load_image(source, _parse_rotation(data.get("rotation")))
+            if image is None:
+                message = (
+                    "Could not decode the uploaded image."
+                    if source.raw is not None
+                    else "Failed to read the image file."
+                )
+                return JsonResponse({"error": message}, status=400)
+            return job(image, source.base_name)
+    except admission.Busy:
+        logger.warning("Busy: refused a %d MB image job", needed() // 2**20)
+        return _busy()
 
 
 def _decode_data_url(data_url: str) -> np.ndarray | None:
@@ -264,12 +369,19 @@ def _decode_data_url(data_url: str) -> np.ndarray | None:
     Returns:
         The decoded BGR image as a NumPy array, or ``None`` if decoding fails.
     """
+    raw = _data_url_bytes(data_url)
+    return None if raw is None else _decode_image_bytes(raw)
+
+
+def _data_url_bytes(data_url: str) -> bytes | None:
+    """The bytes in a base64 ``data:`` URL (or bare payload), or ``None``."""
+    if not isinstance(data_url, str):
+        return None
     payload = data_url.split(",", 1)[1] if "," in data_url else data_url
     try:
-        raw = base64.b64decode(payload, validate=True)
+        return base64.b64decode(payload, validate=True)
     except binascii.Error, ValueError:
         return None
-    return _decode_image_bytes(raw)
 
 
 def _decode_image_bytes(raw: bytes) -> np.ndarray | None:
@@ -290,15 +402,6 @@ def _decode_image_bytes(raw: bytes) -> np.ndarray | None:
         return None
     rgb = np.asarray(oriented)
     return np.ascontiguousarray(rgb[:, :, ::-1])  # RGB -> BGR for OpenCV
-
-
-def _oversize_error(image: np.ndarray) -> JsonResponse | None:
-    """Return a 400 response if the image exceeds ``MAX_IMAGE_PIXELS``, else None."""
-    height, width = image.shape[:2]
-    if height * width > MAX_IMAGE_PIXELS:
-        logger.warning("Refused oversized image: %dx%d", width, height)
-        return JsonResponse({"error": "Image is too large to process."}, status=400)
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -431,12 +534,6 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    # Load the source image from the appropriate origin.
-    image, base_name, error = _load_annotation_image(data)
-    if error is not None:
-        return error
-    assert image is not None  # guaranteed when error is None
-
     markers = _parse_markers(lines)
     if markers is None:
         return JsonResponse({"error": "Line and spot positions must be numbers."}, status=400)
@@ -449,6 +546,24 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
             retained.append((x, y, rf_value))
     rf_values = results.build_rows(retained, markers)
 
+    def render(image: np.ndarray, base_name: str) -> JsonResponse:
+        return _render_results(image, base_name, data, rf_values, min_y, max_y, markers)
+
+    return _run_image_job(data, render, "render")
+
+
+def _render_results(
+    image: np.ndarray,
+    base_name: str,
+    data: dict[str, Any],
+    rf_values: list[dict[str, Any]],
+    min_y: float,
+    max_y: float,
+    markers: list[dict[str, Any]],
+) -> JsonResponse:
+    """Draw the annotated image, write it and the CSV, and answer the request."""
+    if not image.flags.writeable:  # a cached image is shared: draw on a copy
+        image = image.copy()
     results.draw_annotations(
         image,
         rf_values,
@@ -465,10 +580,8 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     annotated_name = f"annotated_{stem}_{token}.png"
     csv_name = f"rf_values_{stem}_{token}.csv"
 
-    os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
-    cv2.imwrite(os.path.join(settings.MEDIA_ROOT, annotated_name), image)
-    with open(os.path.join(settings.MEDIA_ROOT, csv_name), "w", encoding="utf-8") as fh:
-        fh.write(results.csv_text(rf_values))
+    media.write(annotated_name, cv2.imencode(".png", image)[1].tobytes())
+    media.write(csv_name, results.csv_text(rf_values))
 
     return JsonResponse(
         {
@@ -495,18 +608,17 @@ def _parse_region(raw: Any) -> tuple[int, int, int, int] | None:
 
 def _parse_detection_request(
     request: HttpRequest,
-) -> tuple[dict[str, Any], np.ndarray | None, JsonResponse | None]:
-    """Shared front half of the detection views: method, JSON, image."""
+) -> tuple[dict[str, Any], JsonResponse | None]:
+    """Shared front half of the detection views: method and JSON."""
     if request.method != "POST":
-        return {}, None, JsonResponse({"error": "Invalid request"}, status=405)
+        return {}, JsonResponse({"error": "Invalid request"}, status=405)
     try:
         data: dict[str, Any] = json.loads(request.body)
     except json.JSONDecodeError:
-        return {}, None, JsonResponse({"error": "Invalid JSON format"}, status=400)
+        return {}, JsonResponse({"error": "Invalid JSON format"}, status=400)
     if not isinstance(data, dict):
-        return {}, None, JsonResponse({"error": "Invalid JSON format"}, status=400)
-    image, _, error = _load_annotation_image(data)
-    return data, image, error
+        return {}, JsonResponse({"error": "Invalid JSON format"}, status=400)
+    return data, None
 
 
 def detect_spots(request: HttpRequest) -> JsonResponse:
@@ -525,10 +637,9 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
         ``{"spots": [{"x", "y", "conf"}], "count", "roi", "model"}``, or an
         ``error``.
     """
-    data, image, error = _parse_detection_request(request)
+    data, error = _parse_detection_request(request)
     if error is not None:
         return error
-    assert image is not None  # guaranteed when error is None
 
     try:
         min_y, max_y = float(data["minY"]), float(data["maxY"])
@@ -536,17 +647,19 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
         return JsonResponse(
             {"error": "Place the Min and Max lines before detecting spots."}, status=400
         )
+    region = _parse_region(data.get("region"))
 
-    try:
-        result = detection.detect_spots(
-            image, min_y=min_y, max_y=max_y, region=_parse_region(data.get("region"))
-        )
-    except detection.DetectionError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
-    except Exception:
-        logger.exception("Spot detection failed")
-        return JsonResponse({"error": "Spot detection failed."}, status=500)
-    return JsonResponse({**result, "count": len(result["spots"])})
+    def detect(image: np.ndarray, _base_name: str) -> JsonResponse:
+        try:
+            result = detection.detect_spots(image, min_y=min_y, max_y=max_y, region=region)
+        except detection.DetectionError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:
+            logger.exception("Spot detection failed")
+            return JsonResponse({"error": "Spot detection failed."}, status=500)
+        return JsonResponse({**result, "count": len(result["spots"])})
+
+    return _run_image_job(data, detect, "spots")
 
 
 def detect_lines(request: HttpRequest) -> JsonResponse:
@@ -564,19 +677,22 @@ def detect_lines(request: HttpRequest) -> JsonResponse:
         ``error``. ``estimated`` names a line that was guessed because only
         the other one was detected.
     """
-    data, image, error = _parse_detection_request(request)
+    data, error = _parse_detection_request(request)
     if error is not None:
         return error
-    assert image is not None  # guaranteed when error is None
+    region = _parse_region(data.get("region"))
 
-    try:
-        result = detection.detect_lines(image, region=_parse_region(data.get("region")))
-    except detection.DetectionError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
-    except Exception:
-        logger.exception("Line detection failed")
-        return JsonResponse({"error": "Line detection failed."}, status=500)
-    return JsonResponse(result)
+    def detect(image: np.ndarray, _base_name: str) -> JsonResponse:
+        try:
+            result = detection.detect_lines(image, region=region)
+        except detection.DetectionError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:
+            logger.exception("Line detection failed")
+            return JsonResponse({"error": "Line detection failed."}, status=500)
+        return JsonResponse(result)
+
+    return _run_image_job(data, detect, "lines")
 
 
 # ---------------------------------------------------------------------------
@@ -626,14 +742,58 @@ def fetch_and_save_image(request: HttpRequest) -> JsonResponse:
         chunks.append(chunk)
     content = b"".join(chunks)
 
-    if cv2.imdecode(np.frombuffer(content, np.uint8), cv2.IMREAD_COLOR) is None:
+    # Checked from the header, like a local upload: decoding a 50 MP photo
+    # here just to validate it cost ~700 MB.
+    info = _inspect_image(content, "Remote resource is not a valid image.")
+    if isinstance(info, JsonResponse):
+        return info
+    extension = _UPLOAD_FORMATS.get(info[0])
+    if extension is None:
         return JsonResponse({"error": "Remote resource is not a valid image."}, status=400)
 
-    file_name = f"{uuid.uuid4().hex}.png"
-    os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
-    with open(os.path.join(settings.MEDIA_ROOT, file_name), "wb") as fh:
-        fh.write(content)
+    file_name = f"{uuid.uuid4().hex}{extension}"
+    media.write(file_name, content)
 
+    return JsonResponse({"imagePath": file_name})
+
+
+# Formats a browser can show on the canvas, with the extension they are stored
+# under (so /media/ serves them with the right type).
+_UPLOAD_FORMATS = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp", "BMP": ".bmp", "GIF": ".gif"}
+
+
+def upload_image_file(request: HttpRequest) -> JsonResponse:
+    """Store a local image once, so later requests can refer to it by name.
+
+    Without this, every Detect Lines / Detect Spots / Calculate RF request
+    carried the whole image as base64 JSON -- ~17 MB each time for a 13 MB
+    phone photo. The bytes are stored as uploaded; EXIF orientation is applied
+    when they are read (:func:`_decode_image_bytes`), as for ELN images.
+
+    Expects multipart ``image``. Checks the size cap, then the format and pixel
+    cap from the image header, without decoding the pixels.
+
+    Returns:
+        ``{"imagePath": <media file name>}``, or an ``error``.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=405)
+    upload = request.FILES.get("image")
+    if upload is None:
+        return JsonResponse({"error": 'Missing "image" file.'}, status=400)
+    if upload.size is None or upload.size > MAX_IMAGE_BYTES:
+        return JsonResponse({"error": "The image is too large."}, status=400)
+    raw = upload.read()
+    unsupported = "The file is not a supported image."
+    info = _inspect_image(raw, unsupported)
+    if isinstance(info, JsonResponse):
+        return info
+    extension = _UPLOAD_FORMATS.get(info[0])
+    if extension is None:
+        return JsonResponse({"error": unsupported}, status=400)
+
+    file_name = f"{uuid.uuid4().hex}{extension}"
+    media.write(file_name, raw)
     return JsonResponse({"imagePath": file_name})
 
 

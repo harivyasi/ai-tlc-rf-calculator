@@ -67,6 +67,7 @@ def _load(key: str, name: str, path: Path, factory: type) -> tuple[Any, ModelInf
             # worker that oversubscribes the CPU.
             options.intra_op_num_threads = int(settings.ONNX_INTRA_OP_THREADS)
             options.inter_op_num_threads = 1
+            options.enable_cpu_mem_arena = bool(settings.ONNX_CPU_MEM_ARENA)
             model = factory(str(path), sess_options=options)
             meta = model.sess.get_modelmeta().custom_metadata_map
             info = ModelInfo(
@@ -79,6 +80,11 @@ def _load(key: str, name: str, path: Path, factory: type) -> tuple[Any, ModelInf
             )
             cached = _sessions[key] = (model, info)
     return cached
+
+
+def models_loaded() -> bool:
+    """Whether both sessions exist in this process (a first job loads them)."""
+    return "spot" in _sessions and "line" in _sessions
 
 
 def spot_model() -> tuple[SpotONNX, ModelInfo]:

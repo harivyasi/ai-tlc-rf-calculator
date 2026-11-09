@@ -21,10 +21,9 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
 
-# Copy the app and collect static files. A throwaway key is fine here;
-# collectstatic reads no secrets and DEBUG stays off (production settings).
+# Copy the app and collect static files (production settings, DEBUG off).
 COPY . .
-RUN SECRET_KEY=build-only-key /opt/venv/bin/python manage.py collectstatic --noinput
+RUN /opt/venv/bin/python manage.py collectstatic --noinput
 
 # ---------------------------------------------------------------------------
 # Runtime: slim image with only the venv, the app, and runtime libs.
@@ -61,6 +60,7 @@ EXPOSE 8050
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8050), 2).close()"]
 
-# SECRET_KEY, ALLOWED_HOSTS, etc. must be provided at runtime (see README).
+# ALLOWED_HOSTS and ELN_ORIGIN are provided at runtime (see README); SECRET_KEY
+# is optional (see config/settings.py).
 # Worker/threads/timeout are configurable via GUNICORN_* env vars.
 CMD ["gunicorn", "config.wsgi:application", "-c", "gunicorn.conf.py"]

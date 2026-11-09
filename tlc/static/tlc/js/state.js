@@ -32,8 +32,11 @@ export const state = {
     isHorizontal: true,
     lineType: "",
     addingSpots: false,
+    placingLine: false, // a line tool is armed: the next click places a line
 
     isLocalImage: false,
+    // A local image is uploaded once; later requests send only its name.
+    localImageUpload: null, // Promise<string|null> for the current image's stored name
 
     // Drag state.
     draggingSpot: null,

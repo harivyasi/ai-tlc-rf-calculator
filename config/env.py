@@ -70,3 +70,21 @@ def csrf_origins_from_hosts(hosts: list[str]) -> list[str]:
 def host_of(url: str) -> str | None:
     """Return the hostname of a URL (e.g. ``https://eln.example.org/x`` -> host), or None."""
     return urlsplit(url).hostname if url else None
+
+
+# Parts of Django that sign data with SECRET_KEY and so need the same key in
+# every worker and across restarts (see SECRET_KEY in settings.py).
+_SIGNING_APPS = {
+    "django.contrib.auth",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+}
+_SIGNING_MIDDLEWARE = {
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+}
+
+
+def signs_data(installed_apps: list[str], middleware: list[str]) -> bool:
+    """Whether the configured apps or middleware sign data with SECRET_KEY."""
+    return bool(_SIGNING_APPS & set(installed_apps) or _SIGNING_MIDDLEWARE & set(middleware))

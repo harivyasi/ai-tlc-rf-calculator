@@ -58,12 +58,27 @@ gives identical detection results.
   after placing. The table shows lane and compound type columns; "full
   labels" prints Rf, compound and lane on the image. Min and Max buttons hide
   once placed; H-lines are black.
+- `POST /upload-image/`: a local image is stored once and later requests
+  refer to it by name, instead of each carrying the whole image (~17 MB for a
+  13 MB phone photo).
+- Stored files (uploads, ELN images, results) are deleted once unused for
+  `MEDIA_MAX_AGE_HOURS` (24); no cron job needed. `cleanup_media` does the
+  same on demand.
+- Image jobs start only when the memory they need is free (estimated from
+  the pixel count; container limits respected; shared between workers), and
+  otherwise wait, then answer 503 "busy, try again". Each worker keeps
+  recently decoded images (`IMAGE_CACHE_MB`), so the three steps on a plate
+  decode it once. In a 1.5 GB container, eight 50 MP requests at once
+  succeed.
 
 ### Changed
 
 - Server sizing for the models: 2 Gunicorn workers x 4 threads, a 120 s
   timeout, `ONNX_INTRA_OP_THREADS` capping ONNX Runtime's threads; models
   load lazily, once per worker, behind a lock.
+- `SECRET_KEY` is optional: nothing in the app signs data with it, so a
+  random key is made at start-up. A deployment needs only `ALLOWED_HOSTS`
+  and `ELN_ORIGIN`.
 
 ### Fixed
 
@@ -74,6 +89,8 @@ gives identical detection results.
 - Uploads to the ELN no longer send this app's CSRF token to Chemotion, and
   name the file (`TLC_Rf_2026-11-09_14-32.csv`). A refused upload is
   reported as a failure; it used to say "Saved".
+- Image size limits are checked from the file header before decoding.
+  `/healthz` answers over plain HTTP so health probes work behind HTTPS.
 
 ### Security
 
