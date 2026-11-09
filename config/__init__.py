@@ -4,4 +4,4 @@
 kept in sync with ``pyproject.toml`` by a test.
 """
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"

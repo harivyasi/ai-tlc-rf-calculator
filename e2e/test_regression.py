@@ -1690,3 +1690,31 @@ def test_annotations_reopen_with_rotation(page, servers, blob_image_path, tmp_pa
     page.wait_for_selector("text=Annotations opened.")
     assert page.input_value("#rotation-preset") == "90"
     assert page.input_value("#rotation-fine") == "2.5"
+
+
+def test_phone_width_fits_and_taps_land_where_shown(browser, servers, tmp_path):
+    """At 360 px nothing scrolls sideways; the canvas is scaled down to fit and
+    a tap still lands on the image point shown under it."""
+    page = browser.new_page(viewport={"width": 360, "height": 800})
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", _dot_image(tmp_path, size=(600, 400), at=(300, 200)))
+    page.wait_for_function(_IMAGE_READY)
+    assert page.evaluate("document.documentElement.scrollWidth - window.innerWidth") == 0
+
+    canvas = page.locator("#image-canvas")
+    box = canvas.bounding_box()
+    assert box["width"] < 360  # scaled down from its 600 px
+    h = box["height"]
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": box["width"] / 2, "y": h * 0.8})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": box["width"] / 2, "y": h * 0.2})
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": box["width"] * 0.3, "y": h * 0.5})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr")
+    assert float(_cell(page, "rf")) == 0.5
+    assert page.evaluate("document.documentElement.scrollWidth - window.innerWidth") == 0
+    page.close()

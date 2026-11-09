@@ -306,8 +306,12 @@
                     by Rf. Tick <strong>full labels</strong> to also print each spot's Rf, compound and lane on
                     the image. <strong>Text size</strong> (10–500%) scales the labels in both the preview and
                     the saved image, relative to the size auto-computed from the plate resolution.</p>
-                <p class="muted text-sm"><strong>Rotate</strong> is available on a freshly loaded image (before
-                    you annotate) to correct its orientation.</p>
+                <p class="muted text-sm"><strong>Rotate</strong> (before you annotate): pick a quarter turn,
+                    then fine-tune the angle (±45°; the arrows step by 0.5°) until the baseline is level —
+                    Rf compares heights, so a tilted photo gives lane-dependent errors.</p>
+                <p class="muted text-sm">Your annotations are kept in this browser as you work: loading the
+                    same photo again offers to restore them. <strong>Annotations</strong> (export) saves them
+                    as a file; <strong>Open annotations</strong> loads such a file back onto the same photo.</p>
                 <p class="muted text-sm">Detected lines and spots are <strong>candidates</strong> from two
                     trained models (TLC-LineDet and TLC-SpotDet). Nothing is calculated until you have
                     reviewed them and clicked <strong>Calculate RF</strong>.</p>

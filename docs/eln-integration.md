@@ -43,8 +43,15 @@ not a bug:
 
 - **GET** → returns the source plate image (the attachment `attID`). The
   endpoint commonly **redirects** (302) to the actual storage location.
-- **POST** (`multipart/form-data`, field `file`) → uploads a result file
-  (annotated PNG or CSV) back onto the same attachment/app.
+- **POST** (`multipart/form-data`, fields `file` and `attachmentName`) →
+  uploads a result file (annotated PNG, CSV or annotation JSON) back onto the
+  same attachment/app. Chemotion names the new attachment `attachmentName`
+  (`TLC_Rf_<date>_<time>.csv`, `TLC_annotated_<date>_<time>.png`,
+  `TLC_annotations_<date>_<time>.json`); without it, `<app name>-<upload
+  name>`. One token allows 10 uploads. Chemotion stores the files as
+  attachments and parses none of them. The request
+  carries no custom headers (in particular not our CSRF token), so it is a
+  CORS "simple request" with no preflight.
 
 In the frontend this is a single `elnUrl` (`tlc/static/tlc/js/state.js`):
 `loadELNImage()` (`js/sources.js`) GETs it via the server-side proxy below, and
@@ -56,11 +63,14 @@ In the frontend this is a single `elnUrl` (`tlc/static/tlc/js/state.js`):
   browser CORS on download and keeps the image on the tool's origin). The URL
   is SSRF-validated; **redirects are followed but every hop is re-validated**
   against the same policy (`_fetch_following_safe_redirects` in `tlc/views.py`),
-  so Chemotion's redirect-to-storage works safely. The image is saved under a
-  random name in `MEDIA_ROOT` and only that name is returned.
+  so Chemotion's redirect-to-storage works safely. The image is checked from
+  its header (format, `MAX_IMAGE_MB`, `MAX_IMAGE_MEGAPIXELS`), saved under a
+  random name in its own format in `MEDIA_ROOT`, and only that name is
+  returned. Unused files are deleted after `MEDIA_MAX_AGE_HOURS` (24).
 - `GET /serve-image/?file_path=<name>` — serves the fetched image back to the
   canvas, confined to `MEDIA_ROOT`.
-- `POST /calculate_rf/`, `POST /detect-spots/` — same-origin; CSRF enforced.
+- `POST /detect-lines/`, `POST /detect-spots/`, `POST /calculate_rf/` —
+  same-origin; CSRF enforced. They refer to the image by its stored name.
 - **Save back to ELN** — `postToEln()` POSTs directly from the browser to
   `elnUrl` (cross-origin to Chemotion), so it depends on the deployment config
   below.
@@ -87,10 +97,9 @@ For the same-origin fetch/serve/calculate flow, nothing special is needed. For
 ### Worked example
 
 Given the tool at `tlc.example.org` and a Chemotion instance at
-`eln.example.org`, the full configuration is three variables:
+`eln.example.org`, the full configuration is two variables:
 
 ```bash
-SECRET_KEY="…"
 ALLOWED_HOSTS="tlc.example.org"   # CSRF_TRUSTED_ORIGINS derived as https://tlc.example.org
 ELN_ORIGIN="https://eln.example.org"   # sets CSP connect-src + fetch allowlist
 ```

@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Shilpa Bai Thotli, Nicole Jung, and contributors
+Copyright (c) 2026 Shilpa Bai Thotli, Nicole Jung, Shashank S. Harivyasi, and contributors
 Karlsruhe Institute of Technology (KIT), Germany
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,3 +20,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+The model files are not covered by the MIT License above.
+
+The trained detection models in tlc/ml_models/ (spot_best.onnx and
+line_best.onnx) were trained and exported with Ultralytics YOLOv8 and are
+licensed under the GNU Affero General Public License, version 3 (AGPL-3.0),
+as declared in their metadata. The full text of that license is in
+tlc/ml_models/LICENSE.

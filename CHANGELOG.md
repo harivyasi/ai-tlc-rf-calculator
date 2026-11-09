@@ -99,6 +99,10 @@ follow the SI; candidate detection is Shilpa's.
 
 ### Changed
 
+- Licensing is stated per part: the code is MIT; the trained model files in
+  `tlc/ml_models/` are AGPL-3.0, as their metadata declares (they were
+  trained and exported with Ultralytics YOLOv8). `LICENSE`, the README and
+  `pyproject.toml` say so; the AGPL text is in `tlc/ml_models/LICENSE`.
 - ONNX Runtime's CPU memory arena is off (`ONNX_CPU_MEM_ARENA`): it held
   ~500 MB per worker after a large plate; results are identical and speed
   the same within noise. Freed memory is returned to the system after each
@@ -107,6 +111,9 @@ follow the SI; candidate detection is Shilpa's.
   random key is made at start-up when it is not set. A deployment needs only
   `ALLOWED_HOSTS` and `ELN_ORIGIN`. Should logins, sessions or messages be
   added later, production refuses to start until a fixed key is set.
+- README, architecture and ELN docs rewritten for version 3; the in-app Help
+  covers rotation and annotation files. Shashank S. Harivyasi is added to the
+  authors (`LICENSE`, `pyproject.toml`, README).
 
 ### Fixed
 
@@ -128,6 +135,9 @@ follow the SI; candidate detection is Shilpa's.
   and stored under their real format.
 - `/healthz` answers over plain HTTP in production instead of redirecting to
   HTTPS, so health probes from inside a cluster or host see "ok".
+- At phone width the page no longer scrolls sideways: the toolbar groups
+  wrap, the canvas scales down to fit (taps still land on the point shown),
+  and the title keeps clear of the version badge.
 
 ### Removed
 

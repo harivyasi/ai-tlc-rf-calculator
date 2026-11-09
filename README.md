@@ -1,72 +1,99 @@
 # TLC RF Calculator
 
-A web tool for computing **retention factor (RF)** values from **Thin Layer
-Chromatography (TLC)** plate images.
+A web tool for measuring **retention factor (Rf)** values on photos of **thin
+layer chromatography (TLC)** plates.
 
-Load a photo of a TLC plate — from your computer or straight from an Electronic
-Lab Notebook (ELN) — mark the reference lines and spots in your browser, and the
-tool computes the RF for each spot, produces an annotated image, and exports the
-results as CSV (or sends them back to the ELN).
-
-RF is the distance a spot travelled divided by the distance the solvent front
-travelled, both measured from the baseline:
+Load a photo of a plate, from your computer or straight from the Chemotion
+electronic lab notebook (ELN). Two trained models propose the baseline, the
+solvent front and the spots; you check and correct them in the browser. The
+tool then computes the Rf of every spot, draws a numbered, annotated image,
+and exports the results as CSV, or sends them back to the ELN.
 
 ```text
-RF = (distance from baseline to spot) / (distance from baseline to solvent front)
+Rf = (distance from baseline to spot) / (distance from baseline to solvent front)
 ```
+
+Rf runs from 0 (a spot on the baseline) to 1 (a spot at the solvent front).
+Spots outside that range are left out.
 
 ## Using the tool
 
-1. **Load a plate image.** Choose **Upload local** (drag-and-drop or pick a
-   JPG/PNG under 10 MB) or **From ELN** if the tool was opened from your ELN.
-2. **(Recommended) Draw a Plate Area.** Click **Plate Area** and drag a box
-   around the plate. This makes **Auto-detect** far more reliable — it ignores
-   everything outside the box. (It does *not* place the reference lines.)
-3. **Mark the reference lines.** Click **Min Line** and click on the **baseline**
-   (where the samples were spotted); click **Max Line** and click on the
-   **solvent front** (how far the solvent ran).
-4. **Mark the spots.** Click **Auto-detect** to find them automatically (best
-   inside a Plate Area — review and adjust the suggestions), or **Add Spots** to
-   place them by hand. Drag to reposition; double-click (double-tap on touch) to
-   delete. Mouse, touch, and pen all work.
-5. **(Optional) Label lanes and compounds** with **V-Line** / **H-Line**.
-6. **Click Calculate RF.** The results table and the annotated image appear.
-   Then **download** the CSV or the annotated Image — and, when the plate came
-   from an ELN, **upload** the CSV or Image straight back to it.
+1. **Load a plate photo.** Choose **Upload local** (drag and drop, or pick a
+   JPG, PNG or WebP of up to 25 MB; phone photos of 50 megapixels are fine), or
+   **From ELN** when Chemotion opened the tool.
+2. **Straighten it if needed.** Rf compares heights, so the baseline should be
+   level. **Rotate** turns the photo by a quarter turn (0°, 90°, 180°, 270°);
+   the box next to it fine-tunes by up to ±45°, and the arrows step by 0.5°.
+   Rotation is available until you start annotating.
+3. **(Optional) Draw a Plate Area.** Click **Plate Area** and drag a box around
+   the plate. Detection then ignores everything outside it, which helps on
+   photos with a lot of background. **Crop view** zooms to the box.
+4. **Place the baseline and solvent front.** **Detect Lines** proposes them;
+   or click **Min Line** and click on the baseline (where the samples were
+   applied), then **Max Line** and click on the solvent front. Drag either
+   line to adjust it.
+5. **Mark the spots.** **Detect Spots** searches between the two lines and
+   proposes candidates; **Add Spots** places them by hand. Drag a spot to move
+   it; double-click (double-tap on a touch screen) to delete it.
+6. **(Optional) Label lanes and compounds.** **V-Line** marks a lane and
+   **H-Line** a compound. Pick a type from the list (for example *starting
+   material* or *product 1*), type a label, or both. The ✎ beside a marker
+   edits it later. Each spot belongs to the nearest lane and the nearest
+   compound marker; an unlabelled lane is left blank and an unmarked compound
+   shows as "Unknown".
+7. **Click Calculate RF.** The results table and the annotated image appear.
+   Rows are numbered, sorted by lane and then by Rf, and the same number
+   stands next to each spot on the image.
+8. **Export.** Download the **CSV**, the annotated **Image** or the
+   **Annotations** file; for a plate from the ELN, upload any of them back to
+   it.
 
-### Handy features
+### Good to know
 
-- **Undo / redo** every edit — the toolbar buttons or **Ctrl+Z** / **Ctrl+Y**
-  (**Ctrl+Shift+Z**).
-- **Auto-detect options:** tick **ring marks** for hand-drawn rings (centres on
-  the ring outline). Toggling it re-runs detection.
-- **Crop view** zooms the work area to the plate box for easier marking — it only
-  changes what you see; the saved image keeps its full original size.
-- **Rotate** a freshly loaded image 90° to fix its orientation (before you
-  annotate).
-- **Text size** (10–500%) scales the labels on the preview and the saved image.
-- **Light / dark theme** toggle (top-right), remembered per browser.
-- **Stale-results guard:** if you change anything after calculating, a banner
-  reminds you to recalculate and export stays disabled — so you never save an
-  out-of-date image.
+- **Detected lines and spots are suggestions.** Nothing is calculated until
+  you have checked them and clicked **Calculate RF**.
+- **Undo and redo** every edit with the toolbar arrows or **Ctrl+Z** /
+  **Ctrl+Y** (**Ctrl+Shift+Z**).
+- **Your work is kept.** The annotations of each image are saved in your
+  browser as you go. If the page is reloaded, loading the same photo again
+  offers to restore them. **Reset** clears the annotations and that saved
+  copy.
+- **Annotations file.** The downloaded *Annotations* file (JSON) holds the
+  lines, spots, labels, rotation and Plate Area. **Open annotations** loads it
+  back onto the same photo, to check a result later or continue it. It is
+  refused for a different photo.
+- **What the CSV records.** Besides the results, each spot's source (placed by
+  hand, detected, or detected and then moved) and, at the end, how the result
+  was made: app version, the photo's name and checksum, rotation, Plate Area,
+  the two models and the time of calculation.
+- **Labels on the image.** By default each spot carries its number. Tick
+  **full labels** to add its Rf, compound and lane. **Text size** (10–500%)
+  scales the labels on the preview and the saved image.
+- **Out-of-date results are flagged.** If you change anything after
+  calculating, a banner says so and export stays disabled until you
+  recalculate, so an outdated image is never saved.
+- **Help** (toolbar) has a short step-by-step reminder. Light and dark themes
+  switch at the top right.
 
 ### Tips for good results
 
-- Use a well-lit, high-resolution, roughly straight-on photo of the plate.
-- Draw the Plate Area first — it makes Auto-detect much more reliable.
-- Put **Min** on the baseline and **Max** on the solvent front; RF values fall
-  between 0 and 1 (spots outside that range are ignored).
-- The built-in **Help** button (toolbar) has a quick step-by-step reminder.
+- Photograph the plate straight on, well lit, at high resolution.
+- Straighten the photo first if the baseline is not level.
+- On photos with much background, draw the Plate Area before detecting.
+- Check the proposed lines before detecting spots: spots are searched only
+  between them.
 
-## For developers & deployers
+## For developers and deployers
 
-This is an open-source Django + vanilla-JS app (no database). See:
+A Django 5.2 app with a vanilla JavaScript front end, no database, and two
+ONNX models for detection. See:
 
-- **[docs/architecture.md](docs/architecture.md)** — architecture, design
-  decisions, module map, security model, testing, build/CI, and how to run it
-  locally or deploy it (Docker, configuration, environment variables).
-- **[docs/eln-integration.md](docs/eln-integration.md)** — the Chemotion ELN
-  contract (the signed URL, GET/POST endpoint, CORS/CSP requirements).
+- **[docs/architecture.md](docs/architecture.md)**: design, module map,
+  detection, security, memory use, testing, and deployment (Docker,
+  environment variables).
+- **[docs/eln-integration.md](docs/eln-integration.md)**: the Chemotion
+  third-party-app contract and its deployment requirements.
+- **[CHANGELOG.md](CHANGELOG.md)**: what changed in each version.
 
 Quick start:
 
@@ -75,6 +102,28 @@ uv sync
 DEBUG=True uv run python manage.py runserver   # then open http://localhost:8000/
 ```
 
+A deployment needs only `ALLOWED_HOSTS` and, for the ELN, `ELN_ORIGIN`:
+
+```bash
+docker build -t tlc-rf-calculator .
+docker run --rm -p 8050:8050 \
+  -e ALLOWED_HOSTS="tlc.example.org" -e ELN_ORIGIN="https://eln.example.org" \
+  tlc-rf-calculator
+```
+
+## Authors
+
+Shilpa Bai Thotli, Nicole Jung, Shashank S. Harivyasi
+
+Karlsruhe Institute of Technology (KIT), Germany.
+
 ## License
 
-MIT
+The code is under the MIT License, see [LICENSE](LICENSE).
+
+The trained models in `tlc/ml_models/` (`spot_best.onnx`, `line_best.onnx`)
+are not: they were trained and exported with Ultralytics YOLOv8 and are under
+the GNU Affero General Public License v3.0 (AGPL-3.0), as declared in their
+metadata. See [tlc/ml_models/LICENSE](tlc/ml_models/LICENSE). The AGPL-3.0
+applies to them wherever they are used, including its conditions for running
+them as a network service.
