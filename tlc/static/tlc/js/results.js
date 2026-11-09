@@ -150,7 +150,9 @@ export function autoDetectLines() {
         return;
     }
     showOverlay("Detecting reference lines…");
-    postJson("/detect-lines/", getImagePayload())
+    const payload = getImagePayload();
+    if (state.plateRegion) payload.region = state.plateRegion;
+    postJson("/detect-lines/", payload)
         .then((result) => {
             hideOverlay();
             const r = state.plateRegion;

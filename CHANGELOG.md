@@ -32,11 +32,16 @@ gives identical detection results.
   1 were excluded after rounding, so a spot on the baseline was dropped.
 - Calculate RF refuses a baseline at or above the solvent front, and
   positions that are not numbers, with a message.
+- Image limits: 25 MB per file (`MAX_IMAGE_MB`) and 64 megapixels
+  (`MAX_IMAGE_MEGAPIXELS`), enough for phone photos of plates (13 MB, 50 MP);
+  the page reads the file limit from the server.
 
 ### Added
 
 - **Plate Area**: a box around the plate that confines detection, with
   lines and spots kept inside it.
+- With a Plate Area set, **Detect Lines** searches only inside it, so a line
+  is not put on the background of an uncropped photo.
 
 ### Changed
 
@@ -48,6 +53,8 @@ gives identical detection results.
 
 - The TLC-LineDet class ids were hard-coded the wrong way round; they are
   read from the model (no effect on results, which are assigned by position).
+- Phone photos with an EXIF orientation are analysed the way the browser
+  shows them; they used to be analysed sideways.
 
 ### Security
 

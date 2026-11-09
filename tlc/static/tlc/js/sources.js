@@ -50,8 +50,10 @@ export function handleLocalImageFile(file) {
         notify("Please select a valid image file.", "error");
         return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-        notify("File size should be less than 10MB.", "error");
+    // The server's limit, passed in by the page so the two cannot disagree.
+    const maxMb = Number(document.body.dataset.maxImageMb) || 25;
+    if (file.size > maxMb * 1024 * 1024) {
+        notify("The image must be smaller than " + maxMb + " MB.", "error");
         return;
     }
     const reader = new FileReader();
