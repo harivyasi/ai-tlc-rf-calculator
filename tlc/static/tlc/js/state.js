@@ -27,7 +27,8 @@ export const state = {
     lineSeq: 0,
     rotation: 0, // clockwise degrees the image is displayed at (0/90/180/270)
 
-    currentLine: null,
+    currentLine: null, // the H/V line the label popup is open for
+    popupEdit: null, // {text, kind} before an edit, so Cancel can restore it
     isHorizontal: true,
     lineType: "",
     addingSpots: false,
@@ -54,4 +55,5 @@ export const state = {
     cropView: null, // when cropped-to-plate: {rcx, rcy, k} in canvas display px
 
     hasResults: false, // a calculation has produced a table + annotated image
+    csvUrl: null, // the server-written CSV of the current results
 };

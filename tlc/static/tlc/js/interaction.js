@@ -81,6 +81,11 @@ export function handlePointerDown(e) {
     downActive = true;
     downMoved = false;
 
+    // While a line tool is armed, the click places the new line. Starting a
+    // drag here as well used to nudge any line under the pointer and swallow
+    // the next click (the post-drag guard).
+    if (state.placingLine) return;
+
     if (state.selectingRegion) {
         state.draggingRegion = true;
         state.regionStart = { x: p.x, y: p.y };

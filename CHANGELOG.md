@@ -30,6 +30,14 @@ follow the SI; candidate detection is Shilpa's.
   non-numeric positions.
 - Image limits: 25 MB per file (`MAX_IMAGE_MB`), 64 MP (`MAX_IMAGE_MEGAPIXELS`),
   so phone photos of plates (13 MB / 50 MP) load.
+- The CSV is written by the server and its columns follow the table:
+  `spot, mixture_label, mixture_type, substance_label, substance_type,
+  RF value` (previously `mixture_label, substance_label, RF value`). The
+  `CHMO:0001007` line and the `Details:` line are kept. Labels are quoted,
+  so a comma no longer shifts the columns. Chemotion stores the file as an
+  attachment without parsing it.
+- The annotated image shows the baseline, solvent front and markers again
+  (SI 8.2), and numbers every spot; rows are sorted by lane label, then Rf.
 
 ### Added
 
@@ -42,6 +50,10 @@ follow the SI; candidate detection is Shilpa's.
 - With a Plate Area set, **Detect Lines** searches only inside it.
 - `tools/legacy_equivalence.py`: plate-by-plate comparison with Shilpa's
   tool (223 plates, 4,941 spot candidates, identical).
+- Label types for H/V markers (dropdown plus free text), editable after
+  placing; "full labels" option for the saved image; compact numbered table
+  with lane/compound type columns. Min/Max buttons hide once placed. H-lines
+  are black.
 
 ### Fixed
 
@@ -51,6 +63,9 @@ follow the SI; candidate detection is Shilpa's.
 - Phone photos with an EXIF orientation are analysed the way the browser
   shows them: one decoder for uploads and ELN images applies the orientation.
   Shilpa's tool analysed such photos sideways.
+- With the H-Line or V-Line tool selected, clicking where the new line
+  crosses an existing one no longer drags the existing line and swallows the
+  next click.
 
 ## [2.0.0] — 2026-07-27
 

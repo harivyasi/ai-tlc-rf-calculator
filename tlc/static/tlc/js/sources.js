@@ -75,6 +75,7 @@ function loadLocalImage(dataURL, fileName) {
         const tbody = document.querySelector("#values-table tbody");
         if (tbody) tbody.innerHTML = "";
         state.hasResults = false;
+        state.csvUrl = null;
         clearResultsStale();
         resetHistory(); // fresh image = undo baseline
         notify('Image "' + fileName + '" loaded.', "success");
@@ -108,6 +109,7 @@ function loadELNImage() {
                     };
                     state.image.src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
                     state.hasResults = false;
+                    state.csvUrl = null;
                     clearResultsStale();
                     resetHistory();
                     updateAnnotatedHeading("editing");

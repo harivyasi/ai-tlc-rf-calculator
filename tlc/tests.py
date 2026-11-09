@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import csv
 import glob
 import io
 import os
@@ -23,10 +24,10 @@ from django.urls import reverse
 from PIL import Image
 
 from config.env import csrf_origins_from_hosts, env_bool, env_int, env_list, host_of
+from tlc import results
 from tlc.detection import assign_lines
 from tlc.views import (
     _decode_data_url,
-    _draw_annotations,
     _fetch_following_safe_redirects,
     _is_safe_remote_url,
     _parse_region,
@@ -138,9 +139,9 @@ class CalculateRfTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 200)
 
-    def test_saved_image_has_rings_but_not_reference_lines(self) -> None:
-        # Full-resolution output that saves the spot rings/labels but NOT the
-        # transient reference lines used during analysis.
+    def test_saved_image_shows_lines_markers_and_spots(self) -> None:
+        # SI 8.2: the saved image records the baseline, solvent front, markers
+        # and retained spots the result was calculated from, at full resolution.
         payload = {
             "isLocalImage": True,
             "imageData": _png_data_url(width=400, height=600),
@@ -148,6 +149,8 @@ class CalculateRfTests(SimpleTestCase):
             "lines": [
                 {"type": "min", "y": 500, "text": "min"},
                 {"type": "max", "y": 100, "text": "max"},
+                {"type": "horizontal", "y": 300, "text": "SM"},
+                {"type": "vertical", "x": 50, "text": "A"},
             ],
             "spots": [{"x": 200, "y": 300}],
         }
@@ -159,11 +162,15 @@ class CalculateRfTests(SimpleTestCase):
         annotated = cv2.imread(os.path.join(settings.MEDIA_ROOT, name))
         assert annotated is not None
         self.assertEqual(annotated.shape[:2], (600, 400))  # full input resolution
-        # The spot ring (orange) is drawn.
-        self.assertTrue(np.all(annotated == (0, 165, 255), axis=2).any(), "spot ring not drawn")
-        # The max reference line (would span row y=100 in red) is NOT saved.
-        red_line = np.all(annotated[100] == (0, 0, 255), axis=1)
-        self.assertFalse(red_line.any(), "reference lines must not be saved")
+
+        def row_is(y: int, bgr: tuple[int, int, int]) -> bool:
+            return bool(np.all(annotated[y, 300:390] == bgr, axis=1).all())
+
+        self.assertTrue(row_is(500, results._GREEN), "baseline (Min) not drawn")
+        self.assertTrue(row_is(100, results._RED), "solvent front (Max) not drawn")
+        self.assertTrue(row_is(300, results._BLACK), "H-line not drawn in black")
+        self.assertTrue(np.all(annotated[50:450, 50] == results._BLUE, axis=1).any(), "V-line")
+        self.assertTrue(np.all(annotated == results._ORANGE, axis=2).any(), "spot ring")
 
     def test_rotation_is_applied_to_output(self) -> None:
         # A 400x600 image rotated 90° must produce a 600x400 annotated output.
@@ -743,15 +750,173 @@ class TextScaleTests(SimpleTestCase):
         self.assertEqual(_parse_text_scale(-3), 0.1)  # below floor -> clamped to 10%
 
     def test_larger_text_scale_draws_more_label_pixels(self) -> None:
-        spot = {"x": 200, "y": 200, "rf": 0.5, "compound": "Aspirin", "solvent": "EtOAc"}
+        row = {"n": 1, "x": 200, "y": 200, "rf": 0.5, "compound": "Aspirin", "solvent": "EtOAc"}
 
-        def red_label_pixels(scale: float) -> int:
-            img = np.full((400, 400, 3), 255, dtype=np.uint8)
-            _draw_annotations(img, [dict(spot)], text_scale=scale)
-            # _RED (0, 0, 255) is used only for the "RF=" label text.
-            return int(np.all(img == (0, 0, 255), axis=2).sum())
+        def ink(scale: float) -> int:
+            img = np.full((400, 400, 3), 128, dtype=np.uint8)
+            results.draw_annotations(
+                img, [row], min_y=390, max_y=10, markers=[], text_scale=scale, full_labels=True
+            )
+            return int(np.any(img != 128, axis=2).sum())
 
-        self.assertGreater(red_label_pixels(3.0), red_label_pixels(1.0))
+        self.assertGreater(ink(3.0), ink(1.0))
+
+
+def _marker(kind_: str, pos: float, text: str = "", kind: str = "") -> dict[str, Any]:
+    axis = "y" if kind_ == "horizontal" else "x"
+    return {"type": kind_, axis: pos, "text": text, "kind": kind}
+
+
+class ResultRowsTests(SimpleTestCase):
+    """Ordering, numbering and labelling of result rows (tlc.results)."""
+
+    def test_rows_are_sorted_by_lane_label_naturally_then_rf(self) -> None:
+        lanes = [
+            _marker("vertical", 100, "Lane 10"),
+            _marker("vertical", 200, "Lane 2"),
+            _marker("vertical", 300, "lane 1"),
+        ]
+        spots: list[tuple[float, float, float]] = [
+            (100, 0, 0.3),
+            (200, 0, 0.7),
+            (200, 0, 0.2),
+            (300, 0, 0.5),
+            (999, 0, 0.9),
+        ]
+        rows = results.build_rows(spots, lanes[:2] + lanes[2:])
+        self.assertEqual(
+            [(r["n"], r["solvent"], r["rf"]) for r in rows],
+            [
+                (1, "lane 1", 0.5),
+                (2, "lane 1", 0.9),  # x=999 is nearest to lane 1 at x=300
+                (3, "Lane 2", 0.2),
+                (4, "Lane 2", 0.7),
+                (5, "Lane 10", 0.3),
+            ],
+        )
+
+    def test_unlabelled_lanes_sort_last(self) -> None:
+        rows = results.build_rows(
+            [(10, 0, 0.1), (500, 0, 0.2)],
+            [_marker("vertical", 10, ""), _marker("vertical", 500, "B")],
+        )
+        self.assertEqual([r["solvent"] for r in rows], ["B", ""])
+
+    def test_types_and_unknown_compound(self) -> None:
+        markers = [
+            _marker("vertical", 0, "R1", "product 1"),
+            _marker("horizontal", 100, "", "expected product"),
+            _marker("horizontal", 500, "", ""),
+        ]
+        rows = results.build_rows([(0, 110, 0.4), (0, 490, 0.1)], markers)
+        typed, bare = sorted(rows, key=lambda r: -r["rf"])
+        self.assertEqual((typed["solvent"], typed["solvent_type"]), ("R1", "product 1"))
+        # A marker with only a type names the compound by its type column.
+        self.assertEqual((typed["compound"], typed["compound_type"]), ("", "expected product"))
+        # A marker with neither text nor type is as good as none.
+        self.assertEqual((bare["compound"], bare["compound_type"]), ("Unknown", ""))
+
+    def test_no_markers(self) -> None:
+        (row,) = results.build_rows([(5, 5, 0.5)], [])
+        self.assertEqual((row["n"], row["solvent"], row["compound"]), (1, "", "Unknown"))
+
+    def test_labels_are_cleaned(self) -> None:
+        self.assertEqual(results.clean_label("  a \n b  "), "a b")
+        self.assertEqual(results.clean_label(42), "")
+        self.assertEqual(len(results.clean_label("x" * 500)), results.MAX_LABEL_CHARS)
+
+
+class ResultCsvTests(SimpleTestCase):
+    def _rows(self) -> list[dict[str, Any]]:
+        return results.build_rows(
+            [(0, 0, 0.5), (300, 0, 0.25)],
+            [
+                _marker("vertical", 0, "A, crude", "product 1"),
+                _marker("vertical", 300, '=HYPERLINK("x")', ""),
+                _marker("horizontal", 0, "SM", "starting material"),
+            ],
+        )
+
+    def test_layout_matches_the_table_and_keeps_the_chmo_and_details_lines(self) -> None:
+        text = results.csv_text(self._rows())
+        lines = text.split("\n")
+        self.assertEqual(lines[0], "Measurement type;thin layer chromatography (TLC);CHMO:0001007")
+        self.assertEqual(lines[1], "")
+        self.assertEqual(
+            lines[2],
+            "spot,mixture_label (X axis),mixture_type,substance_label (Y axis),"
+            "substance_type,RF value",
+        )
+        self.assertIn("Details:", lines)
+        self.assertIn("TLC (solvents); Rf (UV-Vis in nm, staining) = ", text)
+
+    def test_cells_are_quoted_and_formula_safe(self) -> None:
+        text = results.csv_text(self._rows())
+        table = text.split("\n\n")[1]
+        rows = list(csv.reader(io.StringIO(table)))
+        header, *body = rows
+        self.assertEqual(len(header), 6)
+        self.assertTrue(all(len(row) == 6 for row in body), body)
+        by_lane = {row[1]: row for row in body}
+        self.assertEqual(
+            by_lane["A, crude"], ["2", "A, crude", "product 1", "SM", "starting material", "0.5"]
+        )
+        self.assertIn("'=HYPERLINK", next(k for k in by_lane if "HYPERLINK" in k))
+
+    def test_served_csv_matches_the_response(self) -> None:
+        payload = _valid_payload()
+        response = Client().post(
+            reverse("calculate_rf"), data=payload, content_type="application/json"
+        )
+        body = response.json()
+        name = body["csv_url"].split("/")[-1]
+        with open(os.path.join(settings.MEDIA_ROOT, name), encoding="utf-8") as fh:
+            served = fh.read()
+        os.remove(os.path.join(settings.MEDIA_ROOT, name))
+        os.remove(os.path.join(settings.MEDIA_ROOT, body["annotated_image_url"].split("/")[-1]))
+        self.assertEqual(served, results.csv_text(body["rf_values"]))
+        self.assertEqual(body["rf_values"][0]["n"], 1)
+
+
+class ResultImageLabelTests(SimpleTestCase):
+    def test_full_labels_add_text_beyond_the_number(self) -> None:
+        row = {"n": 7, "x": 100, "y": 200, "rf": 0.5, "compound": "SM", "solvent": "A"}
+
+        def ink(full: bool) -> int:
+            img = np.full((400, 400, 3), 128, dtype=np.uint8)
+            results.draw_annotations(img, [row], min_y=390, max_y=10, markers=[], full_labels=full)
+            return int(np.any(img != 128, axis=2).sum())
+
+        self.assertGreater(ink(True), ink(False))
+
+    def test_text_has_a_white_halo(self) -> None:
+        # On a green plate black text alone is hard to read. OpenCV 5 ignores
+        # putText thickness, which once hid the halo entirely.
+        img = np.full((60, 120, 3), (0, 200, 0), dtype=np.uint8)
+        results._text(img, "10", (10, 45), 1.2, 3)
+        self.assertGreater(int(np.all(img == 255, axis=2).sum()), 100, "no halo")
+        self.assertGreater(int(np.all(img < 30, axis=2).sum()), 100, "no text")
+
+    def test_text_at_the_image_edge_is_clipped_not_an_error(self) -> None:
+        img = np.full((40, 40, 3), 128, dtype=np.uint8)
+        results._text(img, "Lane 12 (starting material)", (30, 38), 1.0, 2)
+        results._text(img, "x", (-500, -500), 1.0, 2)  # wholly outside
+
+    def test_close_lane_captions_are_staggered(self) -> None:
+        img = np.full((300, 300, 3), 128, dtype=np.uint8)
+        markers = [
+            {"type": "vertical", "x": 100, "text": "Lane one", "kind": ""},
+            {"type": "vertical", "x": 110, "text": "Lane two", "kind": ""},
+        ]
+        results.draw_annotations(img, [], min_y=250, max_y=20, markers=markers)
+        # Two caption rows means ink in both bottom bands right of the lines.
+        bottom, second = img[275:295, 115:200], img[253:273, 115:200]
+        self.assertTrue(np.any(bottom != 128) and np.any(second != 128))
+
+    def test_marker_caption(self) -> None:
+        self.assertEqual(results.marker_caption({"text": "A", "kind": "reagent"}), "A (reagent)")
+        self.assertEqual(results.marker_caption({"text": "", "kind": "reagent"}), "reagent")
+        self.assertEqual(results.marker_caption({"text": "A", "kind": ""}), "A")
 
 
 class RfEquationTests(SimpleTestCase):

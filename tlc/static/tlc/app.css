@@ -151,6 +151,8 @@ body {
 .icon-lg { width: 40px; height: 40px; }
 
 /* Buttons */
+[hidden] { display: none !important; }
+
 .lab-btn {
     display: inline-flex;
     align-items: center;
@@ -337,6 +339,7 @@ body {
     transition: transform 0.1s;
 }
 .delete-icon:hover { transform: translate(-50%, -50%) scale(1.15); }
+.edit-icon { color: var(--text); font-size: 13px; }
 
 /* Line label popup */
 .popup {
@@ -360,7 +363,19 @@ body {
     color: var(--text);
     font-family: inherit;
 }
-.popup input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.popup select {
+    width: 100%;
+    padding: 0.55rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+}
+.popup input:focus,
+.popup select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.popup-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.6rem; }
 .popup-actions { display: flex; gap: 0.5rem; }
 .popup-actions .lab-btn { flex: 1; }
 
@@ -373,7 +388,12 @@ body {
 }
 .table-header { background: var(--primary); color: #fff; padding: 0.9rem 1.25rem; }
 .table-title { margin: 0; font-size: 1rem; font-weight: 600; }
-#values-table { width: 100%; border-collapse: collapse; min-width: 480px; }
+/* Compact: as wide as its content, not the whole panel (reviewer item 9). */
+#values-table { width: auto; border-collapse: collapse; }
+#values-table td.col-n, #values-table td.col-rf { font-variant-numeric: tabular-nums; text-align: right; }
+#values-table.no-lane-type .col-lane-type,
+#values-table.no-compound-type .col-compound-type { display: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 #values-table th {
     background: var(--surface-2);
     text-align: left;
@@ -383,7 +403,7 @@ body {
     color: var(--text-muted);
     border-bottom: 1px solid var(--border);
 }
-#values-table td { padding: 0.75rem 0.9rem; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+#values-table td { padding: 0.45rem 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
 #values-table tbody tr:hover { background: var(--surface-2); }
 
 .status-badge {

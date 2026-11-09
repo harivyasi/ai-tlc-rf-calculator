@@ -18,7 +18,7 @@ import {
     updateAnnotatedHeading,
     updateWorkAreaLayout,
 } from "./ui.js";
-import { deleteLine, isHorizontalLine, setActiveButton } from "./annotations.js";
+import { deleteLine, editLine, isHorizontalLine, markerCaption, setActiveButton } from "./annotations.js";
 import { commitHistory, redoHistory, resetHistory, undoHistory } from "./history.js";
 
 // Draw an image into the canvas frame applying the current clockwise rotation.
@@ -73,7 +73,7 @@ export function fitAndDraw(img) {
 const LINE_COLORS = {
     min: "#1e8e3e", // green — baseline / origin
     max: "#d93025", // red — solvent front
-    horizontal: "#8e24aa", // purple — label line
+    horizontal: "#000000", // black (with a white halo) — compound marker; purple read as grey
     vertical: "#1565c0", // blue — lane label
 };
 
@@ -94,23 +94,36 @@ export function redrawCanvas() {
     // the matching delete cross is drawn in the same colour.
     state.lines.forEach((line) => {
         const color = lineColor(line);
+        const halo = line.type === "horizontal"; // black needs a halo on dark plates
+        const caption = line.type === "min" || line.type === "max" ? line.text : markerCaption(line);
+        let from, to, at;
+        if (isHorizontalLine(line)) {
+            const y = line.y / window.scaleFactor;
+            [from, to, at] = [[0, y], [canvas.width, y], [10, y - 5]];
+        } else {
+            // Label at the bottom (the delete cross sits at the top).
+            const x = line.x / window.scaleFactor;
+            [from, to, at] = [[x, 0], [x, canvas.height], [x + 5, canvas.height - 6]];
+        }
+        if (halo) {
+            ctx.save();
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(...from);
+            ctx.lineTo(...to);
+            ctx.stroke();
+            ctx.lineJoin = "round";
+            if (caption) ctx.strokeText(caption, ...at);
+            ctx.restore();
+        }
         ctx.strokeStyle = color;
         ctx.fillStyle = color;
         ctx.beginPath();
-        if (isHorizontalLine(line)) {
-            const y = line.y / window.scaleFactor;
-            ctx.moveTo(0, y);
-            ctx.lineTo(canvas.width, y);
-            ctx.stroke();
-            ctx.fillText(line.text, 10, y - 5);
-        } else {
-            const x = line.x / window.scaleFactor;
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvas.height);
-            ctx.stroke();
-            // Label at the bottom (the delete cross sits at the top).
-            ctx.fillText(line.text, x + 5, canvas.height - 6);
-        }
+        ctx.moveTo(...from);
+        ctx.lineTo(...to);
+        ctx.stroke();
+        if (caption) ctx.fillText(caption, ...at);
     });
 
     // Rebuild delete icons, placed right at the line on the canvas. Icons live
@@ -129,16 +142,19 @@ export function redrawCanvas() {
     const rightEdge = state.cropView ? container.clientWidth : ox + canvas.clientWidth;
     state.lines.forEach((line) => {
         const color = lineColor(line);
+        const editable = line.type === "horizontal" || line.type === "vertical";
         if (isHorizontalLine(line)) {
-            // Cross on the RIGHT (the label sits at the left).
+            // Cross on the RIGHT (the label sits at the left), pencil beside it.
             const by = line.y / window.scaleFactor;
             const y = state.cropView ? toContainer(0, by).y : by * dsy;
             addDeleteIcon(line, rightEdge - fixed, oy + y, color);
+            if (editable) addEditIcon(line, rightEdge - fixed - 24, oy + y);
         } else {
-            // Cross at the TOP (the label sits at the bottom).
+            // Cross at the TOP (the label sits at the bottom), pencil below it.
             const bx = line.x / window.scaleFactor;
             const x = state.cropView ? toContainer(bx, 0).x : bx * dsx;
             addDeleteIcon(line, ox + x, oy + fixed, color);
+            if (editable) addEditIcon(line, ox + x, oy + fixed + 24);
         }
     });
 
@@ -209,6 +225,25 @@ export function addDeleteIcon(line, x, y, color) {
     icon.onclick = () => deleteLine(line.id);
     document.getElementById("canvas-container").appendChild(icon);
     line.deleteIcon = icon;
+}
+
+// Pencil next to an H/V line's cross: reopens its label popup (item 7).
+function addEditIcon(line, x, y) {
+    const icon = document.createElement("span");
+    // Shares .delete-icon so redrawCanvas removes and repositions it too.
+    icon.className = "delete-icon edit-icon";
+    icon.textContent = "\u270E";
+    icon.title = "Edit label";
+    icon.setAttribute("role", "button");
+    icon.setAttribute("aria-label", "Edit label");
+    icon.style.left = x + "px";
+    icon.style.top = y + "px";
+    icon.onclick = (e) => {
+        const r = icon.getBoundingClientRect();
+        editLine(line.id, r.left + window.scrollX + 12, r.bottom + window.scrollY + 4);
+        e.stopPropagation();
+    };
+    document.getElementById("canvas-container").appendChild(icon);
 }
 
 // Map a pointer event to canvas *bitmap* coordinates. Using the rendered rect
@@ -303,6 +338,7 @@ export function resetCanvas() {
     const tbody = document.querySelector("#values-table tbody");
     if (tbody) tbody.innerHTML = "";
     state.hasResults = false;
+    state.csvUrl = null;
     clearResultsStale();
     updateAnnotatedHeading("editing");
     setActiveButton(null);

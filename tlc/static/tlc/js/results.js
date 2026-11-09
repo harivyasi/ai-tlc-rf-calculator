@@ -38,6 +38,8 @@ export function getImagePayload() {
     }
     payload.rotation = state.rotation; // backend re-orients to match the displayed image
     payload.textScale = textScale(); // label text-size multiplier for the saved image
+    const full = document.getElementById("label-full");
+    payload.labelMode = full && full.checked ? "full" : "numbers";
     return payload;
 }
 
@@ -67,6 +69,7 @@ export function calculateRF() {
                     annotated.src = result.annotated_image_url + "?t=" + Date.now();
                     updateAnnotatedHeading("annotated");
                 }
+                state.csvUrl = result.csv_url || null;
                 state.hasResults = true; // results are now current
                 clearResultsStale();
                 notify("RF calculation complete: " + result.rf_values.length + " spot(s).", "success");
@@ -180,10 +183,16 @@ export function autoDetectLines() {
         });
 }
 
+// Rows arrive sorted (by lane label, then Rf) and numbered by the server; the
+// number matches the one on the annotated image and in the CSV.
 export function populateTable(rfValues) {
-    const tbody = document.getElementById("values-table").getElementsByTagName("tbody")[0];
+    const table = document.getElementById("values-table");
+    const tbody = table.getElementsByTagName("tbody")[0];
     tbody.innerHTML = "";
     state.highlightedSpot = null;
+    // Type columns appear only when some marker has a type.
+    table.classList.toggle("no-lane-type", !rfValues.some((v) => v.solvent_type));
+    table.classList.toggle("no-compound-type", !rfValues.some((v) => v.compound_type));
     rfValues.forEach((value, index) => {
         const row = tbody.insertRow();
         if (typeof value.x === "number" && typeof value.y === "number") {
@@ -192,17 +201,24 @@ export function populateTable(rfValues) {
             row.classList.add("clickable");
             row.addEventListener("click", () => highlightSpotFromRow(row));
         }
-        // Lane (X) is optional — shown blank when unmarked; compound (Y) is
-        // "Unknown" from the server when unmarked. Kept consistent with the
-        // annotated image and the CSV.
-        row.insertCell(0).textContent = value.solvent || "";
-        row.insertCell(1).textContent = value.compound || "";
-        row.insertCell(2).textContent = typeof value.rf !== "undefined" ? value.rf : value.rf_value;
-        const actions = row.insertCell(3);
+        const cells = [
+            ["col-n", value.n ?? index + 1],
+            ["", value.solvent || ""], // an unmarked lane is blank
+            ["col-lane-type", value.solvent_type || ""],
+            ["", value.compound || ""], // "Unknown" from the server when unmarked
+            ["col-compound-type", value.compound_type || ""],
+            ["col-rf", typeof value.rf === "number" ? value.rf.toFixed(2) : ""],
+        ];
+        cells.forEach(([cls, text]) => {
+            const cell = row.insertCell();
+            if (cls) cell.className = cls;
+            cell.textContent = text;
+        });
+        const actions = row.insertCell();
         const del = document.createElement("button");
         del.type = "button";
         del.className = "row-del";
-        del.setAttribute("aria-label", "Delete this spot");
+        del.setAttribute("aria-label", "Delete spot " + (value.n ?? index + 1));
         del.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>';
         del.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -245,6 +261,7 @@ function deleteResultRow(row) {
         const annotated = document.getElementById("annotated-image");
         if (annotated) annotated.removeAttribute("src");
         state.hasResults = false;
+        state.csvUrl = null;
         clearResultsStale();
         updateAnnotatedHeading("editing");
         commitHistory();
@@ -253,29 +270,16 @@ function deleteResultRow(row) {
 }
 
 // --- CSV export -----------------------------------------------------------
-function tableToCsvRows() {
-    const table = document.getElementById("values-table");
-    return Array.from(table.rows)
-        .slice(1)
-        .map((row) => Array.from(row.cells).map((c) => c.textContent.trim()));
-}
-
-function buildCsvContent() {
-    let csv = "Measurement type;thin layer chromatography (TLC);CHMO:0001007\n\n";
-    csv += "mixture_label (X axis),substance_label (Y axis),RF value\n";
-    const inline = [];
-    tableToCsvRows().forEach((cols, i) => {
-        csv += cols[0] + "," + cols[1] + "," + cols[2] + "\n";
-        inline.push(cols[2] + " (" + cols[1] + ")[h" + (i + 1) + "]");
-    });
-    csv += "\nDetails:\nTLC (solvents); Rf (UV-Vis in nm, staining) = " + inline.join(", ") + ".\n";
-    return csv;
-}
-
+// The CSV is written by the server with the calculation (tlc/results.py), so
+// it always matches the table and the numbered image. Export is disabled while
+// results are stale, so the stored file is never out of date when used.
 export function saveCSV() {
-    const uri = encodeURI("data:text/csv;charset=utf-8," + buildCsvContent());
+    if (!state.csvUrl) {
+        notify("Calculate RF values first.", "warning");
+        return;
+    }
     const link = document.createElement("a");
-    link.href = uri;
+    link.href = state.csvUrl;
     link.download = "rf_values.csv";
     document.body.appendChild(link);
     link.click();
@@ -340,10 +344,15 @@ export function imageToEln() {
 
 // Upload the results CSV to the ELN.
 export function csvToEln() {
-    const csv = buildCsvContent();
-    if (!csv) {
-        notify("No CSV data to save.", "warning");
+    if (!state.csvUrl) {
+        notify("No CSV data to save. Calculate RF values first.", "warning");
         return;
     }
-    postToEln(new Blob([csv], { type: "text/csv;charset=utf-8;" }), timestampedName("csv"));
+    fetch(state.csvUrl)
+        .then((response) => {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.blob();
+        })
+        .then((blob) => postToEln(blob, timestampedName("csv")))
+        .catch(() => notify("Failed to load the CSV.", "error"));
 }

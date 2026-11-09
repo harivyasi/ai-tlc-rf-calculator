@@ -60,7 +60,23 @@ def _stub_cdn(page: Page) -> None:
         page.route(pattern, handle)
 
 
-def _load_local_image_and_calculate(page: Page, base_url: str, image_path: str) -> str:
+# Results-table columns. The legacy frontend has Lane | Compound | Rf; the
+# current one # | Lane | Lane type | Compound | Compound type | Rf.
+_COLUMNS = {
+    "new": {"n": 0, "lane": 1, "lane_type": 2, "compound": 3, "compound_type": 4, "rf": 5},
+    "legacy": {"lane": 0, "compound": 1, "rf": 2},
+}
+
+
+def _cell(page: Page, column: str, row: int = 0, frontend: str = "new") -> str:
+    """Text of one results-table cell, by column name."""
+    cells = page.locator("#values-table tbody tr").nth(row).locator("td")
+    return cells.nth(_COLUMNS[frontend][column]).inner_text().strip()
+
+
+def _load_local_image_and_calculate(
+    page: Page, base_url: str, image_path: str, frontend: str = "new"
+) -> str:
     """Run the full local-upload flow; return the first RF value in the table.
 
     With scaleFactor == 1, clicks map 1:1 to image coordinates. min at y=250,
@@ -86,14 +102,14 @@ def _load_local_image_and_calculate(page: Page, base_url: str, image_path: str) 
 
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
-    return page.locator("#values-table tbody tr").first.locator("td").nth(2).inner_text().strip()
+    return _cell(page, "rf", frontend=frontend)
 
 
 @pytest.mark.parametrize("frontend", ["new", "legacy"])
 def test_local_upload_rf_matches(page, servers, test_image_path, frontend):
     """Core regression: both frontends compute the same RF via the new backend."""
-    rf = _load_local_image_and_calculate(page, servers[frontend], test_image_path)
-    assert rf == "0.5", f"{frontend} frontend produced RF={rf!r}"
+    rf = _load_local_image_and_calculate(page, servers[frontend], test_image_path, frontend)
+    assert float(rf) == 0.5, f"{frontend} frontend produced RF={rf!r}"
 
 
 def test_new_frontend_makes_no_spurious_fetch_on_local_load(page, servers):
@@ -146,7 +162,7 @@ def test_vertical_label_flows_to_solvent_column(page, servers, test_image_path, 
 
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
-    solvent = page.locator("#values-table tbody tr").first.locator("td").first.inner_text().strip()
+    solvent = _cell(page, "lane", frontend=frontend)
     assert solvent == "LaneA", f"{frontend}: solvent column was {solvent!r}"
 
 
@@ -179,7 +195,7 @@ def test_drag_spot_changes_rf(page, servers, test_image_path):
 
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
-    rf = float(page.locator("#values-table tbody tr").first.locator("td").nth(2).inner_text())
+    rf = float(_cell(page, "rf"))
     assert 0.70 <= rf <= 0.80, f"RF after drag was {rf} (expected ~0.75)"
 
 
@@ -588,7 +604,7 @@ def test_touch_drag_moves_spot(browser, servers, test_image_path):
 
         page.click("button:has-text('Calculate RF')")
         page.wait_for_selector("#values-table tbody tr", timeout=20000)
-        rf = float(page.locator("#values-table tbody tr").first.locator("td").nth(2).inner_text())
+        rf = float(_cell(page, "rf"))
         assert 0.70 <= rf <= 0.80, f"RF after touch drag was {rf} (expected ~0.75)"
         assert not errors, f"JS errors: {errors}"
     finally:
@@ -692,9 +708,7 @@ def test_horizontal_label_flows_to_compound_column(page, servers, test_image_pat
 
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
-    compound = (
-        page.locator("#values-table tbody tr").first.locator("td").nth(1).inner_text().strip()
-    )
+    compound = _cell(page, "compound")
     assert compound == "CompoundZ", f"compound column was {compound!r}"
 
 
@@ -992,9 +1006,8 @@ def test_unmarked_lane_blank_compound_unknown_in_table(page, servers, test_image
     canvas.click(position={"x": 150, "y": 150})
     page.click("button:has-text('Calculate RF')")
     page.wait_for_selector("#values-table tbody tr", timeout=20000)
-    row = page.locator("#values-table tbody tr").first
-    assert row.locator("td").first.inner_text().strip() == "", "unmarked lane should be blank"
-    assert row.locator("td").nth(1).inner_text().strip() == "Unknown"
+    assert _cell(page, "lane") == "", "unmarked lane should be blank"
+    assert _cell(page, "compound") == "Unknown"
 
 
 # --- Export buttons: download pair vs ELN-upload pair -----------------------
@@ -1079,3 +1092,171 @@ def test_detect_lines_is_confined_to_the_plate_area(page, servers, blob_image_pa
         page.click("#detect-lines-btn")
     region = request_info.value.post_data_json.get("region")
     assert region and region["width"] > 300 and region["height"] > 200, region
+
+
+# --- Reviewer items 4-9 -----------------------------------------------------
+
+_LINES = (
+    "() => import('/static/tlc/js/state.js')"
+    ".then(m => m.state.lines.map(l => [l.type, l.text, l.kind]))"
+)
+
+
+def _add_marker(page, canvas, button, x, y, text="", kind=""):
+    page.click(f"button:has-text('{button}')")
+    canvas.click(position={"x": x, "y": y})
+    if kind:
+        page.select_option("#line-kind", kind)
+    page.fill("#line-text", text)
+    page.click("#line-popup button:has-text('Submit')")
+
+
+def test_min_max_buttons_hide_once_placed(page, servers, test_image_path):
+    """Item 4: Min/Max are singletons, moved by dragging, so their buttons go
+    away once placed and come back if the line is deleted (or undone)."""
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", test_image_path)
+    page.wait_for_function(_IMAGE_READY)
+    canvas = page.locator("#image-canvas")
+
+    page.click("#min-line-btn")
+    canvas.click(position={"x": 150, "y": 250})
+    assert page.locator("#min-line-btn").is_hidden()
+    assert page.locator("#max-line-btn").is_visible()
+    page.click("#max-line-btn")
+    canvas.click(position={"x": 150, "y": 50})
+    assert page.locator("#max-line-btn").is_hidden()
+
+    page.locator(".delete-icon:not(.edit-icon)").first.click()  # the Min line's cross
+    page.wait_for_selector("#min-line-btn", state="visible")
+    page.click("#undo-btn")
+    page.wait_for_selector("#min-line-btn", state="hidden")
+
+
+def test_h_line_is_drawn_black(page, servers, test_image_path):
+    """Item 5: the H-line was purple, which read as grey on green plates."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    _add_marker(page, canvas, "H-Line", 150, 150, "SM")
+    # Darkest pixel in a short column across the line (the click may land a
+    # pixel off, and the line's edges are anti-aliased against its halo).
+    darkest = page.evaluate(
+        "() => { const d = document.getElementById('image-canvas').getContext('2d')"
+        ".getImageData(200, 140, 1, 20).data; let m = 255;"
+        " for (let i = 0; i < d.length; i += 4) m = Math.min(m, Math.max(d[i], d[i+1], d[i+2]));"
+        " return m; }"
+    )
+    assert darkest < 40, f"darkest H-line pixel is {darkest}, expected black"
+
+
+def test_label_types_reach_table_and_can_be_edited(page, servers, test_image_path):
+    """Items 6 and 7: a type from the dropdown plus free text; the label can be
+    edited afterwards (pencil icon), and Cancel on an edit changes nothing."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    _add_marker(page, canvas, "H-Line", 150, 150, "SM-1", "starting material")
+    _add_marker(page, canvas, "V-Line", 100, 150, "R1", "product 1")
+    options = page.locator("#line-kind option").all_inner_texts()
+    assert "product 2" in options and "expected product" not in options, options
+
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 115, "y": 170})  # beside the V-line, not on it
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+    assert (_cell(page, "compound"), _cell(page, "compound_type")) == ("SM-1", "starting material")
+    assert (_cell(page, "lane"), _cell(page, "lane_type")) == ("R1", "product 1")
+
+    # Edit the H-line: the popup opens pre-filled; changing it marks results stale.
+    page.locator(".edit-icon").first.click()
+    assert page.input_value("#line-text") == "SM-1"
+    assert page.input_value("#line-kind") == "starting material"
+    page.select_option("#line-kind", "confirmed product")
+    page.fill("#line-text", "SM-2")
+    page.click("#line-popup button:has-text('Submit')")
+    page.wait_for_selector("#stale-banner", state="visible")
+    assert ["horizontal", "SM-2", "confirmed product"] in page.evaluate(_LINES)
+
+    # Undo restores the previous label, type included.
+    page.click("#undo-btn")
+    assert ["horizontal", "SM-1", "starting material"] in page.evaluate(_LINES)
+
+    # Cancel on an edit leaves the label as it was.
+    page.locator(".edit-icon").first.click()
+    page.fill("#line-text", "discarded")
+    page.click("#line-popup button:has-text('Cancel')")
+    assert ["horizontal", "SM-1", "starting material"] in page.evaluate(_LINES)
+
+
+def test_table_is_numbered_sorted_by_lane_and_compact(page, servers, test_image_path):
+    """Item 9: rows sorted by V-line label (natural order), then Rf; numbered
+    like the image; no Status column; type columns hidden when unused; the
+    table is as wide as its content."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    _add_marker(page, canvas, "V-Line", 250, 150, "Lane 10")
+    _add_marker(page, canvas, "V-Line", 60, 150, "Lane 2")
+    page.click("button:has-text('Add Spots')")
+    for x, y in ((265, 150), (75, 100), (75, 200)):  # beside the V-lines, not on them
+        canvas.click(position={"x": x, "y": y})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr >> nth=2", timeout=20000)
+
+    rows = [(_cell(page, "n", i), _cell(page, "lane", i), _cell(page, "rf", i)) for i in range(3)]
+    assert rows == [("1", "Lane 2", "0.25"), ("2", "Lane 2", "0.75"), ("3", "Lane 10", "0.50")]
+    headers = page.locator("#values-table thead th:visible").all_inner_texts()
+    assert "Status" not in headers and "Lane type" not in headers, headers
+    table_w = page.locator("#values-table").bounding_box()["width"]
+    panel_w = page.locator(".table-scroll").bounding_box()["width"]
+    assert table_w < panel_w, (table_w, panel_w)
+
+
+def test_csv_download_is_the_server_file(page, servers, test_image_path):
+    """The CSV comes from the server, with the table's columns in the table's
+    order, the CHMO header line, and labels properly quoted."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    _add_marker(page, canvas, "V-Line", 150, 150, "A, crude", "product 1")
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 165, "y": 100})  # beside the V-line, not on it
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+
+    with page.expect_download() as info:
+        page.click("[data-action='saveCSV']")
+    text = Path(info.value.path()).read_text(encoding="utf-8")
+    assert text.startswith("Measurement type;thin layer chromatography (TLC);CHMO:0001007\n")
+    assert '1,"A, crude",product 1,Unknown,,0.75' in text, text
+
+
+def test_full_labels_switch_reaches_the_server(page, servers, test_image_path):
+    """Item 8: numbers only by default; "full labels" asks for Rf, compound and
+    lane next to each number. It changes the saved image, so results go stale."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    with page.expect_request("**/calculate_rf/") as info:
+        page.click("button:has-text('Calculate RF')")
+    assert info.value.post_data_json["labelMode"] == "numbers"
+    page.wait_for_selector("#values-table tbody tr", timeout=20000)
+
+    page.check("#label-full")
+    page.wait_for_selector("#stale-banner", state="visible")
+    with page.expect_request("**/calculate_rf/") as info:
+        page.click("button:has-text('Calculate RF')")
+    assert info.value.post_data_json["labelMode"] == "full"
+
+
+def test_placing_a_line_across_another_does_not_move_it(page, servers, test_image_path):
+    """With a line tool armed, clicking where it crosses an existing line places
+    the new line only. It used to start a drag of the existing line too (nudging
+    it) and the post-drag guard then swallowed the next click."""
+    canvas = _load_with_min_max(page, servers["new"], test_image_path)
+    _add_marker(page, canvas, "H-Line", 150, 150, "SM")
+    before = page.evaluate(_LINES.replace("[l.type, l.text, l.kind]", "[l.type, l.y]"))
+    _add_marker(page, canvas, "V-Line", 100, 150, "R1")  # right on the H-line
+    after = page.evaluate(_LINES.replace("[l.type, l.text, l.kind]", "[l.type, l.y]"))
+    assert after[:3] == before, (before, after)
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 115, "y": 170})  # immediately: must not be swallowed
+    assert (
+        page.evaluate("() => import('/static/tlc/js/state.js').then(m => m.state.spots.length)")
+        == 1
+    )

@@ -16,7 +16,14 @@ let cursor = -1;
 
 function snapshot() {
     return {
-        lines: state.lines.map((l) => ({ id: l.id, type: l.type, x: l.x, y: l.y, text: l.text })),
+        lines: state.lines.map((l) => ({
+            id: l.id,
+            type: l.type,
+            x: l.x,
+            y: l.y,
+            text: l.text,
+            kind: l.kind || "",
+        })),
         spots: state.spots.map((s) => ({ id: s.id, x: s.x, y: s.y, auto: s.auto })),
         plateRegion: state.plateRegion ? { ...state.plateRegion } : null,
     };

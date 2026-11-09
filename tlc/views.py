@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import csv
 import io
 import ipaddress
 import json
@@ -40,7 +39,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from config import __version__
 
-from . import detection
+from . import detection, results
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +314,31 @@ def _number(raw: Any) -> float | None:
     return value if np.isfinite(value) else None
 
 
+def _parse_markers(lines: list[Any]) -> list[dict[str, Any]] | None:
+    """Validated H/V label lines, or ``None`` if a position is not a number.
+
+    Each becomes ``{"type", "x"|"y", "text", "kind"}``: ``text`` is the free
+    label and ``kind`` the type chosen from the popup's list.
+    """
+    markers = []
+    for line in lines:
+        if not isinstance(line, dict) or line.get("type") not in ("horizontal", "vertical"):
+            continue
+        axis = "y" if line["type"] == "horizontal" else "x"
+        position = _number(line.get(axis))
+        if position is None:
+            return None
+        markers.append(
+            {
+                "type": line["type"],
+                axis: position,
+                "text": results.clean_label(line.get("text")),
+                "kind": results.clean_label(line.get("kind")),
+            }
+        )
+    return markers
+
+
 def rf_from_positions(*, y_baseline: float, y_front: float, y_spot: float) -> float | None:
     """Rf of a spot, or ``None`` if it lies outside the baseline-to-front interval.
 
@@ -330,11 +354,6 @@ def rf_from_positions(*, y_baseline: float, y_front: float, y_spot: float) -> fl
     return round(rf, 2)
 
 
-_RED = (0, 0, 255)
-_BLUE = (255, 0, 0)
-_ORANGE = (0, 165, 255)
-
-
 def _parse_text_scale(raw: Any) -> float:
     """Return the annotation text-size multiplier, clamped to [0.1, 5.0].
 
@@ -346,64 +365,7 @@ def _parse_text_scale(raw: Any) -> float:
         scale = float(raw)
     except TypeError, ValueError:
         return 1.0
-    return max(0.1, min(5.0, scale))
-
-
-def _draw_annotations(
-    image: np.ndarray, spots: list[dict[str, Any]], text_scale: float = 1.0
-) -> None:
-    """Draw the analysis results — spot rings and their labels — onto ``image``.
-
-    Only the results are burned into the saved image: each spot is marked with a
-    ring and annotated with its RF value, compound, and solvent. The transient
-    reference lines / plate box used during analysis are deliberately not drawn.
-    Marker/text sizes scale with the image so they stay legible on both small
-    and multi-megapixel plates.
-
-    Args:
-        image: The BGR image to annotate (modified in place).
-        spots: Spots to mark, each with ``x``, ``y``, ``rf``, ``compound``,
-            ``solvent``.
-        text_scale: User multiplier on the label text size (1.0 == 100%). Only
-            the text (font, its stroke, and the label row spacing) scales; the
-            ring markers keep their image-derived size.
-    """
-    text_scale = max(0.1, min(5.0, text_scale))
-    height, width = image.shape[:2]
-    s = max(1.0, min(height, width) / 1000.0)
-    thickness = max(1, round(2 * s))
-    radius = max(4, round(9 * s))
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.5 * s * text_scale
-    text_thickness = max(1, round(2 * s * text_scale))
-    line_gap = 20 * s * text_scale  # vertical spacing between label rows
-
-    offset = round(6 * s)
-    for spot in spots:
-        x, y = int(spot["x"]), int(spot["y"])
-        cv2.circle(image, (x, y), radius, _ORANGE, thickness)
-        cv2.putText(
-            image,
-            f"RF={spot['rf']}",
-            (x + offset, y - offset),
-            font,
-            font_scale,
-            _RED,
-            text_thickness,
-        )
-        # Draw the compound then the lane label below the spot, skipping any
-        # blank label (an unmarked lane is simply omitted, not shown as text).
-        labels = [text for text in (spot["compound"], spot["solvent"]) if text]
-        for row, text in enumerate(labels, start=1):
-            cv2.putText(
-                image,
-                text,
-                (x + offset, y + round(row * line_gap)),
-                font,
-                font_scale,
-                _BLUE,
-                text_thickness,
-            )
+    return max(0.1, min(5.0, scale)) if np.isfinite(scale) else 1.0
 
 
 def calculate_rf(request: HttpRequest) -> JsonResponse:
@@ -430,12 +392,20 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         logger.warning("Invalid JSON format received")
         return JsonResponse({"error": "Invalid JSON format"}, status=400)
 
+    if not isinstance(data, dict):
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
     lines = data.get("lines")
     spots = data.get("spots")
     if not lines:
         return JsonResponse({"error": 'Missing "lines" data in request'}, status=400)
     if not spots:
         return JsonResponse({"error": 'Missing "spots" data in request'}, status=400)
+    if not (
+        isinstance(lines, list)
+        and isinstance(spots, list)
+        and all(isinstance(item, dict) for item in lines + spots)
+    ):
+        return JsonResponse({"error": "Lines and spots must be lists of objects."}, status=400)
 
     min_line = next((line for line in lines if line.get("type") == "min"), None)
     max_line = next((line for line in lines if line.get("type") == "max"), None)
@@ -467,36 +437,27 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
         return error
     assert image is not None  # guaranteed when error is None
 
-    rf_values: list[dict[str, Any]] = []
+    markers = _parse_markers(lines)
+    if markers is None:
+        return JsonResponse({"error": "Line and spot positions must be numbers."}, status=400)
+
+    retained = []
     for x, y in points:
         assert x is not None and y is not None  # checked above
         rf_value = rf_from_positions(y_baseline=min_y, y_front=max_y, y_spot=y)
-        if rf_value is None:
-            continue  # below the baseline or above the front (SI 7.6)
+        if rf_value is not None:  # else below the baseline or above the front (SI 7.6)
+            retained.append((x, y, rf_value))
+    rf_values = results.build_rows(retained, markers)
 
-        closest_vertical = min(
-            (line for line in lines if line.get("type") == "vertical"),
-            key=lambda line: abs(line.get("x", 0) - x),
-            default=None,
-        )
-        closest_horizontal = min(
-            (line for line in lines if line.get("type") == "horizontal"),
-            key=lambda line: abs(line.get("y", 0) - y),
-            default=None,
-        )
-        # The lane label (vertical V-Line) is organisational and optional — if no
-        # lane is marked it is left blank (not shown). The compound (horizontal
-        # H-Line) is the spot's identity, which in TLC is often genuinely unknown,
-        # so an unmarked compound defaults to "Unknown".
-        solvent = (closest_vertical["text"].strip() if closest_vertical else "") or ""
-        compound = (closest_horizontal["text"].strip() if closest_horizontal else "") or "Unknown"
-
-        # x/y are echoed so the frontend can map each result row to its spot.
-        rf_values.append({"compound": compound, "solvent": solvent, "rf": rf_value, "x": x, "y": y})
-
-    # Burn only the results (spot rings + labels) onto the full-resolution
-    # image — not the transient reference lines / plate box.
-    _draw_annotations(image, rf_values, _parse_text_scale(data.get("textScale")))
+    results.draw_annotations(
+        image,
+        rf_values,
+        min_y=min_y,
+        max_y=max_y,
+        markers=markers,
+        text_scale=_parse_text_scale(data.get("textScale")),
+        full_labels=data.get("labelMode") == "full",
+    )
 
     # Unique output names so concurrent requests never clobber each other.
     token = uuid.uuid4().hex
@@ -506,20 +467,8 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
 
     os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
     cv2.imwrite(os.path.join(settings.MEDIA_ROOT, annotated_name), image)
-
-    with open(os.path.join(settings.MEDIA_ROOT, csv_name), "w", newline="") as csvfile:
-        writer = csv.DictWriter(
-            csvfile, fieldnames=["Solvent (X value)", "Compound (Y value)", "RF value"]
-        )
-        writer.writeheader()
-        for value in rf_values:
-            writer.writerow(
-                {
-                    "Solvent (X value)": value["solvent"],
-                    "Compound (Y value)": value["compound"],
-                    "RF value": value["rf"],
-                }
-            )
+    with open(os.path.join(settings.MEDIA_ROOT, csv_name), "w", encoding="utf-8") as fh:
+        fh.write(results.csv_text(rf_values))
 
     return JsonResponse(
         {

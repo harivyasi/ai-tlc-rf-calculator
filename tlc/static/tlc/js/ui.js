@@ -102,6 +102,15 @@ export function updateCalculateEnabled() {
     btn.disabled = !(hasImage() && hasMinAndMax() && state.spots.length > 0);
 }
 
+// Min and Max are singletons that are moved by dragging, so their buttons
+// disappear once the line exists and return if it is deleted or undone.
+export function updateReferenceButtons() {
+    for (const type of ["min", "max"]) {
+        const btn = document.getElementById(type + "-line-btn");
+        if (btn) btn.hidden = state.lines.some((l) => l.type === type);
+    }
+}
+
 // Detect Lines needs only an image; Detect Spots also needs Min and Max,
 // because spot inference is restricted to the band between them.
 export function updateDetectEnabled() {
@@ -182,6 +191,7 @@ export function refreshUI() {
     updateHint();
     updateCalculateEnabled();
     updateDetectEnabled();
+    updateReferenceButtons();
     updateRotateEnabled();
     refreshUndoRedo();
 }
