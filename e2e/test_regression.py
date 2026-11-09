@@ -1119,19 +1119,20 @@ _EXPORT_VISIBLE = (
 
 
 def test_export_local_shows_only_download_pair(page, servers, test_image_path):
-    """A local upload shows just the two download buttons (the ELN-upload pair is
-    hidden and the download pair expands)."""
+    """A local upload shows just the three download buttons (the ELN uploads
+    are hidden)."""
     _stub_cdn(page)
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
     page.set_input_files("#local-image-input", test_image_path)
     page.wait_for_function(_IMAGE_READY)
-    assert page.evaluate(_EXPORT_VISIBLE) == 2
+    assert page.evaluate(_EXPORT_VISIBLE) == 3
     assert not page.locator("#export-row .export-eln").first.is_visible()
 
 
-def test_export_eln_shows_all_four(page, servers, test_image_path):
-    """An ELN-sourced plate shows all four buttons (download + upload × CSV/Image)."""
+def test_export_eln_shows_all_six(page, servers, test_image_path):
+    """An ELN-sourced plate shows all six buttons (download + upload × CSV,
+    Image, Annotations)."""
     png = Path(test_image_path).read_bytes()
     page.route(
         "**/fetch-image/**",
@@ -1146,7 +1147,7 @@ def test_export_eln_shows_all_four(page, servers, test_image_path):
     _stub_cdn(page)
     page.goto(servers["new"] + "/?url=http%3A%2F%2Feln.example%2Fplate.png")
     page.wait_for_function(_IMAGE_READY)
-    assert page.evaluate(_EXPORT_VISIBLE) == 4
+    assert page.evaluate(_EXPORT_VISIBLE) == 6
 
 
 def test_eln_upload_names_the_file_and_sends_no_csrf_token(page, servers, test_image_path):
@@ -1543,3 +1544,149 @@ def test_placing_a_line_across_another_does_not_move_it(page, servers, test_imag
         page.evaluate("() => import('/static/tlc/js/state.js').then(m => m.state.spots.length)")
         == 1
     )
+
+
+# --- Annotation files and drafts ---------------------------------------------
+
+
+def _annotate_and_calculate(page, canvas):
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 50})
+    _add_marker(page, canvas, "V-Line", 120, 150, text="Lane A", kind="product 1")
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 135, "y": 150})
+    canvas.click(position={"x": 135, "y": 100})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr")
+
+
+def _load_local(page, servers, image_path):
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", image_path)
+    page.wait_for_function(_IMAGE_READY)
+    page.wait_for_function("() => document.body.dataset.imageIdentified === '1'")
+    return page.locator("#image-canvas")
+
+
+def test_annotations_export_and_reopen(page, servers, test_image_path, tmp_path):
+    """Downloaded annotations reopen onto the same image and give the same Rf."""
+    canvas = _load_local(page, servers, test_image_path)
+    _annotate_and_calculate(page, canvas)
+    before = [_cell(page, "rf", row) for row in range(2)]
+
+    with page.expect_download() as download_info:
+        page.click("[data-action='saveAnnotations']")
+    path = tmp_path / "annotations.json"
+    download_info.value.save_as(path)
+    data = json.loads(path.read_text())
+    assert data["format"] == "tlc-rf-annotations" and data["version"] == 1
+    assert len(data["image"]["sha256"]) == 64
+    assert [line["type"] for line in data["lines"]] == ["min", "max", "vertical"]
+    assert data["lines"][2]["text"] == "Lane A" and data["lines"][2]["kind"] == "product 1"
+    assert [spot["source"] for spot in data["spots"]] == ["manual", "manual"]
+
+    page.click("[data-action='resetCanvas']")
+    page.set_input_files("#annotations-input", str(path))
+    page.wait_for_selector("text=Annotations opened.")
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 2")
+    assert [_cell(page, "rf", row) for row in range(2)] == before
+    assert _cell(page, "lane") == "Lane A"
+
+
+def test_annotations_for_another_image_are_refused(page, servers, test_image_path, tmp_path):
+    canvas = _load_local(page, servers, test_image_path)  # hashed: the check is real
+    other = {
+        "format": "tlc-rf-annotations",
+        "version": 1,
+        "image": {"name": "other.jpg", "sha256": "0" * 64},
+        "rotation": 0,
+        "fineRotation": 0,
+        "plateRegion": None,
+        "lines": [{"type": "min", "y": 250}],
+        "spots": [],
+    }
+    path = tmp_path / "other.json"
+    path.write_text(json.dumps(other))
+    page.set_input_files("#annotations-input", str(path))
+    page.wait_for_selector('text=belong to a different image ("other.jpg")')
+    assert canvas.is_visible()
+    assert page.evaluate("() => document.querySelectorAll('#values-table tbody tr').length") == 0
+
+
+def test_invalid_annotation_file_is_explained(page, servers, test_image_path, tmp_path):
+    _load_local(page, servers, test_image_path)
+    path = tmp_path / "notes.json"
+    path.write_text('{"hello": 1}')
+    page.set_input_files("#annotations-input", str(path))
+    page.wait_for_selector("text=This is not a TLC annotation file.")
+
+
+def test_draft_is_offered_after_reload_and_restores(page, servers, test_image_path):
+    """Work survives a reload: loading the same image offers the draft; it is
+    never restored by itself."""
+    canvas = _load_local(page, servers, test_image_path)
+    _annotate_and_calculate(page, canvas)
+    page.reload()
+    canvas = _load_local(page, servers, test_image_path)
+    page.wait_for_selector("#draft-banner:not([hidden])")
+    assert "2 spots" in page.inner_text("#draft-text")
+    assert page.evaluate("() => document.querySelectorAll('#values-table tbody tr').length") == 0
+    page.click("[data-action='restoreDraft']")
+    page.wait_for_selector("text=Annotations restored.")
+    assert page.locator("#draft-banner").is_hidden()
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_function("() => document.querySelectorAll('#values-table tbody tr').length === 2")
+
+
+def test_reset_and_discard_delete_the_draft(page, servers, test_image_path):
+    canvas = _load_local(page, servers, test_image_path)
+    _annotate_and_calculate(page, canvas)
+    page.click("[data-action='resetCanvas']")
+    page.reload()
+    _load_local(page, servers, test_image_path)  # hashed: a draft would be offered now
+    assert page.locator("#draft-banner").is_hidden()
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.reload()
+    _load_local(page, servers, test_image_path)
+    page.wait_for_selector("#draft-banner:not([hidden])")
+    page.click("[data-action='discardDraft']")
+    page.reload()
+    _load_local(page, servers, test_image_path)
+    assert page.locator("#draft-banner").is_hidden()
+
+
+def test_annotations_reopen_with_rotation(page, servers, blob_image_path, tmp_path):
+    """The file carries the rotation; opening it re-applies it before the marks."""
+    canvas = _load_local(page, servers, blob_image_path)
+    page.select_option("#rotation-preset", "90")
+    page.fill("#rotation-fine", "2.5")
+    page.dispatch_event("#rotation-fine", "change")
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 50})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr")
+    with page.expect_download() as download_info:
+        page.click("[data-action='saveAnnotations']")
+    path = tmp_path / "rotated.json"
+    download_info.value.save_as(path)
+
+    page.click("[data-action='resetCanvas']")
+    page.select_option("#rotation-preset", "0")
+    page.fill("#rotation-fine", "0")
+    page.dispatch_event("#rotation-fine", "change")
+    page.set_input_files("#annotations-input", str(path))
+    page.wait_for_selector("text=Annotations opened.")
+    assert page.input_value("#rotation-preset") == "90"
+    assert page.input_value("#rotation-fine") == "2.5"

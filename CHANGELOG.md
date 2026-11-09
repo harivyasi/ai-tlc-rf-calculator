@@ -87,6 +87,15 @@ follow the SI; candidate detection is Shilpa's.
   corners fall outside), so image limits and coordinates are unchanged; the
   browser and the server use the same turn, tested on both sides. Presets
   alone give the same results as before. Requests carry `fineRotation`.
+- **Annotation files**: the annotations (image name and SHA-256, rotation,
+  Plate Area, Min/Max, markers with labels and types, spots with how they
+  were placed) are exported as versioned JSON next to the CSV, by download
+  or to the ELN. **Open annotations** loads one back onto the same image
+  (refused for a different image) to check or continue a result.
+- **Drafts**: the annotations of each image are kept in the browser after
+  every change. Loading the same image again offers them in a banner
+  (Restore / Discard), never automatically; Reset deletes the draft. The
+  newest 20 images are kept.
 
 ### Changed
 

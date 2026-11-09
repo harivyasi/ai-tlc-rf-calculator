@@ -8,7 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="{% static 'tlc/favicon.svg' %}">
     <link rel="stylesheet" href="{% static 'tlc/app.css' %}">
 </head>
-<body data-max-image-mb="{{ max_image_mb }}">
+<body data-max-image-mb="{{ max_image_mb }}" data-app-version="{{ version }}">
 
 <!-- Icon sprite (Feather-style, stroked with currentColor) -->
 <svg width="0" height="0" class="icon-sprite" aria-hidden="true">
@@ -83,6 +83,11 @@
                             <svg class="icon"><use href="#i-rotate-cw"/></svg>
                         </button>
                     </span>
+                    <button type="button" class="source-summary-change" data-action="openAnnotations"
+                            title="Open an annotation file (JSON) saved for this image.">
+                        <svg class="icon"><use href="#i-folder"/></svg> Open annotations
+                    </button>
+                    <input type="file" id="annotations-input" accept=".json,application/json" hidden>
                     <button type="button" id="source-change" class="source-summary-change"
                             data-action="toggleImageSource" aria-expanded="false"
                             title="Re-open the image source panel to load a different image.">
@@ -193,6 +198,13 @@
 
         <!-- Contextual hint: Shilpa's order — lines first, then spots inside them. -->
         <div id="hint" class="hint" role="status"></div>
+        <div id="draft-banner" class="draft-banner" role="status" hidden>
+            <span id="draft-text"></span>
+            <span class="draft-actions">
+                <button type="button" class="lab-btn btn-lab-primary" data-action="restoreDraft">Restore</button>
+                <button type="button" class="lab-btn btn-lab-outline" data-action="discardDraft">Discard</button>
+            </span>
+        </div>
 
         <!-- Work area: canvas + result. Layout adapts to image orientation. -->
         <div class="work-area layout-columns" id="work-area">
@@ -235,11 +247,17 @@
                     <button type="button" class="lab-btn btn-lab-outline" data-action="saveImage" title="Download the annotated image (PNG)." disabled>
                         <svg class="icon"><use href="#i-download"/></svg> Image
                     </button>
+                    <button type="button" class="lab-btn btn-lab-outline" data-action="saveAnnotations" title="Download the annotations (JSON): reopen them later on the same image to check or continue the result." disabled>
+                        <svg class="icon"><use href="#i-download"/></svg> Annotations
+                    </button>
                     <button type="button" class="lab-btn btn-lab-outline export-eln" data-action="csvToEln" title="Upload the results CSV to the ELN." disabled>
                         <svg class="icon"><use href="#i-cloud-up"/></svg> CSV
                     </button>
                     <button type="button" class="lab-btn btn-lab-outline export-eln" data-action="imageToEln" title="Upload the annotated image to the ELN." disabled>
                         <svg class="icon"><use href="#i-cloud-up"/></svg> Image
+                    </button>
+                    <button type="button" class="lab-btn btn-lab-outline export-eln" data-action="annotationsToEln" title="Upload the annotations (JSON) to the ELN." disabled>
+                        <svg class="icon"><use href="#i-cloud-up"/></svg> Annotations
                     </button>
                 </div>
             </div>

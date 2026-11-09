@@ -16,6 +16,7 @@ import {
 } from "./ui.js";
 import { applyCrop, fitAndDraw, syncRotationControls } from "./canvas.js";
 import { resetHistory } from "./history.js";
+import { beginImage, identifyImage } from "./annotations-io.js";
 
 export function triggerFileInput() {
     document.getElementById("local-image-input").click();
@@ -78,6 +79,8 @@ function uploadLocalImage(file) {
 function loadLocalImage(dataURL, fileName, file) {
     // Start the upload while the image is decoded and drawn.
     state.localImageUpload = file ? uploadLocalImage(file) : Promise.resolve(null);
+    const token = beginImage(fileName);
+    const bytes = file ? file.arrayBuffer() : null;
     state.rotation = 0;
     state.fineRotation = 0;
     syncRotationControls();
@@ -101,6 +104,7 @@ function loadLocalImage(dataURL, fileName, file) {
         collapseImageSource(fileName);
         applyCrop(); // no region yet -> ensure crop view is reset
         refreshUI();
+        identifyImage(bytes, token); // then offer a saved draft, if any
     };
     state.image.onerror = () => notify("Failed to load image. Please try again.", "error");
     state.image.src = dataURL;
@@ -117,6 +121,8 @@ function loadELNImage() {
             }
             fetch("/serve-image/?file_path=" + encodeURIComponent(data.imagePath)).then((response) => {
                 if (response.ok) {
+                    const token = beginImage("");
+                    const bytes = response.arrayBuffer();
                     state.isLocalImage = false;
                     state.rotation = 0;
                     state.fineRotation = 0;
@@ -126,6 +132,7 @@ function loadELNImage() {
                         fitAndDraw(state.image);
                         applyCrop();
                         refreshUI();
+                        identifyImage(bytes, token);
                     };
                     state.image.src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
                     state.hasResults = false;

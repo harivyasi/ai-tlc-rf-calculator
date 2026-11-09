@@ -27,6 +27,10 @@ export const state = {
     lineSeq: 0,
     rotation: 0, // clockwise preset the image is displayed at (0/90/180/270)
     fineRotation: 0, // clockwise fine-tune on top (deskew), degrees, within ±45
+    imageName: "", // the loaded image's file name ("" for ELN images)
+    imageSha256: null, // its SHA-256 once hashed: ties drafts and annotation files to it
+    imageToken: 0, // bumped per image load, so a late hash is not applied to the next image
+    draftOffered: false, // a saved draft is on offer (banner shown)
 
     currentLine: null, // the H/V line the label popup is open for
     popupEdit: null, // {text, kind} before an edit, so Cancel can restore it
