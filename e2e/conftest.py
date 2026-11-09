@@ -52,6 +52,8 @@ def _start_server(settings_module: str) -> tuple[subprocess.Popen, str]:
         "DEBUG": "True",
         "DJANGO_SETTINGS_MODULE": settings_module,
         "ALLOWED_HOSTS": "127.0.0.1,localhost",
+        # As in production: lets the page post results to the (stubbed) ELN.
+        "ELN_ORIGIN": "http://eln.example",
     }
     proc = subprocess.Popen(
         ["uv", "run", "python", "manage.py", "runserver", "--noreload", f"127.0.0.1:{port}"],

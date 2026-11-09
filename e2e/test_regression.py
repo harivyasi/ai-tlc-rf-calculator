@@ -13,6 +13,8 @@ eager/duplicate image fetches).
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -1047,6 +1049,147 @@ def test_export_eln_shows_all_four(page, servers, test_image_path):
     page.goto(servers["new"] + "/?url=http%3A%2F%2Feln.example%2Fplate.png")
     page.wait_for_function(_IMAGE_READY)
     assert page.evaluate(_EXPORT_VISIBLE) == 4
+
+
+def test_eln_upload_names_the_file_and_sends_no_csrf_token(page, servers, test_image_path):
+    """Results go to the ELN's token URL with a readable `attachmentName`, and
+    without our CSRF token (meaningless there, and it forces a preflight)."""
+    png = Path(test_image_path).read_bytes()
+    page.route(
+        "**/fetch-image/**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"imagePath": "stub.png"}'
+        ),
+    )
+    page.route(
+        "**/serve-image/**",
+        lambda route: route.fulfill(status=200, content_type="image/png", body=png),
+    )
+    result = {
+        "rf_values": [
+            {
+                "n": 1,
+                "x": 150,
+                "y": 150,
+                "rf": 0.5,
+                "solvent": "",
+                "solvent_type": "",
+                "compound": "Unknown",
+                "compound_type": "",
+            }
+        ],
+        "annotated_image_url": "/media/stub-annotated.png",
+        "csv_url": "/media/stub.csv",
+    }
+    page.route(
+        "**/calculate_rf/**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(result)
+        ),
+    )
+    page.route(
+        "**/media/stub.csv",
+        lambda route: route.fulfill(status=200, content_type="text/csv", body="spot\n1\n"),
+    )
+    page.route(
+        "**/media/stub-annotated.png",
+        lambda route: route.fulfill(status=200, content_type="image/png", body=png),
+    )
+    uploads = []
+
+    def eln(route):
+        uploads.append(route.request)
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            body='{"message": "File uploaded successfully"}',
+        )
+
+    page.route("http://eln.example/**", eln)
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/?url=http%3A%2F%2Feln.example%2Fplate.png")
+    page.wait_for_function(_IMAGE_READY)
+
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 50})
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr")
+    page.click("[data-action='csvToEln']")
+    page.wait_for_selector("text=Saved to ELN")
+
+    assert len(uploads) == 1
+    request = uploads[0]
+    assert request.method == "POST"
+    assert "x-csrftoken" not in {k.lower() for k in request.headers}
+    body = request.post_data_buffer.decode("utf-8", "replace")
+    assert re.search(r'name="attachmentName"\r\n\r\nTLC_Rf_\d{4}-\d\d-\d\d_\d\d-\d\d\.csv', body)
+
+
+def test_eln_upload_failure_is_reported(page, servers, test_image_path):
+    """A refused upload (e.g. the token's upload limit) says so, not "Saved"."""
+    png = Path(test_image_path).read_bytes()
+    page.route(
+        "**/fetch-image/**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"imagePath": "stub.png"}'
+        ),
+    )
+    page.route(
+        "**/serve-image/**",
+        lambda route: route.fulfill(status=200, content_type="image/png", body=png),
+    )
+    page.route(
+        "**/calculate_rf/**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "rf_values": [
+                        {
+                            "n": 1,
+                            "x": 150,
+                            "y": 150,
+                            "rf": 0.5,
+                            "solvent": "",
+                            "solvent_type": "",
+                            "compound": "Unknown",
+                            "compound_type": "",
+                        }
+                    ],
+                    "annotated_image_url": "/media/a.png",
+                    "csv_url": "/media/s.csv",
+                }
+            ),
+        ),
+    )
+    page.route("**/media/s.csv", lambda route: route.fulfill(status=200, body="spot\n"))
+    page.route(
+        "http://eln.example/**",
+        lambda route: route.fulfill(
+            status=403, headers={"Access-Control-Allow-Origin": "*"}, body="{}"
+        ),
+    )
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/?url=http%3A%2F%2Feln.example%2Fplate.png")
+    page.wait_for_function(_IMAGE_READY)
+    canvas = page.locator("#image-canvas")
+    page.click("button:has-text('Min Line')")
+    canvas.click(position={"x": 150, "y": 250})
+    page.click("button:has-text('Max Line')")
+    canvas.click(position={"x": 150, "y": 50})
+    page.click("button:has-text('Add Spots')")
+    canvas.click(position={"x": 150, "y": 150})
+    page.click("button:has-text('Calculate RF')")
+    page.wait_for_selector("#values-table tbody tr")
+    page.click("[data-action='csvToEln']")
+    page.wait_for_selector("text=Failed to save to ELN")
 
 
 def test_min_above_max_is_explained_not_computed(page, servers, test_image_path):

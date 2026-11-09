@@ -66,6 +66,14 @@ follow the SI; candidate detection is Shilpa's.
 - With the H-Line or V-Line tool selected, clicking where the new line
   crosses an existing one no longer drags the existing line and swallows the
   next click.
+- Uploads to the ELN no longer send this app's CSRF token to Chemotion, and
+  name the file (`TLC_Rf_2026-11-09_14-32.csv`) instead of a bare timestamp.
+  A refused upload is reported as a failure; it used to say "Saved".
+
+### Removed
+
+- The GitLab CI configuration; the project builds and tests on GitHub
+  Actions only.
 
 ## [2.0.0] — 2026-07-27
 

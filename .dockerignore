@@ -24,6 +24,5 @@ tools/
 eln_related_docs/
 docs/
 .github/
-.gitlab-ci.yml
 .pre-commit-config.yaml
 *.md
