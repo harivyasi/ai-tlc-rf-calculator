@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import socket
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -40,6 +41,8 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from PIL import Image, ImageOps, UnidentifiedImageError
+from requests.adapters import HTTPAdapter
+from urllib3.exceptions import HTTPError as Urllib3Error
 
 from config import __version__
 
@@ -49,7 +52,10 @@ from .inference import model_identities, models_loaded
 logger = logging.getLogger(__name__)
 
 # Limits applied when fetching a remote (ELN) image.
-FETCH_TIMEOUT_SECONDS = 10
+FETCH_TIMEOUT_SECONDS = 10  # per connect / read
+# The whole download, so a server that drips bytes cannot hold a worker thread
+# for long (25 MB in 60 s needs ~420 kB/s).
+FETCH_DEADLINE_SECONDS = 60
 MAX_IMAGE_BYTES = settings.MAX_IMAGE_MB * 1024 * 1024
 MAX_REDIRECTS = 3  # ELN attachment URLs often redirect to storage
 # Reject absurdly large images so a single request can't exhaust CPU/memory in
@@ -118,36 +124,44 @@ def _resolve_within_media(name: str) -> str | None:
     return candidate
 
 
-def _is_safe_remote_url(url: str) -> bool:
-    """Return whether ``url`` is safe to fetch server-side (SSRF guard).
+def _safe_address(url: str) -> str | None:
+    """Resolve ``url``'s host and return the address to connect to (SSRF guard).
 
     The URL must use http(s) and must not resolve to a private, loopback,
     link-local, reserved, or otherwise non-public address. When
     ``settings.ELN_ALLOWED_HOSTS`` is non-empty (set directly or derived from
     ``ELN_ORIGIN``), the host must additionally appear in that allowlist.
 
+    The fetch must connect to the returned address (:class:`_PinnedAddressAdapter`)
+    rather than resolve the host again: a second lookup may answer differently
+    (DNS rebinding).
+
     Args:
         url: The remote URL to validate.
 
     Returns:
-        ``True`` if the URL is considered safe to fetch, else ``False``.
+        A validated IP address of the host, or ``None`` if the URL is not safe.
     """
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:  # e.g. a port out of range
+        return None
     if parts.scheme not in ("http", "https") or not parts.hostname:
-        return False
+        return None
 
     allowed = [h.lower() for h in settings.ELN_ALLOWED_HOSTS]
     if allowed and parts.hostname.lower() not in allowed:
-        return False
+        return None
 
-    port = parts.port or (443 if parts.scheme == "https" else 80)
     try:
         addr_infos = socket.getaddrinfo(parts.hostname, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror:
-        return False
+    except socket.gaierror, UnicodeError:
+        return None
 
-    for info in addr_infos:
-        ip = ipaddress.ip_address(info[4][0])
+    addresses = [str(info[4][0]) for info in addr_infos]
+    for address in addresses:
+        ip = ipaddress.ip_address(address.split("%")[0])
         if (
             ip.is_private
             or ip.is_loopback
@@ -156,28 +170,81 @@ def _is_safe_remote_url(url: str) -> bool:
             or ip.is_multicast
             or ip.is_unspecified
         ):
-            return False
-    return True
+            return None
+    # One address is pinned, with no fallback to the host's others, so prefer
+    # IPv4: an IPv6 answer is of no use on a server without an IPv6 route.
+    addresses.sort(key=lambda address: ":" in address)
+    return addresses[0] if addresses else None
 
 
-def _fetch_following_safe_redirects(url: str) -> requests.Response | None:
+def _is_safe_remote_url(url: str) -> bool:
+    """Return whether ``url`` is safe to fetch server-side (see :func:`_safe_address`)."""
+    return _safe_address(url) is not None
+
+
+class _PinnedAddressAdapter(HTTPAdapter):
+    """Connects to one validated address instead of resolving the host again.
+
+    The URL's host still goes in the ``Host`` header and is what TLS uses for
+    SNI and certificate verification.
+    """
+
+    def __init__(self, address: str) -> None:
+        self.address = address
+        super().__init__()
+
+    def build_connection_pool_key_attributes(
+        self, request: requests.PreparedRequest, verify: Any, cert: Any = None
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        host_params, pool_kwargs = super().build_connection_pool_key_attributes(
+            request, verify, cert
+        )
+        pool_kwargs["server_hostname"] = host_params["host"]  # dropped for http
+        host_params["host"] = self.address
+        return host_params, pool_kwargs
+
+    def send(
+        self, request: requests.PreparedRequest, *args: Any, **kwargs: Any
+    ) -> requests.Response:
+        # Otherwise http.client would send the address as the Host header.
+        request.headers["Host"] = urlsplit(request.url or "").netloc.rpartition("@")[2]
+        return super().send(request, *args, **kwargs)
+
+
+def _pinned_get(url: str, address: str) -> requests.Response:
+    """Streamed GET of ``url`` with the connection made to ``address``."""
+    session = requests.Session()
+    adapter = _PinnedAddressAdapter(address)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session.get(url, timeout=FETCH_TIMEOUT_SECONDS, stream=True, allow_redirects=False)
+
+
+def _fetch_following_safe_redirects(
+    url: str, address: str | None = None
+) -> requests.Response | None:
     """GET ``url``, following redirects while re-validating each hop for SSRF.
 
-    The initial URL must already have passed :func:`_is_safe_remote_url`. Each
-    redirect ``Location`` is resolved and re-validated before it is followed, so
+    Every hop, the first included, is resolved and validated by
+    :func:`_safe_address` and fetched from the address that was validated, so
     an ELN endpoint that redirects to storage works without opening an SSRF hole.
 
     Args:
-        url: The (already validated) URL to fetch.
+        url: The URL to fetch.
+        address: ``_safe_address(url)`` if the caller already has it.
 
     Returns:
-        The final non-redirect streamed response, or ``None`` if a redirect
-        target is unsafe or missing, or the redirect limit is exceeded.
+        The final non-redirect streamed response (the caller closes it), or
+        ``None`` if a hop is unsafe, a redirect has no target, or the redirect
+        limit is exceeded.
     """
     for _ in range(MAX_REDIRECTS + 1):
-        response = requests.get(
-            url, timeout=FETCH_TIMEOUT_SECONDS, stream=True, allow_redirects=False
-        )
+        if address is None:
+            address = _safe_address(url)
+            if address is None:
+                logger.warning("Refused unsafe fetch target: %r", url)
+                return None
+        response = _pinned_get(url, address)
         if response.status_code not in (301, 302, 303, 307, 308):
             return response
         location = response.headers.get("Location")
@@ -185,10 +252,29 @@ def _fetch_following_safe_redirects(url: str) -> requests.Response | None:
         if not location:
             return None
         url = urljoin(url, location)
-        if not _is_safe_remote_url(url):
-            logger.warning("Refused unsafe redirect target: %r", url)
-            return None
+        address = None
     return None
+
+
+def _read_body(response: requests.Response, deadline: float) -> bytes | None:
+    """The response body, or ``None`` if it exceeds ``MAX_IMAGE_BYTES``.
+
+    Reads whatever has arrived (``read1``): ``iter_content`` waits for a whole
+    chunk, so a server sending a byte at a time would get past the deadline.
+
+    Raises:
+        requests.Timeout: Past ``deadline`` (a ``time.monotonic`` value).
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := response.raw.read1(64 * 1024, decode_content=True):
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            return None
+        chunks.append(chunk)
+        if time.monotonic() > deadline:
+            raise requests.Timeout("Remote image download took too long")
+    return b"".join(chunks)
 
 
 def _rotate_image(image: np.ndarray, rotation: int) -> np.ndarray:
@@ -443,8 +529,9 @@ def _decode_image_bytes(raw: bytes) -> np.ndarray | None:
     The one decoder for every image the analysis sees -- local uploads and ELN
     images alike -- so both are oriented the way the browser shows them:
     phone photos are often stored sideways with an EXIF Orientation tag, which
-    browsers apply and ``cv2`` applies only for some formats. The original
-    tool ignored the tag, so it analysed such photos sideways.
+    browsers apply and ``cv2`` applies only for some formats. Version 1 ignored
+    the tag for local uploads, so it analysed such photos sideways (its ELN
+    images, read with ``cv2.imread``, were oriented).
     """
     if len(raw) > MAX_IMAGE_BYTES:
         return None
@@ -651,11 +738,12 @@ def _render_results(
         full_labels=data.get("labelMode") == "full",
     )
 
-    # Unique output names so concurrent requests never clobber each other.
+    # Named by a random token alone: unique, so concurrent requests never
+    # clobber each other, and safe in a path and a URL. The client's file name
+    # (it may hold "#" or "%", or be too long) is recorded in the CSV instead.
     token = uuid.uuid4().hex
-    stem = os.path.splitext(source.base_name)[0]
-    annotated_name = f"annotated_{stem}_{token}.png"
-    csv_name = f"rf_values_{stem}_{token}.csv"
+    annotated_name = f"annotated_{token}.png"
+    csv_name = f"rf_values_{token}.csv"
 
     media.write(annotated_name, cv2.imencode(".png", image)[1].tobytes())
     media.write(csv_name, results.csv_text(rf_values, _provenance(source, data)))
@@ -711,8 +799,8 @@ def detect_spots(request: HttpRequest) -> JsonResponse:
         request: The HTTP request carrying the JSON payload.
 
     Returns:
-        ``{"spots": [{"x", "y", "conf"}], "count", "roi", "model"}``, or an
-        ``error``.
+        ``{"spots": [{"x", "y", "conf", "w", "h"}], "count", "roi", "model"}``
+        (``w``, ``h``: the box size), or an ``error``.
     """
     data, error = _parse_detection_request(request)
     if error is not None:
@@ -783,9 +871,9 @@ def fetch_and_save_image(request: HttpRequest) -> JsonResponse:
     The URL is validated against SSRF (see :func:`_is_safe_remote_url`);
     redirects are followed but each hop is re-validated
     (:func:`_fetch_following_safe_redirects`). The download is bounded by a
-    timeout and a maximum size, and the file is saved under a random name. Only
-    that name (not a filesystem path) is returned, so the client cannot
-    influence where subsequent reads occur.
+    per-read timeout, an overall deadline and a maximum size, and the file is
+    saved under a random name. Only that name (not a filesystem path) is
+    returned, so the client cannot influence where subsequent reads occur.
 
     Args:
         request: The HTTP request; expects a ``url`` query parameter.
@@ -797,27 +885,29 @@ def fetch_and_save_image(request: HttpRequest) -> JsonResponse:
     image_url = request.GET.get("url")
     if not image_url:
         return JsonResponse({"error": 'Missing "url" parameter'}, status=400)
-    if not _is_safe_remote_url(image_url):
+    address = _safe_address(image_url)
+    if address is None:
         logger.warning("Refused to fetch unsafe URL: %r", image_url)
         return JsonResponse({"error": "The provided URL is not allowed."}, status=400)
 
+    failed = JsonResponse({"error": "Failed to fetch image"}, status=400)
+    deadline = time.monotonic() + FETCH_DEADLINE_SECONDS
     try:
-        response = _fetch_following_safe_redirects(image_url)
-    except requests.RequestException:
+        response = _fetch_following_safe_redirects(image_url, address)
+        if response is None:
+            return failed
+        try:
+            if response.status_code != 200:
+                return failed
+            content = _read_body(response, deadline)
+        finally:
+            response.close()
+    # Reading the body raises urllib3's errors (read1 bypasses requests' wrapping).
+    except requests.RequestException, Urllib3Error:
         logger.warning("Error fetching remote image", exc_info=True)
-        return JsonResponse({"error": "Failed to fetch image"}, status=400)
-
-    if response is None or response.status_code != 200:
-        return JsonResponse({"error": "Failed to fetch image"}, status=400)
-
-    chunks: list[bytes] = []
-    total = 0
-    for chunk in response.iter_content(chunk_size=64 * 1024):
-        total += len(chunk)
-        if total > MAX_IMAGE_BYTES:
-            return JsonResponse({"error": "Remote image is too large."}, status=400)
-        chunks.append(chunk)
-    content = b"".join(chunks)
+        return failed
+    if content is None:
+        return JsonResponse({"error": "Remote image is too large."}, status=400)
 
     # Checked from the header, like a local upload: decoding a 50 MP photo
     # here just to validate it cost ~700 MB.

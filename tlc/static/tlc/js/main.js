@@ -21,6 +21,7 @@ import {
     toggleHelp,
     toggleImageSource,
     updateAnnotatedHeading,
+    updateExportButtons,
 } from "./ui.js";
 import {
     applyCrop,
@@ -191,16 +192,16 @@ function init() {
     const rotationPreset = document.getElementById("rotation-preset");
     const rotationFine = document.getElementById("rotation-fine");
     if (rotationPreset && rotationFine) {
-        rotationPreset.addEventListener("change", () =>
-            setRotation(Number(rotationPreset.value), Number(rotationFine.value)),
-        );
+        // An empty or unfinished field ("", "-", "2.") reads as NaN, which
+        // setRotation treats as "keep the current angle" (Number("") is 0).
+        const typedFine = () => (rotationFine.value.trim() === "" ? NaN : Number(rotationFine.value));
+        rotationPreset.addEventListener("change", () => setRotation(Number(rotationPreset.value), typedFine()));
         rotationFine.addEventListener("input", () => {
-            if (rotationFine.value === "" || rotationFine.value === "-") return; // mid-typing
-            setRotation(Number(rotationPreset.value), Number(rotationFine.value));
+            if (!Number.isFinite(typedFine())) return; // mid-typing
+            setRotation(Number(rotationPreset.value), typedFine(), false); // preview; leave the field as typed
         });
-        rotationFine.addEventListener("change", () =>
-            setRotation(Number(rotationPreset.value), Number(rotationFine.value)),
-        );
+        // On commit (blur/Enter) the field is clamped and tidied to one decimal.
+        rotationFine.addEventListener("change", () => setRotation(Number(rotationPreset.value), typedFine()));
     }
 
     refreshUI();
@@ -265,6 +266,7 @@ function init() {
     });
 
     // Default to ELN when a url param is present, otherwise local upload.
+    updateExportButtons(); // without ?url= there is no ELN to upload to
     selectImageSource(pageUrl.searchParams.get("url") ? "eln" : "local");
 }
 

@@ -22,9 +22,9 @@ export function triggerFileInput() {
     document.getElementById("local-image-input").click();
 }
 
+// Shows the chosen source's input. state.isLocalImage is left alone: it
+// describes the loaded image and changes only when a new one starts its session.
 export function selectImageSource(source) {
-    state.isLocalImage = source === "local";
-
     const eln = document.getElementById("eln-source-btn");
     const local = document.getElementById("local-source-btn");
     eln.classList.toggle("active", source === "eln");
@@ -37,7 +37,6 @@ export function selectImageSource(source) {
     document.getElementById("local-upload-section").style.display =
         source === "local" ? "block" : "none";
 
-    updateExportButtons(); // ELN-upload buttons only for ELN-sourced plates
     if (source === "eln") loadELNImage();
 }
 
@@ -57,8 +56,9 @@ export function handleLocalImageFile(file) {
         notify("The image must be smaller than " + maxMb + " MB.", "error");
         return;
     }
+    const load = ++latestLoad;
     const reader = new FileReader();
-    reader.onload = (e) => loadLocalImage(e.target.result, file.name, file);
+    reader.onload = (e) => loadLocalImage(e.target.result, file.name, file, load);
     reader.readAsDataURL(file);
 }
 
@@ -76,42 +76,58 @@ function uploadLocalImage(file) {
         .catch(() => null);
 }
 
-function loadLocalImage(dataURL, fileName, file) {
-    // Start the upload while the image is decoded and drawn.
-    state.localImageUpload = file ? uploadLocalImage(file) : Promise.resolve(null);
-    const token = beginImage(fileName);
-    const bytes = file ? file.arrayBuffer() : null;
+// Counts image loads as they are requested. Only the latest may start a session,
+// so an earlier pick that decodes later (and its upload) is dropped.
+let latestLoad = 0;
+
+// Switch to a newly decoded image and start a clean session on it: identity,
+// rotation, marks, results and undo history all belong to the image before.
+// Called only once the image has decoded, so a failed load changes nothing.
+function startImageSession(image, { name, label, isLocal, upload, bytes }) {
+    const token = beginImage(name);
+    state.image = image;
+    state.isLocalImage = isLocal;
+    state.localImageUpload = upload;
     state.rotation = 0;
     state.fineRotation = 0;
     syncRotationControls();
-    state.image = new Image();
-    state.image.onload = function () {
-        fitAndDraw(state.image);
-        window.currentImageFileName = fileName;
-        state.isLocalImage = true;
-        state.lines = [];
-        state.spots = [];
-        state.plateRegion = null;
-        document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
-        const tbody = document.querySelector("#values-table tbody");
-        if (tbody) tbody.innerHTML = "";
-        state.hasResults = false;
-        state.csvUrl = null;
-        clearResultsStale();
-        resetHistory(); // fresh image = undo baseline
+    state.lines = [];
+    state.spots = [];
+    state.plateRegion = null;
+    state.highlightedSpot = null;
+    document.querySelectorAll(".delete-icon").forEach((el) => el.remove());
+    const tbody = document.querySelector("#values-table tbody");
+    if (tbody) tbody.innerHTML = "";
+    state.hasResults = false;
+    state.csvUrl = null;
+    clearResultsStale();
+    fitAndDraw(image);
+    resetHistory(); // fresh image = undo baseline
+    updateAnnotatedHeading("editing");
+    updateExportButtons();
+    collapseImageSource(label);
+    applyCrop(); // no region yet -> ensure crop view is reset
+    refreshUI();
+    identifyImage(bytes, token); // then offer a saved draft, if any
+}
+
+function loadLocalImage(dataURL, fileName, file, load) {
+    // Start the upload while the image is decoded; it is kept only if it decodes.
+    const upload = file ? uploadLocalImage(file) : Promise.resolve(null);
+    const bytes = file ? file.arrayBuffer() : null;
+    const image = new Image();
+    image.onload = () => {
+        if (load !== latestLoad) return; // superseded by a later pick
+        startImageSession(image, { name: fileName, label: fileName, isLocal: true, upload, bytes });
         notify('Image "' + fileName + '" loaded.', "success");
-        updateAnnotatedHeading("editing");
-        collapseImageSource(fileName);
-        applyCrop(); // no region yet -> ensure crop view is reset
-        refreshUI();
-        identifyImage(bytes, token); // then offer a saved draft, if any
     };
-    state.image.onerror = () => notify("Failed to load image. Please try again.", "error");
-    state.image.src = dataURL;
+    image.onerror = () => notify("Failed to load image. Please try again.", "error");
+    image.src = dataURL;
 }
 
 function loadELNImage() {
     if (!elnUrl) return;
+    const load = ++latestLoad;
     fetch("/fetch-image/?url=" + encodeURIComponent(elnUrl))
         .then((response) => response.json())
         .then((data) => {
@@ -119,28 +135,23 @@ function loadELNImage() {
                 notify("ELN image not found.", "error");
                 return;
             }
-            fetch("/serve-image/?file_path=" + encodeURIComponent(data.imagePath)).then((response) => {
+            const src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
+            fetch(src).then((response) => {
                 if (response.ok) {
-                    const token = beginImage("");
                     const bytes = response.arrayBuffer();
-                    state.isLocalImage = false;
-                    state.rotation = 0;
-                    state.fineRotation = 0;
-                    syncRotationControls();
-                    state.image = new Image();
-                    state.image.onload = () => {
-                        fitAndDraw(state.image);
-                        applyCrop();
-                        refreshUI();
-                        identifyImage(bytes, token);
+                    const image = new Image();
+                    image.onload = () => {
+                        if (load !== latestLoad) return; // superseded by a later pick
+                        startImageSession(image, {
+                            name: "",
+                            label: "ELN image",
+                            isLocal: false,
+                            upload: null,
+                            bytes,
+                        });
                     };
-                    state.image.src = "/serve-image/?file_path=" + encodeURIComponent(data.imagePath);
-                    state.hasResults = false;
-                    state.csvUrl = null;
-                    clearResultsStale();
-                    resetHistory();
-                    updateAnnotatedHeading("editing");
-                    collapseImageSource("ELN image");
+                    image.onerror = () => notify("Error loading ELN image.", "error");
+                    image.src = src;
                 } else {
                     notify("Error loading ELN image.", "error");
                 }

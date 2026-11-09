@@ -210,11 +210,16 @@ export function addSpots(event) {
 }
 
 export function addSpot(origX, origY, auto = false) {
-    const duplicate = state.spots.some(
-        (s) => Math.abs(s.x - origX) < 12 * window.scaleFactor &&
-               Math.abs(s.y - origY) < 12 * window.scaleFactor
-    );
-    if (duplicate) return false;
+    // A double click must not place two spots by hand. Detection candidates
+    // are screened by their box size instead (results.js, newCandidates), so
+    // that close but distinct spots are both kept.
+    if (!auto) {
+        const duplicate = state.spots.some(
+            (s) => Math.abs(s.x - origX) < 12 * window.scaleFactor &&
+                   Math.abs(s.y - origY) < 12 * window.scaleFactor
+        );
+        if (duplicate) return false;
+    }
     // `auto` marks spots proposed by Detect Spots (model candidates, as opposed
     // to spots placed by hand). This is a plain mutator — callers commit at the
     // gesture boundary (a single history entry per click / per detection batch).

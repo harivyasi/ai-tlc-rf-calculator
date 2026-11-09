@@ -2,7 +2,7 @@
 
 Ported from version 1's ``circle_detector/spot_onnx.py``. The
 preprocessing (letterbox to a square, RGB, /255) and both output decoders are
-kept as they were, so candidates match her tool for the same input; only type
+kept as they were, so candidates match version 1 for the same input; only type
 hints were added and the input size is now read from the model.
 """
 

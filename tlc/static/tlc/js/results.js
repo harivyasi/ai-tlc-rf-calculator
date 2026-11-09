@@ -36,7 +36,7 @@ export function getImagePayload() {
                 stored
                     ? { imageSrc: stored, isLocalImage: true, imageData: null }
                     : {
-                          imageSrc: window.currentImageFileName || "local_upload.png",
+                          imageSrc: state.imageName || "local_upload.png",
                           isLocalImage: true,
                           imageData: state.image.src,
                       },
@@ -120,6 +120,32 @@ function postJson(url, payload) {
     );
 }
 
+// TLC-SpotDet sometimes returns a second, larger or smaller box on the same
+// spot (on 223 plates, 28 % of candidates were such a second box), while
+// neighbouring spots lie about a box apart. Two candidates are the same spot
+// when the centre of each lies inside the other's box. A spot already on the
+// plate has no box (placed by hand, or from an earlier run), so there the
+// candidate's box decides. Image px throughout, so the display size does not
+// matter. Without a box (an older server), only an identical position counts.
+export function sameSpot(a, b) {
+    const w = Math.min(a.w ?? Infinity, b.w ?? Infinity);
+    const h = Math.min(a.h ?? Infinity, b.h ?? Infinity);
+    if (!Number.isFinite(w) || !Number.isFinite(h)) return a.x === b.x && a.y === b.y;
+    return Math.abs(a.x - b.x) <= w / 2 && Math.abs(a.y - b.y) <= h / 2;
+}
+
+// The candidates to add, in the server's order: of two on the same spot the
+// more confident, and none on a spot that is already there.
+export function newCandidates(candidates, spots) {
+    const kept = [];
+    [...candidates]
+        .sort((a, b) => (b.conf || 0) - (a.conf || 0))
+        .forEach((c) => {
+            if (!kept.some((k) => sameSpot(c, k)) && !spots.some((s) => sameSpot(c, s))) kept.push(c);
+        });
+    return candidates.filter((c) => kept.includes(c));
+}
+
 // Spots are searched only between the baseline and the solvent front (SI §4),
 // so both lines must exist first.
 export function autoDetectSpots() {
@@ -143,10 +169,9 @@ export function autoDetectSpots() {
         })
         .then((result) => {
             hideOverlay();
-            let added = 0;
-            (result.spots || []).forEach((s) => {
-                if (addSpot(s.x, s.y, true)) added++;
-            });
+            const fresh = newCandidates(result.spots || [], state.spots);
+            fresh.forEach((s) => addSpot(s.x, s.y, true));
+            const added = fresh.length;
             if (added > 0) {
                 commitChange(); // one undo entry for the whole detection batch
                 notify("Detected " + added + " spot(s). Review and adjust as needed.", "success");
@@ -341,18 +366,33 @@ export function postToEln(blob, kind, ext) {
         });
 }
 
-// Download the annotated image locally.
+// Download the annotated image locally, as annotated_<image stem>.png (the
+// server always renders PNG). Saved from a blob: the media response names the
+// file itself (Content-Disposition), which browsers prefer to `download`.
 export function saveImage() {
     const annotated = document.getElementById("annotated-image");
     if (!annotated || !annotated.src) {
         notify("Calculate RF values first.", "warning");
         return;
     }
-    const link = document.createElement("a");
-    link.download = "annotated_" + (window.currentImageFileName || "tlc_image.png");
-    link.href = annotated.src;
-    link.click();
-    notify("Annotated image downloaded.", "success");
+    const stem = state.imageName.replace(/\.[^.]*$/, "") || "tlc_image";
+    fetch(annotated.src)
+        .then((response) => {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.blob();
+        })
+        .then((blob) => {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "annotated_" + stem + ".png";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            notify("Annotated image downloaded.", "success");
+        })
+        .catch(() => notify("Failed to load the annotated image.", "error"));
 }
 
 // Upload the annotated image to the ELN (re-encoded from the full-res result).

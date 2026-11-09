@@ -1,8 +1,8 @@
 """Machine-learning-assisted candidate annotation (SI section 6).
 
 Two YOLOv8s detectors propose editable candidates; nothing here produces a
-final result. The logic is version 1's, from its ``auto_detect_spots``
-and ``auto_detect_lines`` views:
+final result. The logic is version 1's, from its ``auto_detect_spots`` and
+``auto_detect_lines`` views:
 
 * **Spots (TLC-SpotDet).** Inference runs only on the horizontal strip between
   the baseline (Min) and the solvent front (Max), widened by
@@ -51,7 +51,8 @@ def detect_spots(
         region: Optional Plate Area ``(x, y, width, height)``; limits the x-range.
 
     Returns:
-        ``{"spots": [{"x", "y", "conf"}], "roi": [x1, y1, x2, y2], "model": {...}}``.
+        ``{"spots": [{"x", "y", "conf", "w", "h"}], "roi": [x1, y1, x2, y2],
+        "model": {...}}``, where ``w`` and ``h`` are the box size.
 
     Raises:
         DetectionError: If the band or the region leaves nothing to search.
@@ -83,7 +84,11 @@ def detect_spots(
         # The margin only gives the model context; results must lie in the band.
         if cy < band_top or cy > band_bottom:
             continue
-        spots.append({"x": cx, "y": cy, "conf": float(det["conf"])})
+        # The box size lets the browser tell a second box on the same spot
+        # from a neighbouring spot, whatever the photo's resolution.
+        w = float(det["x2"]) - float(det["x1"])
+        h = float(det["y2"]) - float(det["y1"])
+        spots.append({"x": cx, "y": cy, "conf": float(det["conf"]), "w": w, "h": h})
 
     return {"spots": spots, "roi": [x1, y1, x2, y2], "model": info.as_dict()}
 

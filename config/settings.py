@@ -230,8 +230,8 @@ SPOT_MODEL_PATH = BASE_DIR / "tlc" / "ml_models" / "spot_best.onnx"
 LINE_MODEL_PATH = BASE_DIR / "tlc" / "ml_models" / "line_best.onnx"
 # spot_best.onnx was exported with its own confidence cutoff of 0.25: it
 # returns nothing scoring lower (checked on 223 plates; the lowest score seen
-# is 0.252). A lower value here therefore finds no more spots -- the original
-# tool used 0.15 with the same result -- so the setting states the cutoff
+# is 0.252). A lower value here therefore finds no more spots -- version 1
+# used 0.15 with the same result -- so the setting states the cutoff
 # that actually applies. Going lower would need a re-export from the .pt
 # weights.
 SPOT_CONF_DEFAULT = 0.25

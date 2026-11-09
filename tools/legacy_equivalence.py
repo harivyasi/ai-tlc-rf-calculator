@@ -1,4 +1,4 @@
-"""Check that candidate detection matches the original tool, plate by plate.
+"""Check that candidate detection matches version 1, plate by plate.
 
 Runs the **real endpoints** of both apps -- this checkout and a git ref of the
 original -- through Django's test client, each in its own environment, over a
@@ -10,8 +10,10 @@ directory of plate photos, and compares the JSON they return:
    into the spot comparison.
 
 Photos with an EXIF orientation are first written out upright (JPEG), because
-the original ignored EXIF and would otherwise see them sideways -- a known
-difference, fixed here, that this check is not meant to re-detect.
+the original ignored EXIF for local images and would otherwise see them
+sideways -- a known difference, fixed here, that this check is not meant to
+re-detect. Each spot is compared by x, y and confidence; the box size that
+this version adds to each spot is not compared.
 
 Usage (from the repository root)::
 

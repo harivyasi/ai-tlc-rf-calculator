@@ -280,6 +280,7 @@ dependencies = [
     { name = "opencv-python-headless" },
     { name = "pillow" },
     { name = "requests" },
+    { name = "urllib3" },
     { name = "whitenoise" },
 ]
 
@@ -292,6 +293,7 @@ requires-dist = [
     { name = "opencv-python-headless", specifier = ">=4.11.0.86" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
+    { name = "urllib3", specifier = ">=2.2.0" },
     { name = "whitenoise", specifier = ">=6.9.0" },
 ]
 

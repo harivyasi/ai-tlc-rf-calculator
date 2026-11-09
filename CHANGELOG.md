@@ -28,19 +28,28 @@ gives identical detection results.
   (±12 px); a Plate Area also limits the x-range. Responses name the model
   (file, SHA-256, export date). Candidates need a confidence of at least
   0.25, the cutoff built into `spot_best.onnx` (it returns no lower scores).
+- Detect Spots proposes each spot once. When the model returns two boxes on
+  the same spot (the centre of each inside the other's box), only the more
+  confident is added; neighbouring spots are both proposed, whatever the
+  image size, and running it again adds nothing already on the plate.
+  Version 1 added every candidate. Each candidate now carries its box size
+  (`w`, `h`).
 - A spot is kept when **0 ≤ Rf ≤ 1**, tested before rounding; before, 0 and
   1 were excluded after rounding, so a spot on the baseline was dropped.
 - Calculate RF refuses a baseline at or above the solvent front, and
   positions that are not numbers, with a message.
 - Image limits: 25 MB per file (`MAX_IMAGE_MB`) and 64 megapixels
   (`MAX_IMAGE_MEGAPIXELS`), enough for phone photos of plates (13 MB, 50 MP);
-  the page reads the file limit from the server.
+  the page reads the file limit from the server. Version 1 could not process
+  local images above about 1.9 MB (its request-size limit).
 - The CSV is written by the server and its columns follow the results
-  table: `spot, mixture_label, mixture_type, substance_label,
-  substance_type, RF value` (before: `mixture_label, substance_label, RF
-  value`). The `CHMO:0001007` line and the `Details:` line are kept. Labels
-  are quoted, so a comma no longer shifts the columns; cells cannot start a
-  spreadsheet formula.
+  table: `spot, mixture_label (X axis), mixture_type, substance_label (Y
+  axis), substance_type, RF value`, then a seventh column, `spot source`
+  (before: `mixture_label (X axis), substance_label (Y axis), RF value`).
+  The `CHMO:0001007` line and the `Details:` line are kept. Rf is written
+  with two decimals, as in the table (`0.50`, before `0.5`), in the column
+  and in the `Details:` line. Labels are quoted, so a comma no longer shifts
+  the columns; cells cannot start a spreadsheet formula.
 - Results are numbered: the number is drawn next to each spot on the
   annotated image and is the row in the table and the CSV; rows are sorted
   by lane label, then Rf.
@@ -91,13 +100,18 @@ gives identical detection results.
 - `SECRET_KEY` is optional: nothing in the app signs data with it, so a
   random key is made at start-up. A deployment needs only `ALLOWED_HOSTS`
   and `ELN_ORIGIN`.
+- The annotated image downloads as `annotated_<image name>.png`. Undo and
+  redo keep annotations together with the rotation they were made in. An
+  image that fails to load leaves the current work untouched, and loading
+  the ELN image starts a clean session.
 
 ### Fixed
 
 - The TLC-LineDet class ids were hard-coded the wrong way round; they are
   read from the model (no effect on results, which are assigned by position).
-- Phone photos with an EXIF orientation are analysed the way the browser
-  shows them; they used to be analysed sideways.
+- Locally uploaded phone photos stored sideways (with an EXIF orientation)
+  are analysed the way the browser shows them; version 1 analysed them
+  sideways. ELN images were already oriented correctly.
 - Uploads to the ELN no longer send this app's CSRF token to Chemotion, and
   name the file (`TLC_Rf_2026-11-09_14-32.csv`). A refused upload is
   reported as a failure; it used to say "Saved".
@@ -110,6 +124,11 @@ gives identical detection results.
   Content Security Policy, SSRF-guarded ELN image fetch (public hosts only,
   every redirect re-checked), `/serve-image/` confined to the media folder,
   secure cookies and HSTS in production, and a non-root container.
+- The ELN image fetch connects to the address that was checked (closing a
+  DNS-rebinding gap; TLS still verifies the host name), has an overall
+  60 s deadline, and reports a dropped connection as a failed fetch. Result
+  files are named by a random token only. The Docker build context is an
+  allowlist, so local files such as `.env` cannot reach the image.
 
 ## [1.0.1] — 2026-05-31
 

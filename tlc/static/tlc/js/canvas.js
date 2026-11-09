@@ -311,7 +311,10 @@ export function applyCrop() {
 // Only on a clean image: turning would move every mark.
 export const MAX_FINE_ROTATION = 45;
 
-export function setRotation(preset, fine) {
+// `sync` false is the live preview while typing: the field is left as typed
+// (rewriting it under the cursor turned "12" into "1.0" and broke "2.5").
+// A fine angle that is not a number keeps the current one.
+export function setRotation(preset, fine, sync = true) {
     if (!hasImage() || hasAnnotations()) {
         syncRotationControls();
         return;
@@ -319,16 +322,19 @@ export function setRotation(preset, fine) {
     const value = Number(fine);
     const clamped = Number.isFinite(value)
         ? Math.max(-MAX_FINE_ROTATION, Math.min(MAX_FINE_ROTATION, value))
-        : 0;
+        : state.fineRotation;
     const presetChanged = preset !== state.rotation;
     state.rotation = preset;
     state.fineRotation = Math.round(clamped * 10) / 10;
-    syncRotationControls();
+    if (sync) syncRotationControls();
     if (presetChanged) {
         fitAndDraw(state.image); // 90/270 swap the frame
     } else {
         redrawCanvas();
     }
+    // A clean image in a new frame: start the history here, so no undo or redo
+    // brings back marks made in the old frame (or turns the image back).
+    resetHistory();
     refreshUI();
 }
 
@@ -387,15 +393,21 @@ export function commitChange() {
     afterAnnotationChange();
 }
 
-function afterHistoryChange() {
+// A snapshot carries the rotation its marks were made in (an opened file may
+// have changed it), so re-fit the frame when the preset differs.
+function afterHistoryChange(presetBefore) {
     state.highlightedSpot = null; // may point at a spot that no longer exists
+    syncRotationControls();
+    if (state.rotation !== presetBefore) fitAndDraw(state.image); // 90/270 swap the frame
     afterAnnotationChange();
 }
 
 export function undoEdit() {
-    if (undoHistory()) afterHistoryChange();
+    const preset = state.rotation;
+    if (undoHistory()) afterHistoryChange(preset);
 }
 
 export function redoEdit() {
-    if (redoHistory()) afterHistoryChange();
+    const preset = state.rotation;
+    if (redoHistory()) afterHistoryChange(preset);
 }

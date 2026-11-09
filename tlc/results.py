@@ -57,10 +57,14 @@ def clean_label(raw: Any) -> str:
 
 
 def natural_key(text: str) -> list[tuple[int, int | str]]:
-    """Sort key putting "Lane 2" before "Lane 10" (case-insensitive)."""
+    """Sort key putting "Lane 2" before "Lane 10" (case-insensitive).
+
+    Only ASCII digit runs count as numbers: ``str.isdigit`` also accepts "²"
+    or "①", which ``int`` rejects. The split's captured runs are the odd parts.
+    """
     return [
-        (0, int(part)) if part.isdigit() else (1, part.casefold())
-        for part in re.split(r"(\d+)", text)
+        (0, int(part)) if i % 2 else (1, part.casefold())
+        for i, part in enumerate(re.split(r"([0-9]+)", text))
         if part
     ]
 
@@ -259,7 +263,8 @@ def draw_annotations(
 # chemotion_ELN: upload_attachment_from_third_party_app), so the layout is
 # chosen for people. The column names, the CHMO line and the "Details" line
 # are kept from version 1; the Details sentence matches how Rf values
-# are written in Chemotion's free-text field, e.g. "0.53 (A), 0.50 (B)".
+# are written in Chemotion's free-text field, e.g. "0.53 (A), 0.50 (B)", so
+# Rf has two decimals there and in the column, as in the table.
 CSV_HEADER = [
     "spot",
     "mixture_label (X axis)",
@@ -297,11 +302,11 @@ def csv_text(rows: list[dict[str, Any]], provenance: list[tuple[str, str]] | Non
                 _cell(row["solvent_type"]),
                 _cell(row["compound"]),
                 _cell(row["compound_type"]),
-                row["rf"],
+                f"{row['rf']:.2f}",  # as in the table: 0.50, not 0.5
                 row.get("source", "manual"),
             ]
         )
-    inline = ", ".join(f"{row['rf']} ({row['compound']})[h{row['n']}]" for row in rows)
+    inline = ", ".join(f"{row['rf']:.2f} ({row['compound']})[h{row['n']}]" for row in rows)
     out.write(f"\nDetails:\nTLC (solvents); Rf (UV-Vis in nm, staining) = {inline}.\n")
     if provenance:
         out.write("\nProvenance:\n")

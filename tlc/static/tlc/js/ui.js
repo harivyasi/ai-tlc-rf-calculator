@@ -9,7 +9,7 @@
 
 "use strict";
 
-import { state } from "./state.js";
+import { elnUrl, state } from "./state.js";
 import { canRedo, canUndo } from "./history.js";
 
 // Annotation text-size multiplier from the toolbar input, as a fraction
@@ -145,12 +145,12 @@ function setExportDisabled(disabled) {
     });
 }
 
-// The two "upload to ELN" export buttons only make sense for an ELN-sourced
-// plate; for a local upload they're hidden and the two download buttons expand
-// to fill the row (flex: 1).
+// The "upload to ELN" export buttons only make sense for an ELN-sourced plate
+// (so only with ?url=); for a local upload they're hidden, leaving the
+// download buttons.
 export function updateExportButtons() {
     document.querySelectorAll("#export-row .export-eln").forEach((b) => {
-        b.classList.toggle("hidden", state.isLocalImage);
+        b.classList.toggle("hidden", !elnUrl || state.isLocalImage);
     });
 }
 
