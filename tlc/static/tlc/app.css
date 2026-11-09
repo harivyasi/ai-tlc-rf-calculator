@@ -508,7 +508,16 @@ body {
 }
 .source-summary.shown { display: flex; }
 .source-summary-actions { display: inline-flex; align-items: center; gap: 0.5rem; }
-.source-rotate { padding: 0.35rem 0.5rem; }
+.rotation { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.rotation-label { font-size: 0.85rem; font-weight: 600; }
+.rotation-nudge { padding: 0.35rem 0.5rem; }
+#rotation-preset, #rotation-fine {
+    font: inherit; font-size: 0.85rem; padding: 0.25rem 0.35rem;
+    border: 1px solid var(--border, #ccc); border-radius: 6px;
+    background: var(--surface); color: var(--text);
+}
+#rotation-fine { width: 4.5rem; }
+.rotation-unit { margin-left: -0.2rem; font-size: 0.85rem; }
 .source-summary-change {
     display: inline-flex; align-items: center; gap: 0.35rem;
     padding: 0.35rem 0.5rem; background: none; border: none; cursor: pointer;

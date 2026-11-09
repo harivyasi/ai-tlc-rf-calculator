@@ -74,6 +74,9 @@ gives identical detection results.
   detected, or detected then moved) and a closing `Provenance:` block in the
   CSV with the app version, the image name and SHA-256, rotation, Plate Area,
   both models' SHA-256 and the time of calculation.
+- **Rotation**: a quarter turn plus a fine-tune of up to ±45° (0.5° steps),
+  to straighten a tilted plate before annotating; Rf assumes a level
+  baseline. The browser and the server apply the same turn.
 
 ### Changed
 

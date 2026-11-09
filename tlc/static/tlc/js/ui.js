@@ -65,7 +65,7 @@ export function toggleHelp() {
 export function updateWorkAreaLayout() {
     const area = document.getElementById("work-area");
     if (!area || !state.image) return;
-    // Use the displayed (rotation-adjusted) dimensions.
+    // Use the displayed (rotation-adjusted) dimensions; a fine turn keeps them.
     const swap = state.rotation === 90 || state.rotation === 270;
     const w = swap ? state.image.naturalHeight : state.image.naturalWidth;
     const h = swap ? state.image.naturalWidth : state.image.naturalHeight;
@@ -127,12 +127,10 @@ export function hasAnnotations() {
 }
 
 export function updateRotateEnabled() {
-    const locked = hasAnnotations();
-    document
-        .querySelectorAll('[data-action="rotateCW"], [data-action="rotateCCW"]')
-        .forEach((btn) => {
-            btn.disabled = locked || !hasImage();
-        });
+    const locked = hasAnnotations() || !hasImage();
+    document.querySelectorAll(".rotation-control").forEach((control) => {
+        control.disabled = locked;
+    });
 }
 
 // --- Stale-results handling -----------------------------------------------

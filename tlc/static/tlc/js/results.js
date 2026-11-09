@@ -21,6 +21,7 @@ import { commitHistory } from "./history.js";
 export function getImagePayload() {
     const extras = (payload) => {
         payload.rotation = state.rotation; // backend re-orients to match the displayed image
+        payload.fineRotation = state.fineRotation;
         payload.textScale = textScale(); // label text-size multiplier for the saved image
         const full = document.getElementById("label-full");
         payload.labelMode = full && full.checked ? "full" : "numbers";

@@ -25,7 +25,8 @@ export const state = {
     spots: [],
     spotSeq: 0,
     lineSeq: 0,
-    rotation: 0, // clockwise degrees the image is displayed at (0/90/180/270)
+    rotation: 0, // clockwise preset the image is displayed at (0/90/180/270)
+    fineRotation: 0, // clockwise fine-tune on top (deskew), degrees, within ±45
 
     currentLine: null, // the H/V line the label popup is open for
     popupEdit: null, // {text, kind} before an edit, so Cancel can restore it

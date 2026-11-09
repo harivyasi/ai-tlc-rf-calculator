@@ -202,6 +202,40 @@ def _rotate_image(image: np.ndarray, rotation: int) -> np.ndarray:
     return image
 
 
+MAX_FINE_ROTATION = 45.0
+
+
+def _fine_rotate(image: np.ndarray, degrees: float) -> np.ndarray:
+    """Straighten by ``degrees`` clockwise about the centre, keeping the size.
+
+    Same width and height as the input: the photo's corners fall outside the
+    frame and the uncovered corners are white. The browser draws the same
+    turn about the canvas centre, so a point the user marks keeps its
+    coordinates. ``cv2`` counts angles counter-clockwise, hence the sign, and
+    indexes pixel centres, hence the centre at ``(w - 1) / 2``.
+    """
+    if degrees == 0:
+        return image
+    height, width = image.shape[:2]
+    matrix = cv2.getRotationMatrix2D(((width - 1) / 2, (height - 1) / 2), -degrees, 1.0)
+    return cv2.warpAffine(
+        image,
+        matrix,
+        (width, height),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(255, 255, 255),
+    )
+
+
+def _parse_fine_rotation(raw: Any) -> float:
+    """The fine-tune angle (clockwise degrees, one decimal, within ±45), else 0."""
+    value = _number(raw)
+    if value is None or abs(value) > MAX_FINE_ROTATION:
+        return 0.0
+    return round(value, 1)
+
+
 def _parse_rotation(raw: Any) -> int:
     """Return a valid clockwise rotation (0/90/180/270), else 0."""
     try:
@@ -221,7 +255,7 @@ class _ImageSource:
     raw: bytes | None = None  # sent inline (local image, fallback path)
     path: str | None = None  # stored in MEDIA_ROOT
 
-    def job_bytes(self, kind: str) -> int:
+    def job_bytes(self, kind: str, fine_rotation: bool = False) -> int:
         """Memory a ``kind`` of job ("lines", "spots", "render") needs on it;
         inline bytes are held while decoding."""
         return admission.job_bytes(
@@ -229,6 +263,7 @@ class _ImageSource:
             self.height,
             kind=kind,
             cached=self.path is not None and imagecache.contains(self.path),
+            fine_rotation=fine_rotation,
             load_models=not models_loaded(),
             extra=2 * len(self.raw) if self.raw is not None else 0,
         )
@@ -313,17 +348,21 @@ def _open_image_source(
     return _ImageSource(os.path.basename(image_src), info[1], info[2], path=image_path), None
 
 
-def _load_image(source: _ImageSource, rotation: int) -> np.ndarray | None:
+def _load_image(source: _ImageSource, rotation: int, fine: float) -> np.ndarray | None:
     """Decode (or take from the cache) and rotate a checked image.
 
-    The result may be read-only (a cached image); copy it before drawing.
+    ``rotation`` is the preset (0/90/180/270, exact); ``fine`` the deskew
+    angle on top. The result may be read-only (a cached image); copy it
+    before drawing.
     """
     if source.raw is not None:
         image = _decode_image_bytes(source.raw)
     else:
         assert source.path is not None
         image = imagecache.load(source.path, _decode_image_bytes)
-    return None if image is None else _rotate_image(image, rotation)
+    if image is None:
+        return None
+    return _fine_rotate(_rotate_image(image, rotation), fine)
 
 
 def _busy() -> JsonResponse:
@@ -348,13 +387,14 @@ def _run_image_job(
     if error is not None:
         return error
     assert source is not None
+    fine = _parse_fine_rotation(data.get("fineRotation"))
 
     def needed() -> int:  # re-estimated while waiting: the image may get cached
-        return source.job_bytes(kind)
+        return source.job_bytes(kind, fine_rotation=bool(fine))
 
     try:
         with admission.admit(needed, release=lambda: imagecache.release(keep=source.path)):
-            image = _load_image(source, _parse_rotation(data.get("rotation")))
+            image = _load_image(source, _parse_rotation(data.get("rotation")), fine)
             if image is None:
                 message = (
                     "Could not decode the uploaded image."
@@ -565,6 +605,14 @@ def calculate_rf(request: HttpRequest) -> JsonResponse:
     return _run_image_job(data, render, "render")
 
 
+def _rotation_text(data: dict[str, Any]) -> str:
+    preset = _parse_rotation(data.get("rotation"))
+    fine = _parse_fine_rotation(data.get("fineRotation"))
+    if not fine:
+        return f"{preset} degrees clockwise"
+    return f"{preset} {'+' if fine > 0 else '-'} {abs(fine)} degrees clockwise"
+
+
 def _provenance(source: _ImageSource, data: dict[str, Any]) -> list[tuple[str, str]]:
     """How a result was made, for the CSV (SI 10.3 / 11.4)."""
     region = _parse_region(data.get("plateRegion"))
@@ -572,7 +620,7 @@ def _provenance(source: _ImageSource, data: dict[str, Any]) -> list[tuple[str, s
         ("app", f"TLC RF Calculator {__version__}"),
         ("image", results.clean_label(data.get("imageName")) or source.base_name),
         ("image sha256", source.sha256()),
-        ("rotation", f"{_parse_rotation(data.get('rotation'))} degrees clockwise"),
+        ("rotation", _rotation_text(data)),
         ("plate area", "x={}, y={}, width={}, height={}".format(*region) if region else "none"),
     ]
     for model in model_identities():

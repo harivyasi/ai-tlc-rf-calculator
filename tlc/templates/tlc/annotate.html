@@ -61,14 +61,28 @@
             <div id="source-summary" class="source-summary">
                 <span class="source-summary-text"><strong>Image:</strong> <span id="source-name">none</span></span>
                 <span class="source-summary-actions">
-                    <button type="button" class="lab-btn btn-lab-outline source-rotate" data-action="rotateCCW"
-                            title="Rotate 90° left" aria-label="Rotate left" disabled>
-                        <svg class="icon"><use href="#i-rotate-ccw"/></svg>
-                    </button>
-                    <button type="button" class="lab-btn btn-lab-outline source-rotate" data-action="rotateCW"
-                            title="Rotate 90° right" aria-label="Rotate right" disabled>
-                        <svg class="icon"><use href="#i-rotate-cw"/></svg>
-                    </button>
+                    <span class="rotation" title="Turn the photo before annotating: a quarter turn, then fine-tune until the baseline is level.">
+                        <label for="rotation-preset" class="rotation-label">Rotate</label>
+                        <select id="rotation-preset" class="rotation-control" disabled>
+                            <option value="0">0°</option>
+                            <option value="90">90°</option>
+                            <option value="180">180°</option>
+                            <option value="270">270°</option>
+                        </select>
+                        <button type="button" class="lab-btn btn-lab-outline rotation-control rotation-nudge"
+                                data-action="nudgeRotation" data-arg="-0.5"
+                                title="Fine-tune 0.5° anticlockwise" aria-label="Fine-tune 0.5 degrees anticlockwise" disabled>
+                            <svg class="icon"><use href="#i-rotate-ccw"/></svg>
+                        </button>
+                        <input id="rotation-fine" class="rotation-control" type="number" inputmode="decimal"
+                               min="-45" max="45" step="0.1" value="0.0"
+                               aria-label="Fine-tune, degrees clockwise" disabled><span class="rotation-unit">°</span>
+                        <button type="button" class="lab-btn btn-lab-outline rotation-control rotation-nudge"
+                                data-action="nudgeRotation" data-arg="0.5"
+                                title="Fine-tune 0.5° clockwise" aria-label="Fine-tune 0.5 degrees clockwise" disabled>
+                            <svg class="icon"><use href="#i-rotate-cw"/></svg>
+                        </button>
+                    </span>
                     <button type="button" id="source-change" class="source-summary-change"
                             data-action="toggleImageSource" aria-expanded="false"
                             title="Re-open the image source panel to load a different image.">
