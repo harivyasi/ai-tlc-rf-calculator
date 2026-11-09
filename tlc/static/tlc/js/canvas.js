@@ -21,24 +21,23 @@ import {
 import { deleteLine, editLine, isHorizontalLine, markerCaption, setActiveButton } from "./annotations.js";
 import { commitHistory, redoHistory, resetHistory, undoHistory } from "./history.js";
 
-// Draw an image into the canvas frame applying the current clockwise rotation.
-export function drawImageRotated(context, img, rot, w, h) {
+// Draw an image into the w x h canvas frame, turned clockwise by the preset
+// `rot` (0/90/180/270) plus the fine-tune `fine` (degrees), about the centre.
+// The frame keeps the preset's size: with a fine turn the photo's corners fall
+// outside and the uncovered corners are white -- exactly what the server does
+// (tlc/views.py _fine_rotate), so marked coordinates mean the same there.
+export function drawImageRotated(context, img, rot, w, h, fine = 0) {
+    const swap = rot === 90 || rot === 270;
+    const drawW = swap ? h : w; // the image's own size before turning
+    const drawH = swap ? w : h;
     context.save();
-    if (rot === 90) {
-        context.translate(w, 0);
-        context.rotate(Math.PI / 2);
-        context.drawImage(img, 0, 0, h, w);
-    } else if (rot === 180) {
-        context.translate(w, h);
-        context.rotate(Math.PI);
-        context.drawImage(img, 0, 0, w, h);
-    } else if (rot === 270) {
-        context.translate(0, h);
-        context.rotate(-Math.PI / 2);
-        context.drawImage(img, 0, 0, h, w);
-    } else {
-        context.drawImage(img, 0, 0, w, h);
+    if (fine) {
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, w, h);
     }
+    context.translate(w / 2, h / 2);
+    context.rotate(((rot + fine) * Math.PI) / 180);
+    context.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     context.restore();
 }
 
@@ -58,7 +57,7 @@ export function fitAndDraw(img) {
     }
     state.canvas.width = dispW;
     state.canvas.height = dispH;
-    drawImageRotated(state.ctx, img, state.rotation, dispW, dispH);
+    drawImageRotated(state.ctx, img, state.rotation, dispW, dispH, state.fineRotation);
     window.scaleFactor = naturalH / dispH;
 
     const annotated = document.getElementById("annotated-image");
@@ -85,7 +84,7 @@ export function redrawCanvas() {
     const canvas = state.canvas;
     const ctx = state.ctx;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawImageRotated(ctx, state.image, state.rotation, canvas.width, canvas.height);
+    drawImageRotated(ctx, state.image, state.rotation, canvas.width, canvas.height, state.fineRotation);
 
     ctx.font = Math.round(16 * textScale()) + "px sans-serif";
     ctx.lineWidth = 2;
@@ -307,19 +306,41 @@ export function applyCrop() {
     redrawCanvas();
 }
 
-export function rotateImage(deg) {
-    if (!hasImage() || hasAnnotations()) return;
-    state.rotation = (state.rotation + deg + 360) % 360;
-    fitAndDraw(state.image);
+// --- Rotation: a preset plus a fine-tune (deskew) ------------------------
+// Only on a clean image: turning would move every mark.
+export const MAX_FINE_ROTATION = 45;
+
+export function setRotation(preset, fine) {
+    if (!hasImage() || hasAnnotations()) {
+        syncRotationControls();
+        return;
+    }
+    const value = Number(fine);
+    const clamped = Number.isFinite(value)
+        ? Math.max(-MAX_FINE_ROTATION, Math.min(MAX_FINE_ROTATION, value))
+        : 0;
+    const presetChanged = preset !== state.rotation;
+    state.rotation = preset;
+    state.fineRotation = Math.round(clamped * 10) / 10;
+    syncRotationControls();
+    if (presetChanged) {
+        fitAndDraw(state.image); // 90/270 swap the frame
+    } else {
+        redrawCanvas();
+    }
     refreshUI();
 }
 
-export function rotateCW() {
-    rotateImage(90);
+export function nudgeRotation(step) {
+    setRotation(state.rotation, state.fineRotation + Number(step));
 }
 
-export function rotateCCW() {
-    rotateImage(-90);
+// Show the current rotation in the controls (also after a refused change).
+export function syncRotationControls() {
+    const preset = document.getElementById("rotation-preset");
+    const fine = document.getElementById("rotation-fine");
+    if (preset) preset.value = String(state.rotation);
+    if (fine) fine.value = state.fineRotation.toFixed(1);
 }
 
 export function resetCanvas() {

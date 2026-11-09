@@ -340,7 +340,7 @@ def test_plate_region_confines_auto_detect(page, servers, blob_image_path):
 
 
 def test_rotate_reorients_and_locks_after_annotation(page, servers, blob_image_path):
-    """Rotate re-orients a clean image (layout flips) and is disabled once annotated."""
+    """A preset re-orients a clean image (layout flips); annotating locks rotation."""
     _stub_cdn(page)
     page.goto(servers["new"] + "/")
     page.click("#local-source-btn")
@@ -349,7 +349,7 @@ def test_rotate_reorients_and_locks_after_annotation(page, servers, blob_image_p
 
     work_area = page.locator("#work-area")
     assert "layout-rows" in (work_area.get_attribute("class") or "")  # landscape -> rows
-    page.click("[data-action='rotateCW']")
+    page.select_option("#rotation-preset", "90")
     page.wait_for_function(
         "() => document.getElementById('work-area').classList.contains('layout-columns')"
     )  # rotated to portrait -> columns
@@ -357,7 +357,71 @@ def test_rotate_reorients_and_locks_after_annotation(page, servers, blob_image_p
     # Annotating locks rotation.
     page.click("button:has-text('Add Spots')")
     page.locator("#image-canvas").click(position={"x": 150, "y": 150})
-    page.wait_for_function("() => document.querySelector(\"[data-action='rotateCW']\").disabled")
+    page.wait_for_function("() => document.getElementById('rotation-preset').disabled")
+    assert page.locator("#rotation-fine").is_disabled()
+    assert page.locator(".rotation-nudge").first.is_disabled()
+
+
+def _dot_image(tmp_path, size=(400, 300), at=(300, 80)):
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", size, "white")
+    x, y = at
+    ImageDraw.Draw(image).ellipse((x - 6, y - 6, x + 6, y + 6), fill="black")
+    path = tmp_path / "dot.png"
+    image.save(path)
+    return str(path)
+
+
+_DARK_CENTROID = """() => {
+    const c = document.getElementById('image-canvas');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let sx = 0, sy = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+        if (d[i] < 128) { const p = i / 4; sx += p % c.width; sy += Math.floor(p / c.width); n++; }
+    }
+    return {x: sx / n + 0.5, y: sy / n + 0.5, n, w: c.width, h: c.height};
+}"""
+
+
+def test_fine_rotation_turns_the_canvas_like_the_server(page, servers, tmp_path):
+    """The canvas turns about its centre, keeping its size -- the same formula
+    the server's _fine_rotate is tested against -- and the angle is sent."""
+    import math
+
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", _dot_image(tmp_path))
+    page.wait_for_function(_IMAGE_READY)
+
+    page.fill("#rotation-fine", "12")
+    page.dispatch_event("#rotation-fine", "change")
+    dot = page.evaluate(_DARK_CENTROID)
+    assert (dot["w"], dot["h"]) == (400, 300)  # same frame
+    t = math.radians(12)
+    dx, dy = 300.5 - 200, 80.5 - 150
+    assert abs(dot["x"] - (200 + dx * math.cos(t) - dy * math.sin(t))) < 1.0
+    assert abs(dot["y"] - (150 + dx * math.sin(t) + dy * math.cos(t))) < 1.0
+
+    # Nudges step by 0.5 degrees; the angle travels with requests.
+    page.click("[data-action='nudgeRotation'][data-arg='0.5']")
+    assert page.input_value("#rotation-fine") == "12.5"
+    with page.expect_request("**/detect-lines/") as request_info:
+        page.click("#detect-lines-btn")
+    body = request_info.value.post_data_json
+    assert (body["rotation"], body["fineRotation"]) == (0, 12.5)
+
+
+def test_fine_rotation_is_clamped(page, servers, blob_image_path):
+    _stub_cdn(page)
+    page.goto(servers["new"] + "/")
+    page.click("#local-source-btn")
+    page.set_input_files("#local-image-input", blob_image_path)
+    page.wait_for_function(_IMAGE_READY)
+    page.fill("#rotation-fine", "80")
+    page.dispatch_event("#rotation-fine", "change")
+    assert page.input_value("#rotation-fine") == "45.0"
 
 
 def test_deleting_vline_closes_annotation_popup(page, servers, test_image_path):

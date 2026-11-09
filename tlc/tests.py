@@ -28,7 +28,7 @@ from django.urls import reverse
 from PIL import Image
 
 from config.env import csrf_origins_from_hosts, env_bool, env_int, env_list, host_of
-from tlc import admission, imagecache, media, results
+from tlc import admission, detection, imagecache, media, results
 from tlc.detection import assign_lines
 from tlc.views import (
     _decode_data_url,
@@ -872,7 +872,10 @@ class AdmissionTests(SimpleTestCase):
         self.assertEqual(admission.job_bytes(6120, 8160), 16 * mp50)
         self.assertEqual(admission.job_bytes(6120, 8160, cached=True), 7 * mp50)
         self.assertEqual(admission.job_bytes(6120, 8160, kind="lines", cached=True), 2 * mp50)
-        self.assertEqual(admission.job_bytes(6120, 8160, kind="spots", cached=True), 5 * mp50)
+        self.assertEqual(
+            admission.job_bytes(6120, 8160, kind="spots", cached=True, fine_rotation=True),
+            8 * mp50,
+        )
 
     def test_reserve_is_at_most_a_tenth_of_the_total(self) -> None:
         mock.patch.stopall()  # this test sets the totals itself
@@ -1142,6 +1145,78 @@ class ProvenanceTests(SimpleTestCase):
         self.assertIn(LINE_SHA256, provenance["TLC-LineDet"])
         self.assertRegex(provenance["calculated"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertTrue(provenance["app"].startswith("TLC RF Calculator "))
+
+
+class FineRotationTests(SimpleTestCase):
+    """Deskew: a turn about the centre that keeps the frame size."""
+
+    @staticmethod
+    def expected(x: float, y: float, w: int, h: int, degrees: float) -> tuple[float, float]:
+        """Where the browser's canvas puts the point (continuous coordinates)."""
+        t = np.radians(degrees)
+        cx, cy = w / 2, h / 2
+        dx, dy = x - cx, y - cy
+        return cx + dx * np.cos(t) - dy * np.sin(t), cy + dx * np.sin(t) + dy * np.cos(t)
+
+    def test_a_point_lands_where_the_canvas_shows_it(self) -> None:
+        from tlc.views import _fine_rotate
+
+        w, h = 400, 300
+        image = np.full((h, w, 3), 255, np.uint8)
+        cv2.circle(image, (300, 80), 6, (0, 0, 0), -1)  # pixel centre 300,80
+        for degrees in (3.5, -12.0, 30.0):
+            turned = _fine_rotate(image, degrees)
+            self.assertEqual(turned.shape, image.shape)
+            ys, xs = np.nonzero(turned[:, :, 0] < 128)
+            # pixel index i covers [i, i + 1): its centre is i + 0.5
+            ex, ey = self.expected(300.5, 80.5, w, h, degrees)
+            self.assertAlmostEqual(xs.mean() + 0.5, ex, delta=0.6)
+            self.assertAlmostEqual(ys.mean() + 0.5, ey, delta=0.6)
+
+    def test_uncovered_corners_are_white_and_zero_is_a_no_op(self) -> None:
+        from tlc.views import _fine_rotate
+
+        image = np.zeros((200, 300, 3), np.uint8)
+        self.assertIs(_fine_rotate(image, 0), image)
+        turned = _fine_rotate(image, 20)
+        self.assertTrue((turned[0, 0] == 255).all())
+        self.assertTrue((turned[100, 150] == 0).all())
+
+    def test_parse_fine_rotation(self) -> None:
+        from tlc.views import _parse_fine_rotation
+
+        self.assertEqual(_parse_fine_rotation(3.46), 3.5)
+        self.assertEqual(_parse_fine_rotation(-45), -45.0)
+        for bad in (45.1, "3", None, True, float("nan")):
+            self.assertEqual(_parse_fine_rotation(bad), 0.0)
+
+    def test_detection_sees_the_turned_image(self) -> None:
+        """Requests turn the image before detection, at the payload's angle."""
+        seen = []
+
+        def fake(image: np.ndarray, region: Any = None) -> dict[str, Any]:
+            seen.append(image)
+            raise detection.DetectionError("stop")
+
+        payload = {
+            "isLocalImage": True,
+            "imageData": _png_data_url(300, 200),
+            "rotation": 90,
+            "fineRotation": 10,
+        }
+        with mock.patch("tlc.views.detection.detect_lines", side_effect=fake):
+            _post_json(self.client, "detect_lines", payload)
+        (image,) = seen
+        self.assertEqual(image.shape[:2], (300, 200))  # 90 swaps; fine keeps
+        self.assertTrue((image[0, 0] == 255).all())
+
+    def test_provenance_states_both_angles(self) -> None:
+        from tlc.views import _rotation_text
+
+        self.assertEqual(_rotation_text({"rotation": 90}), "90 degrees clockwise")
+        self.assertEqual(
+            _rotation_text({"rotation": 90, "fineRotation": -2.5}), "90 - 2.5 degrees clockwise"
+        )
 
 
 class EnvHelperTests(SimpleTestCase):

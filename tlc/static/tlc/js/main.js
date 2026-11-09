@@ -27,8 +27,8 @@ import {
     redoEdit,
     redrawCanvas,
     resetCanvas,
-    rotateCCW,
-    rotateCW,
+    nudgeRotation,
+    setRotation,
     undoEdit,
 } from "./canvas.js";
 import {
@@ -74,8 +74,7 @@ const ACTIONS = {
     autoDetectLines,
     autoDetectSpots,
     selectPlateArea,
-    rotateCW,
-    rotateCCW,
+    nudgeRotation,
     addMinLine,
     addMaxLine,
     addHorizontalLine,
@@ -173,6 +172,22 @@ function init() {
             // change makes a prior result out of date until it is recalculated.
             markResultsStale();
         });
+    }
+
+    // Rotation: a preset, plus a fine-tune previewed live while typing.
+    const rotationPreset = document.getElementById("rotation-preset");
+    const rotationFine = document.getElementById("rotation-fine");
+    if (rotationPreset && rotationFine) {
+        rotationPreset.addEventListener("change", () =>
+            setRotation(Number(rotationPreset.value), Number(rotationFine.value)),
+        );
+        rotationFine.addEventListener("input", () => {
+            if (rotationFine.value === "" || rotationFine.value === "-") return; // mid-typing
+            setRotation(Number(rotationPreset.value), Number(rotationFine.value));
+        });
+        rotationFine.addEventListener("change", () =>
+            setRotation(Number(rotationPreset.value), Number(rotationFine.value)),
+        );
     }
 
     refreshUI();

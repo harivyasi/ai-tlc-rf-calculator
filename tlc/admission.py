@@ -42,9 +42,10 @@ from django.conf import settings
 # Measured peaks per pixel (ONNX Runtime's memory arena off), on a 50 MP
 # photo, in and out of the container: decoding dominates any job; with the
 # image already decoded, each job's own work (Calculate RF copies the image
-# and encodes a PNG).
+# and encodes a PNG); and the extra full-size copy a fine rotation makes.
 BYTES_PER_PIXEL_DECODE = 16
 BYTES_PER_PIXEL_CACHED = {"lines": 2, "spots": 5, "render": 7}
+BYTES_PER_PIXEL_FINE_ROTATION = 3
 # Both ONNX sessions, loaded by a worker's first detection (arena off).
 MODEL_LOAD_BYTES = 150 * 1024 * 1024
 
@@ -69,11 +70,14 @@ def job_bytes(
     *,
     kind: str = "render",
     cached: bool = False,
+    fine_rotation: bool = False,
     load_models: bool = False,
     extra: int = 0,
 ) -> int:
     """Memory an image job needs: its peak above the worker's resting use."""
     per_pixel = BYTES_PER_PIXEL_CACHED[kind] if cached else BYTES_PER_PIXEL_DECODE
+    if fine_rotation:
+        per_pixel += BYTES_PER_PIXEL_FINE_ROTATION
     return width * height * per_pixel + (MODEL_LOAD_BYTES if load_models else 0) + extra
 
 

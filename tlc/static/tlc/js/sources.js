@@ -14,7 +14,7 @@ import {
     updateAnnotatedHeading,
     updateExportButtons,
 } from "./ui.js";
-import { applyCrop, fitAndDraw } from "./canvas.js";
+import { applyCrop, fitAndDraw, syncRotationControls } from "./canvas.js";
 import { resetHistory } from "./history.js";
 
 export function triggerFileInput() {
@@ -79,6 +79,8 @@ function loadLocalImage(dataURL, fileName, file) {
     // Start the upload while the image is decoded and drawn.
     state.localImageUpload = file ? uploadLocalImage(file) : Promise.resolve(null);
     state.rotation = 0;
+    state.fineRotation = 0;
+    syncRotationControls();
     state.image = new Image();
     state.image.onload = function () {
         fitAndDraw(state.image);
@@ -117,6 +119,8 @@ function loadELNImage() {
                 if (response.ok) {
                     state.isLocalImage = false;
                     state.rotation = 0;
+                    state.fineRotation = 0;
+                    syncRotationControls();
                     state.image = new Image();
                     state.image.onload = () => {
                         fitAndDraw(state.image);

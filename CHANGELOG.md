@@ -80,6 +80,13 @@ follow the SI; candidate detection is Shilpa's.
   `Provenance:` block in the CSV with the app version, the original image
   name and its SHA-256, rotation, Plate Area, both models' SHA-256 and the
   time of calculation (UTC).
+- **Rotation**: a preset (0°, 90°, 180°, 270°, replacing the two 90°
+  buttons) plus a fine-tune of up to ±45°
+  with ±0.5° steps, to straighten a tilted plate before annotating; Rf
+  assumes a level baseline. The fine turn keeps the frame size (the photo's
+  corners fall outside), so image limits and coordinates are unchanged; the
+  browser and the server use the same turn, tested on both sides. Presets
+  alone give the same results as before. Requests carry `fineRotation`.
 
 ### Changed
 
