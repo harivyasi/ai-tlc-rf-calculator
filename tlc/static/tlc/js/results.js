@@ -24,6 +24,9 @@ export function getImagePayload() {
         payload.textScale = textScale(); // label text-size multiplier for the saved image
         const full = document.getElementById("label-full");
         payload.labelMode = full && full.checked ? "full" : "numbers";
+        // Recorded in the CSV's provenance block (how the result was made).
+        payload.imageName = state.isLocalImage ? window.currentImageFileName || "" : "";
+        payload.plateRegion = state.plateRegion;
         return payload;
     };
     if (state.isLocalImage) {

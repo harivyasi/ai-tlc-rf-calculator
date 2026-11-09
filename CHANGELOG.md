@@ -70,6 +70,10 @@ gives identical detection results.
   recently decoded images (`IMAGE_CACHE_MB`), so the three steps on a plate
   decode it once. In a 1.5 GB container, eight 50 MP requests at once
   succeed.
+- Results record how they were made: a `spot source` column (manual,
+  detected, or detected then moved) and a closing `Provenance:` block in the
+  CSV with the app version, the image name and SHA-256, rotation, Plate Area,
+  both models' SHA-256 and the time of calculation.
 
 ### Changed
 

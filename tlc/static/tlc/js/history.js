@@ -24,7 +24,7 @@ function snapshot() {
             text: l.text,
             kind: l.kind || "",
         })),
-        spots: state.spots.map((s) => ({ id: s.id, x: s.x, y: s.y, auto: s.auto })),
+        spots: state.spots.map((s) => ({ id: s.id, x: s.x, y: s.y, auto: s.auto, moved: !!s.moved })),
         plateRegion: state.plateRegion ? { ...state.plateRegion } : null,
     };
 }
